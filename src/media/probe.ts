@@ -1,0 +1,36 @@
+/**
+ * What a media file is, read from the file itself: length and picture size.
+ * mediabunny (MPL-2.0) reads the container in-process, so the Host half needs
+ * no ffmpeg on the machine. A file it cannot read gives no facts, not an error.
+ * @module dsh-film/media/probe
+ */
+
+import { ALL_FORMATS, FilePathSource, Input } from 'mediabunny'
+
+export interface MediaFacts {
+  /** Seconds, when the file has a length. */
+  durationSeconds?: number
+  /** Display size of the first picture track. */
+  width?: number
+  height?: number
+}
+
+/**
+ * Read a video or audio file's length and picture size.
+ * @param path - the absolute file path.
+ * @returns what could be read.
+ */
+export async function probeMedia(path: string): Promise<MediaFacts> {
+  const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+  try {
+    const [duration, video] = await Promise.all([input.computeDuration(), input.getPrimaryVideoTrack()])
+    return {
+      ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: duration } : {}),
+      ...(video !== null && video.displayWidth > 0 && video.displayHeight > 0 ? { width: video.displayWidth, height: video.displayHeight } : {}),
+    }
+  } catch {
+    return {}
+  } finally {
+    input.dispose()
+  }
+}

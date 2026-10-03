@@ -205,3 +205,149 @@ describe('timeline endpoints', () => {
     expect((await call('/api/projects/film-1/raw/%2E%2E%2Fescape.mp4', { method: 'PUT', body: new Blob(['x']) })).status).toBe(400)
   })
 })
+
+/** Silence as a WAV file, so the probe has something real to read. */
+function silentWav(seconds = 1, rate = 8000): Buffer {
+  const samples = Math.round(seconds * rate)
+  const data = Buffer.alloc(samples * 2)
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0, 'ascii')
+  header.writeUInt32LE(36 + data.length, 4)
+  header.write('WAVE', 8, 'ascii')
+  header.write('fmt ', 12, 'ascii')
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(rate, 24)
+  header.writeUInt32LE(rate * 2, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36, 'ascii')
+  header.writeUInt32LE(data.length, 40)
+  return Buffer.concat([header, data])
+}
+
+const raw = (path: string) => `/api/projects/film-1/raw/${path.split('/').map(encodeURIComponent).join('/')}`
+
+describe('the board as material', () => {
+  async function board(nodes: unknown[]) {
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'document.json'), JSON.stringify({ id: 'film-1', title: '雨夜', nodes, connections: [] }))
+  }
+
+  it('lists the media nodes that play a film file, in board order', async () => {
+    await board([
+      { id: 'v1', type: 'video', title: '开场', position: { x: 0, y: 0 }, width: 420, height: 236, metadata: { content: raw('canvas/media/开场 1.mp4'), durationMs: 5000, naturalWidth: 1280, naturalHeight: 720 } },
+      { id: 't1', type: 'text', metadata: { content: '剧本' } },
+      { id: 'b1', type: 'image', metadata: { content: 'blob:http://host/1' } },
+      { id: 'i1', type: 'image', metadata: { content: raw('canvas/media/still.png') } },
+    ])
+    expect((await call('/api/canvas/timelines/film-1/media?project=film-1')).body.media).toEqual([
+      { nodeId: 'v1', title: '开场', path: 'canvas/media/开场 1.mp4', kind: 'video', durationSeconds: 5, width: 1280, height: 720 },
+      { nodeId: 'i1', title: 'still.png', path: 'canvas/media/still.png', kind: 'image' },
+    ])
+    await rm(join(cwd, 'film', 'canvas', 'document.json'))
+    expect((await call('/api/canvas/timelines/film-1/media')).status).toBe(404)
+  })
+
+  it('puts a board node on the cut through the revision check', async () => {
+    await board([
+      { id: 'v1', type: 'video', title: '开场', metadata: { content: raw('canvas/media/a.mp4'), durationMs: 4000 } },
+      { id: 's1', type: 'audio', title: '静音', metadata: { content: raw('canvas/media/quiet.wav') } },
+    ])
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'a.mp4'), 'not really a video')
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'quiet.wav'), silentWav(1))
+    expect((await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'v1' } } })).status).toBe(400)
+    const placed = await call('/api/canvas/timelines/film-1/place?project=film-1', { method: 'POST', json: { source: { nodeId: 'v1' }, baseRevision: 0, operationId: 'op1' } })
+    expect(placed.status).toBe(200)
+    expect(placed.body).toMatchObject({ result: { committed: true, revision: 1 }, placed: { clipId: 'op1-visuals', track: 'visuals', path: 'canvas/media/a.mp4', name: '开场', start: 0, durationSeconds: 4 } })
+    // No length on the node: read from the file itself.
+    const music = await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 's1' }, track: 'music', at: 2, baseRevision: 1, operationId: 'op2' } })
+    expect(music.body.placed).toMatchObject({ track: 'music', start: 2, name: '静音' })
+    expect(music.body.placed.durationSeconds).toBeCloseTo(1, 3)
+    const state = (await call(TIMELINE)).body
+    expect(state.document.project.visualSegments[0]).toMatchObject({ id: 'op1-visuals', assetVersionId: 'canvas-file:canvas/media/a.mp4', duration: 4 })
+    expect(state.document.project.musicSegments[0]).toMatchObject({ id: 'op2-music', start: 2 })
+    expect((await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'nope' }, baseRevision: 2 } })).status).toBe(404)
+    expect((await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'v1' }, at: 3, baseRevision: 2 } })).body.code).toBe('CANVAS_TIMELINE_PLACE_INVALID')
+    expect((await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'v1' }, baseRevision: 0 } })).status).toBe(409)
+  })
+
+  it('refuses a node whose length nothing can tell', async () => {
+    await board([{ id: 'v1', type: 'video', metadata: { content: raw('canvas/media/a.mp4') } }])
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'a.mp4'), 'not really a video')
+    expect(await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'v1' }, baseRevision: 0 } }))
+      .toMatchObject({ status: 422, body: { code: 'CANVAS_TIMELINE_PLACE_DURATION' } })
+  })
+
+  it('lands a film file on the board right of everything there', async () => {
+    await board([{ id: 'n1', type: 'text', position: { x: 100, y: 40 }, width: 340, height: 240, metadata: { content: '剧本' } }])
+    await mkdir(join(cwd, 'film', 'canvas', 'renders'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'renders', '成片.wav'), silentWav(2))
+    const landed = await call('/api/canvas/timelines/film-1/media?project=film-1', { method: 'POST', json: { path: 'canvas/renders/成片.wav', title: '雨夜成片' } })
+    expect(landed.status).toBe(200)
+    expect(landed.body.landed).toMatchObject({ title: '雨夜成片', path: 'canvas/renders/成片.wav', kind: 'audio' })
+    expect(landed.body.landed.durationSeconds).toBeCloseTo(2, 3)
+    const document = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8'))
+    const node = document.nodes.at(-1)
+    expect(node).toMatchObject({ id: landed.body.landed.landedNodeId, type: 'audio', title: '雨夜成片', position: { x: 536, y: 40 }, metadata: { content: raw('canvas/renders/成片.wav'), status: 'success', mimeType: 'audio/wav', durationMs: 2000 } })
+    // The landed file is material the cut can take straight away.
+    expect((await call('/api/canvas/timelines/film-1/media')).body.media.map((item: { nodeId: string }) => item.nodeId)).toContain(node.id)
+  })
+
+  it('keeps the file off the board when there is no board, and refuses files it cannot show', async () => {
+    await mkdir(join(cwd, 'film', 'canvas', 'renders'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'renders', 'cut.wav'), silentWav(1))
+    expect((await call('/api/canvas/timelines/film-1/media', { method: 'POST', json: { path: 'canvas/renders/cut.wav' } })).body.landed).toMatchObject({ nodeId: '', landedNodeId: null })
+    expect((await call('/api/canvas/timelines/film-1/media', { method: 'POST', json: { path: 'canvas/renders/none.wav' } })).status).toBe(422)
+    expect((await call('/api/canvas/timelines/film-1/media', { method: 'POST', json: { path: 'film.json' } })).status).toBe(400)
+    expect((await call('/api/canvas/timelines/film-1/media', { method: 'POST', json: { path: '../escape.wav' } })).status).toBe(400)
+  })
+})
+
+describe('takes for a slot', () => {
+  /** A board with three takes of a shot and a cut holding the first, 4 seconds long. */
+  async function setup() {
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    for (const name of ['take-1.mp4', 'take-2.mp4', 'take-3.mp4', 'still.png']) await writeFile(join(cwd, 'film', 'canvas', 'media', name), name)
+    await writeFile(join(cwd, 'film', 'canvas', 'document.json'), JSON.stringify({
+      id: 'film-1', nodes: [
+        { id: 'n1', type: 'video', title: '第一条', metadata: { content: raw('canvas/media/take-1.mp4'), durationMs: 6000 } },
+        { id: 'n2', type: 'video', title: '第二条', metadata: { content: raw('canvas/media/take-2.mp4'), durationMs: 5000, naturalWidth: 1920, naturalHeight: 1080 } },
+        { id: 'n3', type: 'video', title: '太短', metadata: { content: raw('canvas/media/take-3.mp4'), durationMs: 2000 } },
+        { id: 'n4', type: 'image', title: '定帧', metadata: { content: raw('canvas/media/still.png') } },
+      ], connections: [],
+    }))
+    const placed = await call('/api/canvas/timelines/film-1/place', { method: 'POST', json: { source: { nodeId: 'n1' }, durationSeconds: 4, baseRevision: 0, operationId: 'shot1' } })
+    expect(placed.status).toBe(200)
+  }
+
+  it('lists the cut’s slots and one slot’s takes, current first and short ones explained', async () => {
+    await setup()
+    const listing = (await call('/api/canvas/timelines/film-1/versions?project=film-1&clipId=shot1-visuals')).body
+    expect(listing.slots).toEqual([{ clipId: 'shot1-visuals', track: 'visuals', name: '第一条', path: 'canvas/media/take-1.mp4', kind: 'video', durationSeconds: 4 }])
+    expect(listing.slot).toMatchObject({ clipId: 'shot1-visuals' })
+    expect(listing.versions.map((take: { nodeId: string; current: boolean; refusal?: string }) => [take.nodeId, take.current, take.refusal ?? null])).toEqual([
+      ['n1', true, null],
+      ['n2', false, null],
+      ['n3', false, '比这一格短 2.0 秒（这一格 4.0 秒）'],
+      ['n4', false, null],
+    ])
+    expect((await call('/api/canvas/timelines/film-1/versions?clipId=nope')).status).toBe(404)
+  })
+
+  it('exchanges the material and keeps the slot', async () => {
+    await setup()
+    expect((await call('/api/canvas/timelines/film-1/version', { method: 'POST', json: { clipId: 'shot1-visuals', source: { nodeId: 'n2' } } })).status).toBe(400)
+    const swapped = await call('/api/canvas/timelines/film-1/version', { method: 'POST', json: { clipId: 'shot1-visuals', source: { nodeId: 'n2' }, baseRevision: 1, operationId: 'swap1' } })
+    expect(swapped.status).toBe(200)
+    expect(swapped.body.swapped).toEqual({ clipId: 'shot1-visuals', track: 'visuals', from: 'canvas/media/take-1.mp4', to: 'canvas/media/take-2.mp4', name: '第一条', durationSeconds: 4 })
+    const clips = (await call(TIMELINE)).body.document.project.visualSegments
+    expect(clips).toHaveLength(1)
+    expect(clips[0]).toMatchObject({ id: 'shot1-visuals', assetVersionId: 'canvas-file:canvas/media/take-2.mp4', duration: 4, width: 1920, height: 1080 })
+    expect(await call('/api/canvas/timelines/film-1/version', { method: 'POST', json: { clipId: 'shot1-visuals', source: { nodeId: 'n3' }, baseRevision: 2 } }))
+      .toMatchObject({ status: 422, body: { code: 'CANVAS_TIMELINE_VERSION_TOO_SHORT' } })
+    expect((await call('/api/canvas/timelines/film-1/version', { method: 'POST', json: { clipId: 'shot1-visuals', source: { nodeId: 'n4' }, baseRevision: 2 } })).status).toBe(200)
+    expect((await call('/api/canvas/timelines/film-1/version', { method: 'POST', json: { clipId: 'shot1-visuals', source: { nodeId: 'n2' }, baseRevision: 0 } })).status).toBe(409)
+  })
+})
