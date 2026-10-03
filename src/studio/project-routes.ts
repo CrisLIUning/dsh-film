@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { appFileType } from '../apps.js'
+import { CanvasAssetStore } from '../canvas/assets.js'
+import type { CanvasAsset } from '../canvas/assets.js'
 import { serveFile } from '../files.js'
 import type { ProjectEvents } from './events.js'
 import { StudioApiError } from './router.js'
@@ -110,11 +112,12 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
     audioDurationsSec: [],
   }))
 
-  // The asset library scan is ported in a later step; an empty library keeps the panel working.
-  router.add('GET', '/api/canvas/assets/:boardId', async request => ({
-    boardId: request.params.boardId!, projectId: projectOf(request), assets: [], scannedAt: new Date().toISOString(),
-  }))
-  router.add('PUT', '/api/canvas/assets/:boardId', async request => ({
-    boardId: request.params.boardId!, projectId: projectOf(request), assets: [], scannedAt: new Date().toISOString(),
-  }))
+  // The asset library: the project's media, wearing the overlay the canvas saves.
+  router.add('GET', '/api/canvas/assets/:boardId', async request =>
+    new CanvasAssetStore(request.cwd).read(request.params.boardId!, projectOf(request)))
+  router.add('PUT', '/api/canvas/assets/:boardId', async (request) => {
+    const body = await request.json()
+    if (!Array.isArray(body.assets)) throw new StudioApiError(400, 'BAD_REQUEST', 'assets must be an array.')
+    return new CanvasAssetStore(request.cwd).write(request.params.boardId!, projectOf(request), body.assets as CanvasAsset[])
+  })
 }

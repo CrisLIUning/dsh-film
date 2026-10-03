@@ -106,15 +106,17 @@ describe('dsh-film plugin', () => {
         },
       },
     })
-    const fiber = await ctx.plugin(Film)
+    // An empty apps folder: the packaged apps/ may hold built apps with hundreds of routes.
+    const fiber = await ctx.plugin(Film, { appsDir: cwd })
     expect(registered).toEqual([
       'GET,POST /api/dsh-film/project',
       'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
-      'GET,HEAD,POST /api/dsh-film/studio',
+      'GET,HEAD /api/dsh-film/studio',
+      'POST /api/dsh-film/studio-write',
     ])
     await fiber.dispose()
-    expect(removed.sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio'])
+    expect(removed.sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write'])
   })
 
   it('loads without a connection service', async () => {

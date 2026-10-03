@@ -99,8 +99,12 @@ export function filmRoutes(studio: StudioRouter = createStudioRouter()): Connect
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(project) },
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
-    // Uploads through the Studio-compatible API can be large: stream them.
-    { path: `${ROUTE_PREFIX}/studio`, methods: ['GET', 'HEAD', 'POST'], requestBody: 'streaming', fetch: request => studio.dispatch(request) },
+    // The Studio-compatible API on two routes: reads, and writes with streamed
+    // bodies (uploads can be large). One route cannot do both: the Host builds
+    // a streamed body for every method a streaming route declares, and a GET
+    // with a body is refused before it reaches the handler.
+    { path: `${ROUTE_PREFIX}/studio`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: request => studio.dispatch(request) },
+    { path: `${ROUTE_PREFIX}/studio-write`, methods: ['POST'], requestBody: 'streaming', fetch: request => studio.dispatch(request) },
   ]
 }
 

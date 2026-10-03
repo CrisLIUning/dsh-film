@@ -4,7 +4,8 @@
  * keep calling Studio's daemon paths; in their DSH build a small fetch wrapper
  * sends every such call to one Host route instead:
  *
- *   GET|POST /api/dsh-film/studio?cwd=<workspace>&path=<studio path and query>[&method=PUT|DELETE|PATCH]
+ *   GET|HEAD /api/dsh-film/studio?cwd=<workspace>&path=<studio path and query>
+ *   POST     /api/dsh-film/studio-write?cwd=<workspace>&path=<...>&method=POST|PUT|DELETE|PATCH
  *
  * The Host's API channel matches paths exactly and carries only GET, HEAD and
  * POST, so the Studio path and method travel in the query. This router
