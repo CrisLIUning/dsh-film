@@ -14,6 +14,10 @@
  * - `GET /api/canvas/timelines/:boardId/media` — the board's media nodes;
  *   `POST .../media` lands a film file on the board (an exported cut);
  *   `POST .../place` puts a board node (or a film file) on the cut.
+ * - `GET /api/canvas/timelines/:boardId/scripts` — scripts the desk can put on
+ *   the cut: the 剧本 tab's screenplays with dialogue, and the board's text nodes.
+ * - `POST /api/canvas/timelines/:boardId/sound` — lines, effects and music on
+ *   the cut's shots; a script becomes one caption per line.
  *
  * Errors answer `{ error: <text>, code }` like Studio's canvas routes.
  * @module dsh-film/studio/timeline-routes
@@ -27,6 +31,8 @@ import { listAssets, mediaTypeOf } from '../media.js'
 import type { MediaKind } from '../media.js'
 import { probeMedia } from '../media/probe.js'
 import { TimelinePlaceError, placeBoardMediaOnTimeline } from '../timeline/place.js'
+import { TimelineSoundError, listScriptNodes, listStoryScripts, placeSoundOnTimeline, readStories, storyScriptLines } from '../timeline/sound.js'
+import type { ScriptLine } from '../timeline/sound.js'
 import { TimelineVersionError, candidatesFor, findSlot, listSlots, publicSlot, swapSlotVersion } from '../timeline/versions.js'
 import type { Slot, Take } from '../timeline/versions.js'
 import { CANVAS_FILE_VERSION_PREFIX, TimelineCommandError, executeTimelineCommands, projectRawUrl } from '../timeline/commands.js'
@@ -135,7 +141,7 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
       if (error instanceof TimelineConflictError) throw new StudioReply(409, { error: error.message, code: error.code, current: await store.read() })
       if (error instanceof TimelineInvalidError) throw new StudioReply(400, { error: error.message, code: error.code })
       if (error instanceof TimelineCommandError) throw new StudioReply(422, { error: error.message, code: error.code, ...(error.operationId !== undefined ? { operationId: error.operationId } : {}) })
-      if (error instanceof TimelinePlaceError || error instanceof TimelineVersionError) throw new StudioReply(error.status, { error: error.message, code: error.code })
+      if (error instanceof TimelinePlaceError || error instanceof TimelineVersionError || error instanceof TimelineSoundError) throw new StudioReply(error.status, { error: error.message, code: error.code })
       if (error instanceof CanvasDocumentUpdateError) throw new StudioReply(409, { error: error.message, code: error.code })
       throw error
     }
@@ -210,6 +216,39 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
       ...(baseRevision !== undefined ? { baseRevision } : {}),
       dryRun,
       operationId: typeof body.operationId === 'string' && body.operationId.trim() !== '' ? body.operationId.trim().slice(0, 200) : `place-${Date.now().toString(36)}`,
+      probeDuration: async path => (await probeMedia(path)).durationSeconds,
+    }))
+  })
+
+  router.add('GET', '/api/canvas/timelines/:boardId/scripts', async (request) => {
+    const board = await boardOf(request).read(request.params.boardId!)
+    return { scripts: [...listStoryScripts(await readStories(request.cwd)), ...(board === null ? [] : listScriptNodes(board))] }
+  })
+
+  router.add('POST', '/api/canvas/timelines/:boardId/sound', async (request) => {
+    const body = await request.json()
+    const baseRevision = baseRevisionOf(body)
+    const dryRun = body.dryRun === true
+    if (!dryRun && baseRevision === undefined) throw new StudioReply(400, { error: 'an apply needs the baseRevision you reviewed; a dry run does not', code: 'CANVAS_TIMELINE_SOUND_INVALID' })
+    const store = storeOf(request)
+    const board = await boardOf(request).read(request.params.boardId!)
+    const script = body.script !== null && typeof body.script === 'object' ? body.script as Record<string, unknown> : undefined
+    let storyLines: ScriptLine[] | undefined
+    if (typeof script?.storyDocumentId === 'string') {
+      const story = (await readStories(request.cwd)).find(item => item.documentId === script.storyDocumentId)
+      if (story !== undefined) storyLines = storyScriptLines(story)
+    }
+    return answering(request, store, () => placeSoundOnTimeline({
+      store,
+      projectRoot: join(request.cwd, PROJECT_DIR),
+      projectId: projectOf(request),
+      boardId: request.params.boardId!,
+      boardDocument: board,
+      request: body,
+      ...(storyLines !== undefined ? { storyLines } : {}),
+      ...(baseRevision !== undefined ? { baseRevision } : {}),
+      dryRun,
+      operationId: typeof body.operationId === 'string' && body.operationId.trim() !== '' ? body.operationId.trim().slice(0, 200) : `sound-${Date.now().toString(36)}`,
       probeDuration: async path => (await probeMedia(path)).durationSeconds,
     }))
   })
