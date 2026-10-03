@@ -23,6 +23,9 @@ import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes } from './studio/screenwriter-routes.js'
+import { addTextRoutes } from './studio/text-routes.js'
+import { CanvasTextModels } from './canvas/text-models.js'
+import type { TextServices } from './canvas/text-models.js'
 import { addTimelineRoutes } from './studio/timeline-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
@@ -127,6 +130,10 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)
+  addTextRoutes(router, new CanvasTextModels(options.text ?? (() => ({}))), async (model) => {
+    const video = (await media()?.models())?.find(entry => entry.id === model)?.video
+    return video?.nativeAudio
+  })
   return router
 }
 
@@ -135,4 +142,6 @@ export interface StudioRouterOptions {
   media?: () => MediaServiceLike | undefined
   /** The canvas's media tasks (one per plugin instance, disposed with it). */
   tasks?: FilmMediaTasks
+  /** DSH's model services, read at each request (text-node answers, the prompt writer). */
+  text?: () => TextServices
 }

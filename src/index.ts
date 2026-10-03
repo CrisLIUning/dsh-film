@@ -23,6 +23,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { appRoutes, findApps, scanApp } from './apps.js'
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
+import type { AttachmentsLike, DefaultModelLike, LlmLike } from './canvas/text-models.js'
 import { createStudioRouter, filmRoutes } from './routes.js'
 
 export { FilmError } from './errors.js'
@@ -60,7 +61,13 @@ export function apply(ctx: Context, config: Config): void {
     const media = (): MediaServiceLike | undefined => scoped.get('vibedevMedia') as MediaServiceLike | undefined
     const tasks = new FilmMediaTasks(media)
     scoped.effect(() => () => { tasks.dispose() }, 'dsh-film: media tasks')
-    const routes = filmRoutes(createStudioRouter({ media, tasks }))
+    // Text-node answers and the prompt writer use the model the person uses in DSH.
+    const text = () => ({
+      llm: scoped.get('llm') as LlmLike | undefined,
+      defaults: scoped.get('agentDefaultModel') as DefaultModelLike | undefined,
+      attachments: scoped.get('attachments') as AttachmentsLike | undefined,
+    })
+    const routes = filmRoutes(createStudioRouter({ media, tasks, text }))
     for (const { app, directory } of findApps(config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim())) {
       const { files, skipped } = scanApp(app, directory)
       if (skipped.length > 0) {

@@ -128,6 +128,4 @@ export function addCanvasRoutes(router: StudioRouter, events: ProjectEvents, age
     return { id }
   })
 
-  // Text models for text nodes and prompt help: connected to the gateway in a later step.
-  router.add('GET', '/api/canvas/models', async () => ({ models: [], complete: true, warnings: [] }))
 }
