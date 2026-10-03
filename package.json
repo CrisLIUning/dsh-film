@@ -49,6 +49,14 @@
     "screenwriting",
     "video-editing"
   ],
+  "homepage": "https://github.com/CrisLIUning/dsh-film#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CrisLIUning/dsh-film.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CrisLIUning/dsh-film/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=20"
