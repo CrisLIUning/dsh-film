@@ -3,13 +3,7 @@ import { createStoryMarkdown, StoryOperationError } from './operations.js';
 import { parseStoryMarkdown, scanStoryTokens, StoryIdSchema } from './parser.js';
 import type { StoryBinding, StoryDiagnostic, StoryImportOptions, StoryImportResult, StoryMetadata } from './types.js';
 
-/** Reading exchange is deliberately distinct from a lossless native export (which is source itself). */
-export function projectStoryBody(source: string): string {
-  const scan = scanStoryTokens(source);
-  // Incomplete/malformed comments are author input, never silently deleted.
-  const ranges = scan.tokens.filter((token) => token.node !== null).map((token) => ({ ...token.range, text: '' }));
-  return applyTextEdits(source, ranges);
-}
+export { projectStoryBody } from './tokens.js';
 
 const collections = ['entities', 'scenes', 'shots', 'bindings', 'referenceOverrides', 'speech', 'appearances', 'beats', 'relationships', 'claims', 'deletedObjects'] as const;
 const references = new Set(['profileBlockId', 'headingBlockId', 'descriptionBlockId', 'blockId', 'blockIds', 'sourceBlockIds', 'evidenceBlockIds', 'entityId', 'entityIds', 'speakerId', 'placeId', 'fromEntityId', 'toEntityId', 'sceneId', 'sceneIds', 'shotId', 'shotIds', 'appearanceId', 'assetId', 'assetIds', 'orderBeforeId', 'orderAfterId']);

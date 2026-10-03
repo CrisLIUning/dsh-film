@@ -16,6 +16,7 @@ import { AppFrame } from './AppFrame.tsx'
 import type { FrameProtocol } from './AppFrame.tsx'
 import { canvasProtocol } from './canvas-protocol.ts'
 import { startProject, useProject } from './project-store.ts'
+import { ScreenwriterView } from './story/ScreenwriterView.tsx'
 import css from './workbench.module.css'
 
 const PROJECT_FILE = 'film/film.json'
@@ -47,7 +48,7 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
   }
   if (state.project === null) return <CreateProject cwd={cwd} t={t} />
   const hosted = hostedApp(view, state.project, cwd, openView)
-  const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} />
+  const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} project={state.project} />
   return (
     <div className={css.root}>
       <ProjectHeader project={state.project} t={t} />
@@ -96,10 +97,10 @@ function filmProtocol(query: Readonly<Record<string, string>>): FrameProtocol {
 }
 
 /** A part's own view: the script, and what the other parts show while their app is not in this build. */
-function NativePart({ view, cwd, visible, t }: WorkbenchProps): ReactNode {
+function NativePart({ view, cwd, visible, t, project }: WorkbenchProps & { project: FilmProject }): ReactNode {
   switch (view) {
     case 'timeline': return <MediaShelf cwd={cwd} visible={visible} t={t} />
-    case 'story': return <p className={css.soon}>{t('story.soon')}</p>
+    case 'story': return <ScreenwriterView cwd={cwd} project={project} visible={visible} t={t} />
     case 'board': return <p className={css.soon}>{t('board.soon')}</p>
     case 'director': return <p className={css.soon}>{t('director.soon')}</p>
   }

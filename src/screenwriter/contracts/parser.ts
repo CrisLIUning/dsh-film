@@ -1,8 +1,12 @@
 import { z } from 'zod';
-import { isJsonObject, parseJsonCst, StorySyntaxError, type JsonNode } from './json-cst.js';
-import { STORY_FORMAT, STORY_FORMAT_VERSION, type StoryBlock, type StoryDiagnostic, type StoryMetadata, type StoryParseResult, type StoryRange } from './types.js';
+import { isJsonObject } from './json-cst.js';
+import { pairStoryBlocks, scanStoryTokens, STORY_ID } from './tokens.js';
+import { STORY_FORMAT, STORY_FORMAT_VERSION, type StoryBlock, type StoryDiagnostic, type StoryMetadata, type StoryParseResult } from './types.js';
 
-export const StoryIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,191}$/, 'Invalid stable story ID');
+export { pairStoryBlocks, scanStoryTokens, storyBlockTitle, isStoryId, STORY_ID } from './tokens.js';
+export type { StoryScanResult, StoryToken } from './tokens.js';
+
+export const StoryIdSchema = z.string().regex(STORY_ID, 'Invalid stable story ID');
 const record = z.object({ id: StoryIdSchema }).passthrough();
 const ids = z.array(StoryIdSchema);
 const target = z.object({ kind: z.enum(['entity', 'shot']), id: StoryIdSchema }).passthrough();
@@ -38,78 +42,6 @@ export const STORY_REFERENCE_KINDS: Readonly<Record<string, string>> = {
   entityId: 'entity', entityIds: 'entity', speakerId: 'entity', placeId: 'entity', fromEntityId: 'entity', toEntityId: 'entity',
   sceneId: 'scene', sceneIds: 'scene', shotId: 'shot', shotIds: 'shot', appearanceId: 'appearance',
 };
-
-export interface StoryToken {
-  kind: 'metadata' | 'open' | 'close';
-  range: StoryRange;
-  payloadRange: StoryRange;
-  node: JsonNode | null;
-}
-export interface StoryScanResult { tokens: StoryToken[]; diagnostics: StoryDiagnostic[] }
-
-/** Recognize only standalone namespace comments outside fenced/indented code and raw HTML. */
-export function scanStoryTokens(source: string): StoryScanResult {
-  const tokens: StoryToken[] = [];
-  const diagnostics: StoryDiagnostic[] = [];
-  let cursor = 0;
-  let fence: { char: string; count: number } | null = null;
-  let rawTag: string | null = null;
-  while (cursor < source.length) {
-    const newline = source.indexOf('\n', cursor);
-    const lineEnd = newline === -1 ? source.length : newline;
-    const nextLine = newline === -1 ? source.length : newline + 1;
-    const line = source.slice(cursor, lineEnd).replace(/\r$/, '');
-    const lineWithoutBom = cursor === 0 ? line.replace(/^\uFEFF/, '') : line;
-    if (rawTag) {
-      if (new RegExp(`</${rawTag}\\s*>`, 'i').test(line)) rawTag = null;
-      cursor = nextLine; continue;
-    }
-    const fenced = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lineWithoutBom);
-    if (fence) {
-      if (fenced && fenced[1]![0] === fence.char && fenced[1]!.length >= fence.count && !fenced[2]!.trim()) fence = null;
-      cursor = nextLine; continue;
-    }
-    if (fenced && (fenced[1]![0] !== '`' || !fenced[2]!.includes('`'))) {
-      fence = { char: fenced[1]![0]!, count: fenced[1]!.length };
-      cursor = nextLine; continue;
-    }
-    const raw = /^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)/i.exec(lineWithoutBom);
-    if (raw) {
-      if (!new RegExp(`</${raw[1]}\\s*>`, 'i').test(line)) rawTag = raw[1]!;
-      cursor = nextLine; continue;
-    }
-    const opening = /^ {0,3}<!--/.exec(lineWithoutBom);
-    if (!opening) { cursor = nextLine; continue; }
-    const start = cursor + line.indexOf('<!--');
-    const close = source.indexOf('-->', start + 4);
-    const end = close === -1 ? source.length : close + 3;
-    const contentEnd = close === -1 ? source.length : close;
-    const interior = source.slice(start + 4, contentEnd);
-    const recognized = /^\s*(vibedev:screenwriter|sw:block|\/sw:block)(?=\s|$)/.exec(interior);
-    if (recognized) {
-      const kind = recognized[1] === 'vibedev:screenwriter' ? 'metadata' : recognized[1] === 'sw:block' ? 'open' : 'close';
-      const payloadRange = { start: start + 4 + recognized[0].length, end: contentEnd };
-      let node: JsonNode | null = null;
-      if (close === -1) diagnostics.push({ code: 'unclosed-comment', severity: 'error', message: '技术注释尚未闭合；原稿已保留。', range: { start, end } });
-      else {
-        const remainderEnd = source.indexOf('\n', end);
-        if (source.slice(end, remainderEnd === -1 ? source.length : remainderEnd).trim()) {
-          diagnostics.push({ code: 'marker-not-standalone', severity: 'error', message: '编剧技术注释必须独占一行。', range: { start, end } });
-        }
-        try { node = parseJsonCst(source, payloadRange.start, payloadRange.end); }
-        catch (error) {
-          const offset = error instanceof StorySyntaxError ? error.offset : payloadRange.start;
-          diagnostics.push({ code: 'invalid-json', severity: 'error', message: error instanceof Error ? error.message : 'Invalid metadata JSON.', range: { start: offset, end: Math.min(offset + 1, source.length) } });
-        }
-      }
-      tokens.push({ kind, range: { start, end }, payloadRange, node });
-    }
-    // An ordinary multi-line author comment owns all of its contents as opaque text.
-    const afterComment = source.indexOf('\n', end);
-    cursor = afterComment === -1 ? source.length : afterComment + 1;
-  }
-  return { tokens, diagnostics };
-}
 
 export function isSafeStoryAssetPath(path: string): boolean {
   if (!path || /[\u0000-\u001f\u007f\\]/.test(path) || path.startsWith('/') || /^[A-Za-z][A-Za-z\d+.-]*:/.test(path)) return false;
@@ -241,28 +173,9 @@ export function parseStoryMarkdown(source: string): StoryParseResult {
       if (format === 'unsupported') diagnostics.push({ code: 'unsupported-format', severity: 'error', message: `尚不支持 ${metadata.formatVersion} 格式的语义修改；原文完整保留。`, range: metadataToken.range });
     } else for (const issue of parsed.error.issues) diagnostics.push({ code: 'invalid-metadata', severity: 'error', message: issue.message, path: issue.path.join('.'), range: metadataToken.range });
   }
-  const stack: StoryToken[] = [];
-  for (const token of scan.tokens) {
-    if (token.kind === 'metadata') continue;
-    const value = token.node?.value;
-    if (!isJsonObject(value) || !StoryIdSchema.safeParse(value.id).success || (token.kind === 'open' && typeof value.kind !== 'string')) {
-      diagnostics.push({ code: 'invalid-block-marker', severity: 'error', message: '正文块锚点缺少合法 ID 或类型。', range: token.range }); continue;
-    }
-    if (token.kind === 'open') {
-      if (stack.length) diagnostics.push({ code: 'nested-block', severity: 'error', message: '受管理正文块不能嵌套。', objectId: value.id as string, range: token.range });
-      stack.push(token); continue;
-    }
-    const open = stack.at(-1);
-    if (!open || (open.node?.value as Record<string, unknown>).id !== value.id) {
-      diagnostics.push({ code: 'unmatched-block-close', severity: 'error', message: '正文块结束锚点没有对应开始锚点。', objectId: value.id as string, range: token.range }); continue;
-    }
-    stack.pop();
-    blocks.push({ id: value.id as string, kind: (open.node!.value as Record<string, unknown>).kind as string,
-      markdown: source.slice(open.range.end, token.range.start), range: { start: open.range.start, end: token.range.end },
-      contentRange: { start: open.range.end, end: token.range.start }, openRange: open.range, closeRange: token.range });
-  }
-  for (const open of stack) diagnostics.push({ code: 'unclosed-block', severity: 'error', message: '正文块尚未闭合；保留原文，暂停关联操作。', range: open.range });
-  blocks.sort((a, b) => a.range.start - b.range.start);
+  const paired = pairStoryBlocks(source, scan.tokens);
+  blocks.push(...paired.blocks);
+  diagnostics.push(...paired.diagnostics);
   if (!metadataTokens.length && scan.tokens.length) diagnostics.push({ code: 'missing-metadata', severity: 'error', message: '原文包含稳定块锚点但缺少文档声明。' });
   if (metadata) diagnostics.push(...validateRelations(metadata, blocks));
   else {
@@ -274,10 +187,4 @@ export function parseStoryMarkdown(source: string): StoryParseResult {
   }
   return { source, format, metadata, metadataRange: metadataToken?.range ?? null, blocks, diagnostics,
     semanticEditable: format === 'native' && !diagnostics.some((diagnostic) => diagnostic.severity === 'error') };
-}
-
-export function storyBlockTitle(block: StoryBlock | undefined): string {
-  if (!block) return '';
-  const heading = /^ {0,3}#{1,6}[\t ]+(.*?)(?:[\t ]+#+[\t ]*)?\r?$/m.exec(block.markdown);
-  return (heading?.[1]?.trim() ?? block.markdown.trim().split(/\r?\n/, 1)[0] ?? '').replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, '$1');
 }

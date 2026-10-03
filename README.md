@@ -2,7 +2,7 @@
 
 在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和 VibeDev 里做片：聊天右侧的侧栏多出四个标签——**剧本、分镜画布、剪辑台、导演台**。左边和 Agent 聊，右边看和改成果。项目是工作区里 `film/` 下的普通文件，Agent 用文件工具也能读写。
 
-> 现在是 0.0.x 预览版。分镜画布（含导演台）和剪辑台用的是 VibeDev 的原版前端，跑在插件自己的接口上；剧本标签还在做。图片、视频的生成由 [dsh-media](https://github.com/CrisLIUning/dsh-media) 负责，剪辑台的编辑器来自 [vibedev-video-editor](https://github.com/CrisLIUning/vibedev-video-editor)。
+> 现在是 0.0.x 预览版。分镜画布（含导演台）和剪辑台用的是 VibeDev 的原版前端，跑在插件自己的接口上；剧本标签是按 DSH 界面重写的，文件格式与 VibeDev Studio 的编剧台相同。图片、视频的生成由 [dsh-media](https://github.com/CrisLIUning/dsh-media) 负责，剪辑台的编辑器来自 [vibedev-video-editor](https://github.com/CrisLIUning/vibedev-video-editor)。
 
 A film workbench for DeepSeek Harness and VibeDev: four right-sidebar tabs — script, storyboard, editing desk and director desk — working on one film per workspace, kept as plain files under `film/`. In this 0.0.x preview the storyboard (with the director desk) and the editing desk are VibeDev's original front ends running on the plugin's own API; the script tab is still to come.
 
@@ -21,6 +21,7 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 ```
 <workspace>/
   film/film.json             项目信息：片名、画幅（format vibedev.film, version 1）
+  film/story/<id>.md         剧本：正文是 Markdown，场次、镜头、人物等记在隐藏的结构标记里
   film/canvas/document.json  分镜画布
   film/canvas/timeline.json  剪辑台的剪辑和撤销历史（与 VibeDev Studio 同一格式）
   film/canvas/media/         生成、导入的素材
