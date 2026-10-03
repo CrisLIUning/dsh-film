@@ -175,12 +175,23 @@ function sizeFor(aspect: string | undefined): string | undefined {
   return ratio > 1 ? '1536x1024' : '1024x1536'
 }
 
+/**
+ * What a person in the canvas should read for the failures they can act on;
+ * dsh-media's own messages are written for the agent.
+ */
+const USER_MESSAGES: Readonly<Record<string, string>> = {
+  NOT_SIGNED_IN: '生成需要登录 VibeDev 账号：在插件页打开 dsh-media 的设置登录。在 VibeDev 应用里会直接使用应用登录的账号。',
+  INSUFFICIENT_BALANCE: 'VibeDev 余额不足，充值后再试。',
+  SPENDING_DECLINED: '已取消，没有扣费。',
+  ABORTED: '已取消。',
+}
+
 function errorOf(error: unknown): FilmTaskError {
   const coded = error as { code?: unknown; message?: unknown; details?: { retryable?: unknown } } | undefined
   const code = typeof coded?.code === 'string' ? coded.code : undefined
   const status = code === 'NOT_SIGNED_IN' ? 401 : code === 'INSUFFICIENT_BALANCE' ? 402 : code === 'ABORTED' ? 499 : 502
   return {
-    message: error instanceof Error ? error.message : String(error),
+    message: (code === undefined ? undefined : USER_MESSAGES[code]) ?? (error instanceof Error ? error.message : String(error)),
     ...code === undefined ? {} : { code },
     status,
     ...typeof coded?.details?.retryable === 'boolean' ? { retryable: coded.details.retryable } : {},
