@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, open, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { appFileType } from '../apps.js'
 import { CanvasAssetStore } from '../canvas/assets.js'
@@ -23,6 +23,8 @@ import { projectOf } from './canvas-routes.js'
 export const PROJECT_DIR = 'film'
 /** Studio's upload limit. */
 export const UPLOAD_LIMIT = 20 * 1024 * 1024
+/** The limit of a raw upload (an exported cut, a generated clip), streamed to disk. */
+export const RAW_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024
 
 /** Documents a browser could run scripts from; served in a sandbox. */
 const UNTRUSTED_DOCUMENTS = new Set(['.html', '.htm', '.svg', '.xml', '.xhtml'])
@@ -39,6 +41,47 @@ export function projectPath(cwd: string, path: string): string {
     throw new StudioApiError(400, 'BAD_REQUEST', 'A path inside the project is required.')
   }
   return join(cwd, PROJECT_DIR, ...parts)
+}
+
+/**
+ * A project path nothing holds yet: `path` itself, or `<stem>-2.<ext>`,
+ * `-3`... A name is taken whatever its case, as on Windows.
+ * @param cwd - the workspace directory.
+ * @param path - the wanted project-relative path.
+ * @returns the first free path.
+ */
+export async function freeProjectPath(cwd: string, path: string): Promise<string> {
+  const match = /^(.*?)(\.[A-Za-z0-9]+)?$/.exec(path)
+  const stem = match?.[1] ?? path
+  const extension = match?.[2] ?? ''
+  for (let index = 1; index < 10_000; index++) {
+    const candidate = index === 1 ? path : `${stem}-${index}${extension}`
+    if (await lstat(projectPath(cwd, candidate)).catch(() => undefined) === undefined) return candidate
+  }
+  throw new StudioApiError(409, 'CONFLICT', `No free name for ${path}.`)
+}
+
+/** Stream a request body into a new file, refusing it past `limit` bytes; returns the size. */
+async function writeBody(request: Request, path: string, limit: number): Promise<number> {
+  const handle = await open(path, 'wx')
+  let size = 0
+  try {
+    const reader = request.body?.getReader()
+    if (reader === undefined) return 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel().catch(() => {})
+        throw new StudioApiError(413, 'PAYLOAD_TOO_LARGE', `The file exceeds the ${limit / 1024 / 1024 / 1024} GB upload limit.`)
+      }
+      await handle.write(value)
+    }
+  } finally {
+    await handle.close()
+  }
+  return size
 }
 
 async function insideProject(cwd: string, target: string): Promise<boolean> {
@@ -99,6 +142,41 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
     const relativeName = relative(join(request.cwd, PROJECT_DIR), target).split(sep).join('/')
     events.emit(request.cwd, { type: 'file-changed', projectId: projectOf(request), path: relativeName })
     return { file: { name: relativeName, size: file.size, mime: file.type || appFileType(target) } }
+  })
+
+  // A raw upload: the request body is the file, streamed to disk. With
+  // `?unique=1` an existing name is not replaced: the file takes the first
+  // free `-N` name instead, and the answer says which.
+  router.add('PUT', '/api/projects/:projectId/raw/*path', async (request) => {
+    const wanted = request.params.path!.replace(/\\/g, '/').split('/').filter(part => part !== '' && part !== '.').join('/')
+    const target = projectPath(request.cwd, wanted)
+    await mkdir(dirname(target), { recursive: true })
+    if (!await insideProject(request.cwd, dirname(target))) throw new StudioApiError(400, 'BAD_REQUEST', 'A path inside the project is required.')
+    const temporary = join(dirname(target), `.upload-${randomUUID()}.tmp`)
+    try {
+      const size = await writeBody(request.raw, temporary, RAW_UPLOAD_LIMIT)
+      let kept = wanted
+      if (request.query.get('unique') === '1') {
+        // link() refuses an existing name, so two uploads cannot take the same one.
+        for (;;) {
+          kept = await freeProjectPath(request.cwd, wanted)
+          try {
+            await link(temporary, projectPath(request.cwd, kept))
+            break
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+          }
+        }
+      } else {
+        const existing = await lstat(target).catch(() => undefined)
+        if (existing?.isSymbolicLink() === true || existing?.isDirectory() === true) throw new StudioApiError(409, 'CONFLICT', 'The path is not a regular file.')
+        await rename(temporary, target)
+      }
+      events.emit(request.cwd, { type: 'file-changed', projectId: projectOf(request), path: kept })
+      return { file: { name: kept, size, mime: appFileType(kept) } }
+    } finally {
+      await rm(temporary, { force: true })
+    }
   })
 
   // The asset library: the project's media, wearing the overlay the canvas saves.

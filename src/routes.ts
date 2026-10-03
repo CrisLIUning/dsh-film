@@ -23,6 +23,7 @@ import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes } from './studio/screenwriter-routes.js'
+import { addTimelineRoutes } from './studio/timeline-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -125,6 +126,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addCanvasRoutes(router, events)
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
+  addTimelineRoutes(router, events)
   return router
 }
 

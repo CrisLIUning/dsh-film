@@ -5,11 +5,16 @@
  * - canvas: the storyboard canvas with its 3D director desk overlay, from the
  *   vibedev-canvas checkout (DSH_FILM_CANVAS_SRC, default ../canvas), built by
  *   its own web/scripts/build-dsh.mjs into web/dist-dsh.
+ * - editor: the editing desk, from the vibedev-video-editor checkout
+ *   (DSH_FILM_EDITOR_SRC, default ../video-editor), built by its
+ *   `npm run build:dsh` into dist-dsh (the editor bundle and its host page).
+ *   The same build's bridge contract — the timeline command engine the Host
+ *   half runs — is copied to vendor/video-editor-bridge.mjs.
  *
  * Every file must be routable by the Host's API channel (path segments of
  * [A-Za-z0-9_$.-]); the build stops on one that is not.
  *
- *   node scripts/build-apps.mjs [canvas]
+ *   node scripts/build-apps.mjs [canvas] [editor]
  */
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, readdirSync, rmSync, statSync } from 'node:fs'
@@ -24,6 +29,17 @@ const APPS = {
     build(source) {
       run('node', ['scripts/build-dsh.mjs'], join(source, 'web'))
       return join(source, 'web', 'dist-dsh')
+    },
+  },
+  editor: {
+    source: resolve(process.env.DSH_FILM_EDITOR_SRC ?? join(root, '..', 'video-editor')),
+    build(source) {
+      run('npm', ['run', 'build:dsh'], source)
+      const bridge = join(source, 'packages', 'video-editor-bridge')
+      run('node', ['./esbuild.config.mjs'], bridge)
+      cpSync(join(bridge, 'dist', 'index.mjs'), join(root, 'vendor', 'video-editor-bridge.mjs'))
+      console.log('[apps] editor: bridge contract → vendor/video-editor-bridge.mjs')
+      return join(source, 'dist-dsh')
     },
   },
 }
