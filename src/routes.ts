@@ -15,6 +15,9 @@ import { FilmError } from './errors.js'
 import { listAssets, serveMedia } from './media.js'
 import { createProject, parseNewProject, readProject, workspaceDirectory } from './project.js'
 import { StoryService } from './screenwriter/service.js'
+import { addCanvasRoutes } from './studio/canvas-routes.js'
+import { ProjectEvents } from './studio/events.js'
+import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes } from './studio/screenwriter-routes.js'
 
@@ -107,6 +110,11 @@ export function filmRoutes(studio: StudioRouter = createStudioRouter()): Connect
  */
 export function createStudioRouter(): StudioRouter {
   const router = new StudioRouter()
-  addScreenwriterRoutes(router, new StoryService())
+  const events = new ProjectEvents()
+  addScreenwriterRoutes(router, new StoryService(), (cwd, documentId, revision) => {
+    events.emit(cwd, { type: 'story-changed', documentId, revision })
+  })
+  addCanvasRoutes(router, events)
+  addProjectRoutes(router, events)
   return router
 }

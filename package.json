@@ -19,6 +19,7 @@
   "files": [
     "lib",
     "client",
+    "apps",
     "locale",
     "icon.svg",
     "cordis.patch.yml",
@@ -57,7 +58,8 @@
     "build:client": "tsdown && node scripts/check-client.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test": "vitest run",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "build:apps": "node scripts/build-apps.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

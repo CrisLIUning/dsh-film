@@ -38,6 +38,19 @@ export interface StudioRequest {
 /** A handler answers with a Response, or with a value sent as JSON. */
 export type StudioHandler = (request: StudioRequest) => Promise<unknown>
 
+/**
+ * Thrown by a handler to answer with exactly this status and JSON body — for
+ * Studio routes whose error answers are not in the shared error shape (the
+ * canvas routes answer `{ error: <text>, code }`).
+ */
+export class StudioReply extends Error {
+  override name = 'StudioReply'
+
+  constructor(readonly status: number, readonly body: Readonly<Record<string, unknown>>) {
+    super(typeof body.error === 'string' ? body.error : `HTTP ${status}`)
+  }
+}
+
 /** An error a handler throws to answer in Studio's error shape. */
 export class StudioApiError extends Error {
   override name = 'StudioApiError'
@@ -89,7 +102,8 @@ export class StudioRouter {
   /**
    * Add a route.
    * @param method - the Studio method.
-   * @param pattern - the Studio path, `:name` for a captured segment.
+   * @param pattern - the Studio path, `:name` for a captured segment and a
+   *   final `*name` for the rest of the path (decoded, `/`-joined).
    * @param handler - the handler.
    * @returns this router.
    */
@@ -112,12 +126,21 @@ export class StudioRouter {
     const parts = path.split('/').filter(segment => segment !== '')
     let pathMatched = false
     for (const route of this.routes) {
-      if (route.segments.length !== parts.length) continue
+      const rest = route.segments.at(-1)?.startsWith('*') === true
+      if (rest ? parts.length < route.segments.length : route.segments.length !== parts.length) continue
       const params: Record<string, string> = {}
       let matched = true
-      for (let index = 0; index < parts.length; index++) {
+      for (let index = 0; index < route.segments.length; index++) {
         const expected = route.segments[index]!
         const actual = parts[index]!
+        if (expected.startsWith('*')) {
+          try {
+            params[expected.slice(1)] = parts.slice(index).map(part => decodeURIComponent(part)).join('/')
+          } catch {
+            matched = false
+          }
+          break
+        }
         if (expected.startsWith(':')) {
           try {
             params[expected.slice(1)] = decodeURIComponent(actual)
@@ -177,6 +200,7 @@ export class StudioRouter {
         const answer = translate(error)
         if (answer !== undefined) return answer
       }
+      if (error instanceof StudioReply) return json(error.status, error.body)
       if (error instanceof StudioApiError) return studioError(error.status, error.generic, error.message, error.extra)
       if (error instanceof FilmError) return studioError(error.status, error.status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', error.message, { code: error.code })
       const fileCode = (error as NodeJS.ErrnoException | undefined)?.code

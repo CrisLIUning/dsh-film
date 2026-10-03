@@ -13,6 +13,8 @@ import type { FilmView, Translate, WorkbenchProps } from '../types.ts'
 import { ASPECT_RATIOS, fetchAssets, mediaUrl } from './api.ts'
 import type { AspectRatio, FilmProject, MediaAsset } from './api.ts'
 import { AppFrame } from './AppFrame.tsx'
+import type { FrameProtocol } from './AppFrame.tsx'
+import { canvasProtocol } from './canvas-protocol.ts'
 import { startProject, useProject } from './project-store.ts'
 import css from './workbench.module.css'
 
@@ -44,7 +46,7 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
     )
   }
   if (state.project === null) return <CreateProject cwd={cwd} t={t} />
-  const hosted = HOSTED_APPS[view]
+  const hosted = hostedApp(view, state.project, cwd, openView)
   const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} />
   return (
     <div className={css.root}>
@@ -54,8 +56,9 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
         : (
             <div className={css.frameBody}>
               <AppFrame
-                app={hosted}
-                query={{ cwd, project: state.project.id }}
+                key={`${view}:${state.project.id}`}
+                app={hosted.app}
+                protocol={hosted.protocol}
                 title={t(`${view}.title`)}
                 t={t}
                 missing={<div className={css.body}>{native}</div>}
@@ -66,11 +69,30 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
   )
 }
 
-/** The parts drawn by an original app this plugin hosts, by app directory. */
-const HOSTED_APPS: Partial<Record<FilmView, string>> = {
-  board: 'canvas',
-  timeline: 'editor',
-  director: 'director',
+/**
+ * The original app that draws a part, with the protocol the workbench hosts it by.
+ * The storyboard and the director desk are the same canvas page: the desk is
+ * its overlay, as in Studio.
+ */
+function hostedApp(view: FilmView, project: FilmProject, cwd: string, openView: (view: FilmView) => void): { app: string; protocol: FrameProtocol } | undefined {
+  switch (view) {
+    case 'board':
+    case 'director':
+      return { app: 'canvas', protocol: canvasProtocol({ projectId: project.id, title: project.title, cwd, view: view === 'board' ? 'canvas' : 'director', openView }) }
+    case 'timeline':
+      return { app: 'editor', protocol: filmProtocol({ cwd, project: project.id }) }
+    default:
+      return undefined
+  }
+}
+
+/** For apps written for this workbench: the workspace in the URL, the look by message. */
+function filmProtocol(query: Readonly<Record<string, string>>): FrameProtocol {
+  return {
+    query: theme => ({ ...query, theme: theme.scheme }),
+    sendTheme: (post, theme) => { post({ source: 'dsh-film', type: 'theme', theme }) },
+    receive: () => {},
+  }
 }
 
 /** A part's own view: the script, and what the other parts show while their app is not in this build. */
