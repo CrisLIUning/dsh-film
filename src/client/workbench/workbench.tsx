@@ -9,9 +9,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Button, Input, SegmentedControl, Tag, fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Translate, WorkbenchProps } from '../types.ts'
+import type { FilmView, Translate, WorkbenchProps } from '../types.ts'
 import { ASPECT_RATIOS, fetchAssets, mediaUrl } from './api.ts'
 import type { AspectRatio, FilmProject, MediaAsset } from './api.ts'
+import { AppFrame } from './AppFrame.tsx'
 import { startProject, useProject } from './project-store.ts'
 import css from './workbench.module.css'
 
@@ -43,17 +44,37 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
     )
   }
   if (state.project === null) return <CreateProject cwd={cwd} t={t} />
+  const hosted = HOSTED_APPS[view]
+  const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} />
   return (
     <div className={css.root}>
       <ProjectHeader project={state.project} t={t} />
-      <div className={css.body}>
-        <PartBody view={view} cwd={cwd} visible={visible} t={t} openView={openView} />
-      </div>
+      {hosted === undefined
+        ? <div className={css.body}>{native}</div>
+        : (
+            <div className={css.frameBody}>
+              <AppFrame
+                app={hosted}
+                query={{ cwd, project: state.project.id }}
+                title={t(`${view}.title`)}
+                t={t}
+                missing={<div className={css.body}>{native}</div>}
+              />
+            </div>
+          )}
     </div>
   )
 }
 
-function PartBody({ view, cwd, visible, t }: WorkbenchProps): ReactNode {
+/** The parts drawn by an original app this plugin hosts, by app directory. */
+const HOSTED_APPS: Partial<Record<FilmView, string>> = {
+  board: 'canvas',
+  timeline: 'editor',
+  director: 'director',
+}
+
+/** A part's own view: the script, and what the other parts show while their app is not in this build. */
+function NativePart({ view, cwd, visible, t }: WorkbenchProps): ReactNode {
   switch (view) {
     case 'timeline': return <MediaShelf cwd={cwd} visible={visible} t={t} />
     case 'story': return <p className={css.soon}>{t('story.soon')}</p>

@@ -9,6 +9,8 @@ export const zh = {
   'tab.loadFailed': '影视工作台没能加载：{message}',
   'tab.retry': '重试',
   'tab.noWorkspace': '这个会话没有工作区。影视项目存成工作区里的文件，请在有工作区的会话里打开。',
+  'app.loading': '正在打开…',
+  'app.failed': '没能打开这个工作台。',
 
   'story.title': '剧本',
   'story.guide.description': '分场大纲、角色和版本，写好交给分镜画布',
@@ -58,6 +60,8 @@ export const en: Record<FilmKey, string> = {
   'tab.loadFailed': 'The film workbench could not load: {message}',
   'tab.retry': 'Retry',
   'tab.noWorkspace': 'This session has no workspace. Film projects are files in a workspace; open the workbench from a session that has one.',
+  'app.loading': 'Opening…',
+  'app.failed': 'This desk could not be opened.',
 
   'story.title': 'Script',
   'story.guide.description': 'Scene outline, characters and versions, handed to the storyboard when ready',

@@ -5,12 +5,10 @@
  * @module dsh-film/media
  */
 
-import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join } from 'node:path'
-import { Readable } from 'node:stream'
-import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { FilmError } from './errors.js'
+import { serveFile } from './files.js'
 
 export type MediaKind = 'image' | 'video' | 'audio'
 
@@ -98,43 +96,8 @@ export async function listAssets(cwd: string, limit = ASSET_LIMIT): Promise<{ as
   return { assets, truncated }
 }
 
-/** The most bytes one range response carries; the player asks again for the rest. */
-export const RANGE_CHUNK = 8 * 1024 * 1024
-
-/**
- * Read a `Range` header against a file size.
- * @param header - the request's `Range` header.
- * @param size - the file size in bytes.
- * @returns the inclusive byte range to send, `'unsatisfiable'` for a range
- *   past the end, or `undefined` to send the whole file (no header, or one
- *   this server does not serve: several ranges or a malformed one).
- */
-export function parseRange(header: string | null, size: number): { start: number; end: number } | 'unsatisfiable' | undefined {
-  if (header === null) return undefined
-  const match = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i.exec(header)
-  if (match === null) return undefined
-  const [, first = '', last = ''] = match
-  let start: number
-  let end: number
-  if (first === '') {
-    if (last === '') return undefined
-    const suffix = Number(last)
-    if (suffix === 0 || size === 0) return 'unsatisfiable'
-    start = Math.max(0, size - suffix)
-    end = size - 1
-  } else {
-    start = Number(first)
-    if (last !== '' && Number(last) < start) return undefined
-    if (start >= size) return 'unsatisfiable'
-    end = last === '' ? size - 1 : Math.min(Number(last), size - 1)
-  }
-  return { start, end: Math.min(end, start + RANGE_CHUNK - 1) }
-}
-
 const MEDIA_HEADERS = {
-  'Accept-Ranges': 'bytes',
   'Cache-Control': 'private, no-store',
-  'X-Content-Type-Options': 'nosniff',
   'Content-Security-Policy': "sandbox; default-src 'none'",
 }
 
@@ -152,23 +115,5 @@ export async function serveMedia(request: Request): Promise<Response> {
   if (media === undefined) throw new FilmError('NOT_MEDIA', 'Only image, video and audio files are served here.')
   const info = await stat(path).catch(() => undefined)
   if (info?.isFile() !== true) throw new FilmError('FILE_NOT_FOUND', 'The media file does not exist.')
-  const size = info.size
-  const headers: Record<string, string> = { ...MEDIA_HEADERS, 'Content-Type': media.type, 'Last-Modified': info.mtime.toUTCString() }
-  const range = parseRange(request.headers.get('range'), size)
-  if (range === 'unsatisfiable') {
-    return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${size}` } })
-  }
-  const start = range?.start ?? 0
-  const end = range?.end ?? size - 1
-  const length = size === 0 ? 0 : end - start + 1
-  headers['Content-Length'] = String(length)
-  if (range !== undefined) headers['Content-Range'] = `bytes ${start}-${end}/${size}`
-  const status = range === undefined ? 200 : 206
-  if (request.method === 'HEAD' || length === 0) return new Response(null, { status, headers })
-  const stream = createReadStream(path, { start, end })
-  const stop = (): void => { stream.destroy() }
-  request.signal.addEventListener('abort', stop, { once: true })
-  stream.once('close', () => { request.signal.removeEventListener('abort', stop) })
-  const body = Readable.toWeb(stream) as WebReadableStream<Uint8Array>
-  return new Response(body as unknown as ReadableStream<Uint8Array>, { status, headers })
+  return serveFile(request, { path, size: info.size, modified: info.mtime, type: media.type, headers: MEDIA_HEADERS })
 }

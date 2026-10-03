@@ -45,6 +45,23 @@
   scrollbar-gutter: stable;
 }
 
+/* A hosted app takes the whole area under the header, edge to edge. */
+.frameBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.appFrame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
 .notice {
   display: flex;
   flex-direction: column;

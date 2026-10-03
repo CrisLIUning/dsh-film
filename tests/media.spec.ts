@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FilmError } from '../src/errors.js'
-import { RANGE_CHUNK, listAssets, mediaTypeOf, parseRange, serveMedia } from '../src/media.js'
+import { RANGE_CHUNK, parseRange } from '../src/files.js'
+import { listAssets, mediaTypeOf, serveMedia } from '../src/media.js'
 
 let cwd: string
 

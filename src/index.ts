@@ -16,9 +16,11 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import Schema from '@deepseek-ai/schemastery'
+import { appRoutes, findApps, scanApp } from './apps.js'
 import { filmRoutes } from './routes.js'
 
 export { FilmError } from './errors.js'
@@ -31,19 +33,36 @@ export const version: string = (JSON.parse(readFileSync(new URL('../package.json
 
 export const name = 'dsh-film'
 
-/** No settings yet. */
-export interface Config {}
+export interface Config {
+  /** Where the built apps are; empty for the package's own `apps/`. For developing an app against a live Host. */
+  appsDir: string
+}
 
-export const Config: Schema<Config> = Schema.object({})
+export const Config: Schema<Config> = Schema.object({
+  appsDir: Schema.string().default(''),
+})
+
+/** The package's built apps. */
+const PACKAGED_APPS = fileURLToPath(new URL('../apps/', import.meta.url))
 
 /**
- * Register the workbench routes while a client connection service is running.
+ * Register the workbench routes and the hosted apps' files while a client
+ * connection service is running.
  * @param ctx - the plugin context.
+ * @param config - the plugin settings.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config): void {
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.
   ctx.inject(['connection'], (scoped) => {
-    for (const route of filmRoutes()) {
+    const routes = filmRoutes()
+    for (const { app, directory } of findApps(config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim())) {
+      const { files, skipped } = scanApp(app, directory)
+      if (skipped.length > 0) {
+        scoped.logger.warn(`dsh-film: ${skipped.length} file(s) of the ${app} app have names the Host cannot route and are not served, e.g. ${skipped[0]}`)
+      }
+      routes.push(...appRoutes(files))
+    }
+    for (const route of routes) {
       scoped.effect(() => scoped.connection.fetch.register(route), `dsh-film: ${route.path}`)
     }
   })
