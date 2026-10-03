@@ -1,0 +1,4 @@
+# 把影视工作台插件插入 profile。
+- insert:
+    - id: dsh-film
+      name: dsh-film

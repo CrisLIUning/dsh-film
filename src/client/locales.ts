@@ -1,0 +1,101 @@
+/**
+ * The workbench's copy. The entry registers both dictionaries; the lazily
+ * loaded workbench receives the bound translate function through props, so it
+ * carries no copy of its own.
+ */
+
+export const zh = {
+  'tab.loading': '正在打开影视工作台…',
+  'tab.loadFailed': '影视工作台没能加载：{message}',
+  'tab.retry': '重试',
+  'tab.noWorkspace': '这个会话没有工作区。影视项目存成工作区里的文件，请在有工作区的会话里打开。',
+
+  'story.title': '剧本',
+  'story.guide.description': '分场大纲、角色和版本，写好交给分镜画布',
+  'story.soon': '剧本编辑即将提供。现在可以先让 Agent 在 film/story/ 里写剧本。',
+  'board.title': '分镜画布',
+  'board.guide.description': '把场次和镜头排成卡片，直接生成图片和视频',
+  'board.soon': '分镜画布即将提供。',
+  'timeline.title': '剪辑台',
+  'timeline.guide.description': '把素材排进时间线，预览并导出成片',
+  'director.title': '导演台',
+  'director.guide.description': '摆放角色和机位，预演镜头',
+  'director.soon': '导演台即将提供。',
+
+  'project.loading': '正在读取项目…',
+  'project.loadFailed': '读不了影视项目：{message}',
+  'project.reload': '重新读取',
+  'project.invalid': '项目文件 film/film.json 坏了，读不出来。可以让 Agent 修好它，或者删掉后重新新建。',
+  'project.unsupported': '这个项目来自更新版本的 dsh-film，请先更新插件。',
+  'project.workspaceMissing': '这个会话的工作区目录已经不在了。',
+  'project.empty.title': '这个工作区还没有影视项目',
+  'project.empty.body': '新建后，工作区里会多一个 film/ 文件夹，剧本、分镜、时间线和导演台场景都存在里面。一个工作区放一部片。',
+  'project.field.title': '片名',
+  'project.field.titlePlaceholder': '给这部片起个名字',
+  'project.field.aspect': '画幅',
+  'project.create': '新建影视项目',
+  'project.creating': '正在新建…',
+  'project.createFailed': '没能新建：{message}',
+  'project.file': '项目文件：{path}',
+
+  'assets.title': '素材',
+  'assets.refresh': '刷新',
+  'assets.loading': '正在列出素材…',
+  'assets.loadFailed': '列不出素材：{message}',
+  'assets.empty': 'media/ 和 film/ 里还没有图片、视频或音频。用 dsh-media 生成的素材会出现在这里。',
+  'assets.truncated': '只列出了最新的 {count} 个文件。',
+  'kind.image': '图片',
+  'kind.video': '视频',
+  'kind.audio': '音频',
+  'preview.empty': '选一个素材预览',
+  'preview.failed': '这个文件放不了：{path}',
+} as const
+
+export type FilmKey = keyof typeof zh
+
+export const en: Record<FilmKey, string> = {
+  'tab.loading': 'Opening the film workbench…',
+  'tab.loadFailed': 'The film workbench could not load: {message}',
+  'tab.retry': 'Retry',
+  'tab.noWorkspace': 'This session has no workspace. Film projects are files in a workspace; open the workbench from a session that has one.',
+
+  'story.title': 'Script',
+  'story.guide.description': 'Scene outline, characters and versions, handed to the storyboard when ready',
+  'story.soon': 'Script editing is coming soon. Until then the agent can write scripts under film/story/.',
+  'board.title': 'Storyboard',
+  'board.guide.description': 'Lay scenes and shots out as cards and generate images and video from them',
+  'board.soon': 'The storyboard is coming soon.',
+  'timeline.title': 'Editing desk',
+  'timeline.guide.description': 'Put media on a timeline, preview it and export the film',
+  'director.title': 'Director desk',
+  'director.guide.description': 'Place characters and cameras and rehearse shots',
+  'director.soon': 'The director desk is coming soon.',
+
+  'project.loading': 'Reading the project…',
+  'project.loadFailed': 'The film project could not be read: {message}',
+  'project.reload': 'Read again',
+  'project.invalid': 'The project file film/film.json is broken and cannot be read. Ask the agent to repair it, or delete it and create the project again.',
+  'project.unsupported': 'This project was made by a newer dsh-film. Update the plugin first.',
+  'project.workspaceMissing': "This session's workspace folder no longer exists.",
+  'project.empty.title': 'This workspace has no film project yet',
+  'project.empty.body': 'Creating one adds a film/ folder to the workspace; the script, storyboard, timeline and director scenes are kept in it. One film per workspace.',
+  'project.field.title': 'Title',
+  'project.field.titlePlaceholder': 'Name this film',
+  'project.field.aspect': 'Frame',
+  'project.create': 'Create film project',
+  'project.creating': 'Creating…',
+  'project.createFailed': 'Could not create the project: {message}',
+  'project.file': 'Project file: {path}',
+
+  'assets.title': 'Media',
+  'assets.refresh': 'Refresh',
+  'assets.loading': 'Listing media…',
+  'assets.loadFailed': 'Media could not be listed: {message}',
+  'assets.empty': 'No images, video or audio in media/ or film/ yet. Media generated with dsh-media shows up here.',
+  'assets.truncated': 'Only the newest {count} files are listed.',
+  'kind.image': 'Image',
+  'kind.video': 'Video',
+  'kind.audio': 'Audio',
+  'preview.empty': 'Pick a file to preview',
+  'preview.failed': 'This file cannot be played: {path}',
+}
