@@ -14,6 +14,9 @@ import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { FilmError } from './errors.js'
 import { listAssets, serveMedia } from './media.js'
 import { createProject, parseNewProject, readProject, workspaceDirectory } from './project.js'
+import { StoryService } from './screenwriter/service.js'
+import { StudioRouter } from './studio/router.js'
+import { addScreenwriterRoutes } from './studio/screenwriter-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -88,10 +91,22 @@ async function assets(request: Request): Promise<Response> {
  * The routes this plugin registers.
  * @returns the route list.
  */
-export function filmRoutes(): ConnectionFetchRoute[] {
+export function filmRoutes(studio: StudioRouter = createStudioRouter()): ConnectionFetchRoute[] {
   return [
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(project) },
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
+    // Uploads through the Studio-compatible API can be large: stream them.
+    { path: `${ROUTE_PREFIX}/studio`, methods: ['GET', 'HEAD', 'POST'], requestBody: 'streaming', fetch: request => studio.dispatch(request) },
   ]
+}
+
+/**
+ * The Studio-compatible API with everything this plugin implements.
+ * @returns the router.
+ */
+export function createStudioRouter(): StudioRouter {
+  const router = new StudioRouter()
+  addScreenwriterRoutes(router, new StoryService())
+  return router
 }

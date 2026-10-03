@@ -111,9 +111,10 @@ describe('dsh-film plugin', () => {
       'GET,POST /api/dsh-film/project',
       'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
+      'GET,HEAD,POST /api/dsh-film/studio',
     ])
     await fiber.dispose()
-    expect(removed.sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project'])
+    expect(removed.sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio'])
   })
 
   it('loads without a connection service', async () => {
