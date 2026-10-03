@@ -15,7 +15,10 @@ import { FilmError } from './errors.js'
 import { listAssets, serveMedia } from './media.js'
 import { createProject, parseNewProject, readProject, workspaceDirectory } from './project.js'
 import { StoryService } from './screenwriter/service.js'
+import { FilmMediaTasks } from './media/tasks.js'
+import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
+import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
@@ -112,13 +115,22 @@ export function filmRoutes(studio: StudioRouter = createStudioRouter()): Connect
  * The Studio-compatible API with everything this plugin implements.
  * @returns the router.
  */
-export function createStudioRouter(): StudioRouter {
+export function createStudioRouter(options: StudioRouterOptions = {}): StudioRouter {
   const router = new StudioRouter()
   const events = new ProjectEvents()
+  const media = options.media ?? (() => undefined)
   addScreenwriterRoutes(router, new StoryService(), (cwd, documentId, revision) => {
     events.emit(cwd, { type: 'story-changed', documentId, revision })
   })
   addCanvasRoutes(router, events)
+  addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   return router
+}
+
+export interface StudioRouterOptions {
+  /** dsh-media's `vibedevMedia` service, when it is running. */
+  media?: () => MediaServiceLike | undefined
+  /** The canvas's media tasks (one per plugin instance, disposed with it). */
+  tasks?: FilmMediaTasks
 }

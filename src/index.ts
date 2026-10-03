@@ -21,7 +21,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import Schema from '@deepseek-ai/schemastery'
 import { appRoutes, findApps, scanApp } from './apps.js'
-import { filmRoutes } from './routes.js'
+import { FilmMediaTasks } from './media/tasks.js'
+import type { MediaServiceLike } from './media/tasks.js'
+import { createStudioRouter, filmRoutes } from './routes.js'
 
 export { FilmError } from './errors.js'
 export type { FilmErrorCode } from './errors.js'
@@ -54,7 +56,11 @@ const PACKAGED_APPS = fileURLToPath(new URL('../apps/', import.meta.url))
 export function apply(ctx: Context, config: Config): void {
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.
   ctx.inject(['connection'], (scoped) => {
-    const routes = filmRoutes()
+    // Generation goes through dsh-media's service, read at each request: it can come and go.
+    const media = (): MediaServiceLike | undefined => scoped.get('vibedevMedia') as MediaServiceLike | undefined
+    const tasks = new FilmMediaTasks(media)
+    scoped.effect(() => () => { tasks.dispose() }, 'dsh-film: media tasks')
+    const routes = filmRoutes(createStudioRouter({ media, tasks }))
     for (const { app, directory } of findApps(config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim())) {
       const { files, skipped } = scanApp(app, directory)
       if (skipped.length > 0) {

@@ -101,17 +101,6 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
     return { file: { name: relativeName, size: file.size, mime: file.type || appFileType(target) } }
   })
 
-  // Generation is connected in a later step; until then the catalogue is empty and the canvas says so.
-  router.add('GET', '/api/media/models', async () => ({
-    providers: [],
-    image: [],
-    video: [],
-    audio: {},
-    aspects: ['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'],
-    videoLengthsSec: [5, 10],
-    audioDurationsSec: [],
-  }))
-
   // The asset library: the project's media, wearing the overlay the canvas saves.
   router.add('GET', '/api/canvas/assets/:boardId', async request =>
     new CanvasAssetStore(request.cwd).read(request.params.boardId!, projectOf(request)))
