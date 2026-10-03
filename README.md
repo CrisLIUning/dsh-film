@@ -30,6 +30,14 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 
 一个工作区放一部片。已有的 `film/film.json` 不会被覆盖。
 
+## 剪辑台的 AI 模型 · Editor models
+
+配音、人声分离、抠像、景深、擦除、超分、数字人和字幕字体要用到本地模型。模型不打进插件包：剪辑台第一次要用某个模型时，先弹框说明用途、大小、许可和来源，同意后才由插件从 VibeDev 模型镜像下载，逐个文件核对大小和 SHA-256，存在 `$DSH_HOME/cache/dsh-film/video-editor-models/`（设置项 `modelsDir` 可改），以后直接用。同意记录在同一目录的 `consents.json`；字幕字体同属 OFL-1.1，可以一次同意全部。
+
+可下载的模型列在 `models/video-editor-models.json`，由 `scripts/editor-models.mjs` 从 VibeDev Studio 的模型清单生成，只收许可清楚的：去掉了 Studio 标为受限的换脸模型（研究用权重）和 Stable Audio（Stability AI 社区许可，尚未确认）。各模型的许可以清单里声明的为准。
+
+The editing desk downloads its models only after the person agrees, verifies every file's size and SHA-256, and keeps them once per machine; the list carries only models whose licence is clear.
+
 ## 开发 · Development
 
 ```bash

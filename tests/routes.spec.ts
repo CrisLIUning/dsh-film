@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import * as Film from '../src/index.js'
 import { filmRoutes } from '../src/routes.js'
+import { packagedModelManifests } from '../src/models/service.js'
 
 let cwd: string
 let routes: Map<string, ConnectionFetchRoute>
@@ -107,16 +108,21 @@ describe('dsh-film plugin', () => {
       },
     })
     // An empty apps folder: the packaged apps/ may hold built apps with hundreds of routes.
-    const fiber = await ctx.plugin(Film, { appsDir: cwd })
-    expect(registered).toEqual([
+    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
+    const isModelFile = (entry: string) => entry.includes('/api/dsh-film/models/')
+    expect(registered.filter(entry => !isModelFile(entry))).toEqual([
       'GET,POST /api/dsh-film/project',
       'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
       'GET,HEAD /api/dsh-film/studio',
       'POST /api/dsh-film/studio-write',
     ])
+    // One route per file of every model the editor may download.
+    const files = packagedModelManifests().flatMap(model => model.artifacts.map(artifact => `GET,HEAD /api/dsh-film/models/${model.id}/${model.revision}/${artifact.id}`))
+    expect(registered.filter(isModelFile)).toEqual(files)
     await fiber.dispose()
-    expect(removed.sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write'])
+    expect(removed.filter(path => !isModelFile(path)).sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write'])
+    expect(removed.filter(isModelFile)).toHaveLength(files.length)
   })
 
   it('loads without a connection service', async () => {

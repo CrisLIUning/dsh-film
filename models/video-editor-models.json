@@ -1,0 +1,2422 @@
+{
+  "schemaVersion": 1,
+  "source": "Studio apps/daemon/src/production-video-editor-models.ts @ f76b859548",
+  "excluded": {
+    "stable-audio-3-small-music-onnx": "Stability AI Community License: not cleared for VibeDev yet",
+    "mobilefaceswap-224": "Studio marks it restricted: Verify MobileFaceSwap and ArcFace model-weight rights before commercial release."
+  },
+  "models": [
+    {
+      "id": "caption-font-bai-jamjuree",
+      "label": "Bai Jamjuree",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "bai-jamjuree.ttf",
+          "bytes": 81840,
+          "sha256": "74784411504a295a5255e736e0a8389892af2c8a14e914d3e194329b59279223",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/bai-jamjuree/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-baloo-2",
+      "label": "Baloo 2",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "baloo-2.ttf",
+          "bytes": 683200,
+          "sha256": "d47a6852548059b1db49a1319d06d499d546c3fa2237cf9eee9c43c8abb025c2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/baloo-2/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-barlow-condensed",
+      "label": "Barlow Condensed",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "barlow-condensed.ttf",
+          "bytes": 109912,
+          "sha256": "e476562ec9c1e16cf16475895b511f08c804f438cc9a9f80a44ea50a0eeb5b65",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/barlow-condensed/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-be-vietnam-pro",
+      "label": "Be Vietnam Pro",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "be-vietnam-pro.ttf",
+          "bytes": 140300,
+          "sha256": "7f738fe5c43c8872807b20e2d30d42163618de8a4daf7f48a939adac32c16847",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/be-vietnam-pro/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-bebas-neue",
+      "label": "Bebas Neue",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "bebas-neue.ttf",
+          "bytes": 61400,
+          "sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/bebas-neue/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-black-han-sans",
+      "label": "Black Han Sans",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "black-han-sans.ttf",
+          "bytes": 998424,
+          "sha256": "31960809284026681774a8e52dc19ebcad26cf69b0ad9d560f288296fbb52739",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/black-han-sans/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-caveat",
+      "label": "Caveat",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "caveat.ttf",
+          "bytes": 403648,
+          "sha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/caveat/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-chonburi",
+      "label": "Chonburi",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "chonburi.ttf",
+          "bytes": 170492,
+          "sha256": "aa0dac4df08af10785ba1dc10121492227f8e4288f0a23d11dd1d1f5a7f6ebfa",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/chonburi/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-coiny",
+      "label": "Coiny",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "coiny.ttf",
+          "bytes": 156520,
+          "sha256": "ef02d723a54abe4819bea54ea8b2ecf72d77d258010bb336cd4862a37705eac7",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/coiny/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-comfortaa",
+      "label": "Comfortaa",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "comfortaa.ttf",
+          "bytes": 201756,
+          "sha256": "0fc3f45dc48b614db9c39181502544b37217ecbf8bee2fb35886992bc96c5bd3",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/comfortaa/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-cormorant-garamond",
+      "label": "Cormorant Garamond",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "cormorant-garamond.ttf",
+          "bytes": 1195560,
+          "sha256": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/cormorant-garamond/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-do-hyeon",
+      "label": "Do Hyeon",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "do-hyeon.ttf",
+          "bytes": 879764,
+          "sha256": "35644be7f28e0a68a447b1f7af351dcde5674b870f24f7b5f43e26d00b4ab653",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/do-hyeon/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-gamja-flower",
+      "label": "Gamja Flower",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "gamja-flower.ttf",
+          "bytes": 12615444,
+          "sha256": "ece32819ed58536355a49a095b0cdfdd3b8ef9081c5ed9ca1cef8f5d999ae1ac",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/gamja-flower/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-gowun-batang",
+      "label": "Gowun Batang",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "gowun-batang.ttf",
+          "bytes": 8178712,
+          "sha256": "dbfcaa646e5831e7478524924f02906f550285a5050699b4e38c9950b3ec4b94",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/gowun-batang/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-gowun-dodum",
+      "label": "Gowun Dodum",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "gowun-dodum.ttf",
+          "bytes": 7229088,
+          "sha256": "a6e457933227483a11758fd0947bc74422a106d46f0bf057fdaa5af94a30067d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/gowun-dodum/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-hachi-maru-pop",
+      "label": "Hachi Maru Pop",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "hachi-maru-pop.ttf",
+          "bytes": 4385624,
+          "sha256": "78408910c8f1a2f174a279cbc1484b48b71780039eba3fe1be2bfcc5d4df3f98",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/hachi-maru-pop/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-ibm-plex-sans-thai-looped",
+      "label": "IBM Plex Thai Looped",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "ibm-plex-sans-thai-looped.ttf",
+          "bytes": 124580,
+          "sha256": "df53c5c794b910f68bb8f3075a6c9bf59261c3ad964bd2be0ddff1bd4c79c7a9",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/ibm-plex-sans-thai-looped/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-ibm-plex-sans-thai",
+      "label": "IBM Plex Sans Thai",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "ibm-plex-sans-thai.ttf",
+          "bytes": 116552,
+          "sha256": "f88fbe0a3717c93deddf4b13e50a05c9adcd38f58d675d9d5d0b869961851667",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/ibm-plex-sans-thai/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-inter",
+      "label": "Inter",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "inter.ttf",
+          "bytes": 876576,
+          "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/inter/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-jua",
+      "label": "Jua",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "jua.ttf",
+          "bytes": 2119352,
+          "sha256": "769677aef240bfc3b9965f2b50748075bff885e6c6992fc591a3fb268279f898",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/jua/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-kaisei-decol",
+      "label": "Kaisei Decol",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "kaisei-decol.ttf",
+          "bytes": 4286896,
+          "sha256": "0e3a6da5145fdbba32cfb1c806812d95457506e1698f5d61e8f834fb847f0d6f",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/kaisei-decol/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-kanit",
+      "label": "Kanit",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "kanit.ttf",
+          "bytes": 176136,
+          "sha256": "5dec5b080dab13de9d2295437c0ff3ec05c9e75587dfc31358c005eb4efa5e70",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/kanit/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-klee-one",
+      "label": "Klee One",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "klee-one.ttf",
+          "bytes": 8905128,
+          "sha256": "b031ec426c23ca1143ef1f7d58bee7a79efe119ed654152f121c922202b303fd",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/klee-one/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-libre-baskerville",
+      "label": "Libre Baskerville",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "libre-baskerville.ttf",
+          "bytes": 171900,
+          "sha256": "05a95421961341c5b2556285e8415df9db27dab4f4abe22b446b3c6a8b916c5d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/libre-baskerville/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-liu-jian-mao-cao",
+      "label": "刘建毛草",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "liu-jian-mao-cao.ttf",
+          "bytes": 4951804,
+          "sha256": "cab396b91a5b7c0b4005a35891180d06e6751f5ac261fe680aec65c1ae209033",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/liu-jian-mao-cao/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-lobster",
+      "label": "Lobster",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "lobster.ttf",
+          "bytes": 406076,
+          "sha256": "d6568e697fd50cedc0be04d8aae4127fe95add607e7bff954ca88604be80c205",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/lobster/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-long-cang",
+      "label": "龙藏体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "long-cang.ttf",
+          "bytes": 5162508,
+          "sha256": "e5bf2c3f24ef2327c6f136d8f73e2f9dfdf44896fdbeb35a9515f44777bb91bc",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/long-cang/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-m-plus-1p",
+      "label": "M PLUS 1p",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "m-plus-1p.ttf",
+          "bytes": 1766552,
+          "sha256": "76eb077b0a31ca33ca40238e47da5a17e2786741607cec09678d7d2e5ab1afc1",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/m-plus-1p/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-ma-shan-zheng",
+      "label": "马善政毛笔楷书",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "ma-shan-zheng.ttf",
+          "bytes": 5857936,
+          "sha256": "6d2546bb189c732a8ca29af9e22457b152387d158aa459e4ac2ce1e51788b7fb",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/ma-shan-zheng/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-merriweather",
+      "label": "Merriweather",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "merriweather.ttf",
+          "bytes": 4628080,
+          "sha256": "d0ed0e359e396af7ad05e73dffd11a3a4c326ea0d0283c56bd9361cb2cc86a96",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/merriweather/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-mitr",
+      "label": "Mitr",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "mitr.ttf",
+          "bytes": 224432,
+          "sha256": "92349c05cd6a35549d0fb3e9b0d7d73059717e212cbda182ee28e5917150bc34",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/mitr/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-montserrat",
+      "label": "Montserrat",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "montserrat.ttf",
+          "bytes": 744936,
+          "sha256": "0f7b311b2f3279e4eef9b2f968bcdbab6e28f4daeb1f049f4f278a902bcd82f7",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/montserrat/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-nanum-pen-script",
+      "label": "Nanum Pen Script",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "nanum-pen-script.ttf",
+          "bytes": 3201664,
+          "sha256": "6f0d1ab29c7894010dc88831fb7a0a51edb79136e450344183de5b1a8b52bd43",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/nanum-pen-script/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans-jp",
+      "label": "Noto Sans JP",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans-jp.ttf",
+          "bytes": 9589900,
+          "sha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans-jp/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans-kr",
+      "label": "Noto Sans KR",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans-kr.ttf",
+          "bytes": 10414588,
+          "sha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans-kr/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans-sc",
+      "label": "思源黑体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans-sc.ttf",
+          "bytes": 17772300,
+          "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans-sc/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans-tc",
+      "label": "思源黑体繁体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans-tc.ttf",
+          "bytes": 11941968,
+          "sha256": "864727d210d54f2537bbe23b3a839436c3992af72de9322af5270897246bd44f",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans-tc/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans-thai",
+      "label": "Noto Sans Thai",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans-thai.ttf",
+          "bytes": 218652,
+          "sha256": "5a1c559bb539583c8a1fd99d1c5b9491e5e14478c9cd2bd0970d5c3096cc9ef8",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans-thai/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-sans",
+      "label": "Noto Sans",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-sans.ttf",
+          "bytes": 2049096,
+          "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-sans/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-serif-jp",
+      "label": "Noto Serif JP",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-serif-jp.ttf",
+          "bytes": 13574352,
+          "sha256": "2fd527ba12b6a44ec30d796d633360da0aeba6c5d4af1304ce12bb4dc15a7dfc",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-serif-jp/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-serif-kr",
+      "label": "Noto Serif KR",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-serif-kr.ttf",
+          "bytes": 23795420,
+          "sha256": "11f8d5de6f1b79195efba3828aaa2ec95c1178f5ae976fb23c8d53250a9938f3",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-serif-kr/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-serif-sc",
+      "label": "思源宋体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-serif-sc.ttf",
+          "bytes": 25125512,
+          "sha256": "050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-serif-sc/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-serif-thai",
+      "label": "Noto Serif Thai",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-serif-thai.ttf",
+          "bytes": 292188,
+          "sha256": "34a7ad11647c845303aabdde639059806c56b84719e5d2ceb28eb038711bdf53",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-serif-thai/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-noto-serif",
+      "label": "Noto Serif",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "noto-serif.ttf",
+          "bytes": 1887192,
+          "sha256": "4d8e6761424656867019081a1a01336f3cb086982682698714054fc33f782713",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/noto-serif/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-oswald",
+      "label": "Oswald",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "oswald.ttf",
+          "bytes": 172088,
+          "sha256": "5b38c246e255a12f5712d640d56bcced0472466fc68983d2d0410ec0457c2817",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/oswald/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-playfair-display",
+      "label": "Playfair Display",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "playfair-display.ttf",
+          "bytes": 300724,
+          "sha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/playfair-display/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-poppins",
+      "label": "Poppins",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "poppins.ttf",
+          "bytes": 155996,
+          "sha256": "983676516167748b74de6f4771fb384c664fd913acb8b471122ecacf5da5ea6c",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/poppins/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-prompt",
+      "label": "Prompt",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "prompt.ttf",
+          "bytes": 178804,
+          "sha256": "02813ca4f93c1df27e271f10fef3db6e34e66751ae1f4a3ed82ae06cb20150ea",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/prompt/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-pt-sans",
+      "label": "PT Sans",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "pt-sans.ttf",
+          "bytes": 470240,
+          "sha256": "3128bd5ecf01816e59a23d54c57a7a6b14615b07db53ff277c77376010265b05",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/pt-sans/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-pt-serif",
+      "label": "PT Serif",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "pt-serif.ttf",
+          "bytes": 339996,
+          "sha256": "038ba7336bd7ea14f12ad155bed51a4345cac5153275d521dec3ba04021c526e",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/pt-serif/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-rubik",
+      "label": "Rubik",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "rubik.ttf",
+          "bytes": 359804,
+          "sha256": "1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/rubik/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-russo-one",
+      "label": "Russo One",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "russo-one.ttf",
+          "bytes": 39124,
+          "sha256": "bc0abcc660bd8b7ad3000ecb2898a27c58a29a50f7ec81652fa12e75148d09df",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/russo-one/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-sarabun",
+      "label": "Sarabun",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "sarabun.ttf",
+          "bytes": 89804,
+          "sha256": "d38308ca27d067b9a1b79006337c1f9a66c29aa016d96a9d88d3801da7fa83b9",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/sarabun/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-shippori-mincho",
+      "label": "Shippori Mincho",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "shippori-mincho.ttf",
+          "bytes": 8563788,
+          "sha256": "63bc4eddc74793f671c3ab827c5175e773ffbe569d0bf50ee65375ea9e3bc286",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/shippori-mincho/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-song-myung",
+      "label": "Song Myung",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "song-myung.ttf",
+          "bytes": 2035300,
+          "sha256": "7f90ab20250911560212cc5819c7b205f9c6644bb96b65095d89fcae096bbf58",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/song-myung/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zcool-kuaile",
+      "label": "站酷快乐体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zcool-kuaile.ttf",
+          "bytes": 1514968,
+          "sha256": "812a6fc1fe54b6d73a419245c32dfeba8aa33104d5be90d1cf6af082007cb71d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zcool-kuaile/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zcool-qingke-huangyou",
+      "label": "庆科黄油体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zcool-qingke-huangyou.ttf",
+          "bytes": 8328684,
+          "sha256": "54f0c0df4308cd74cd0f2fd3494ae054dbc4a1fd6fa7d71f4807eb4cdd8b4136",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zcool-qingke-huangyou/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zcool-xiaowei",
+      "label": "站酷小薇体",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zcool-xiaowei.ttf",
+          "bytes": 6313808,
+          "sha256": "a42b620140f493db42f741351dfbf343c0936d58588ee8004b8b2a218d997ff1",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zcool-xiaowei/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zen-kaku-gothic-new",
+      "label": "Zen Kaku Gothic",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zen-kaku-gothic-new.ttf",
+          "bytes": 2314424,
+          "sha256": "0081cedabc4921982fcd061f845a005664ac7fb642af2dd34b4007bc63ccd235",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zen-kaku-gothic-new/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zen-maru-gothic",
+      "label": "Zen Maru Gothic",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zen-maru-gothic.ttf",
+          "bytes": 3779008,
+          "sha256": "fe24426b9c8b5523a0146a8235c8674eccf0493af354a53ec895c3596d9eb745",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zen-maru-gothic/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zen-old-mincho",
+      "label": "Zen Old Mincho",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zen-old-mincho.ttf",
+          "bytes": 5436460,
+          "sha256": "d6b95c1ff45c8dac153d28961e4c37d7d03b648330c71f884d124dc652a13c0d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zen-old-mincho/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caption-font-zhi-mang-xing",
+      "label": "志莽行书",
+      "capability": "caption-font",
+      "revision": "abf721579e1074ceccdcb326ff72a9f5f8b81219",
+      "license": {
+        "name": "OFL-1.1",
+        "url": "https://openfontlicense.org/",
+        "notice": "Pinned caption font from the upstream Timeline Studio font bundle."
+      },
+      "group": "caption-font",
+      "artifacts": [
+        {
+          "id": "font",
+          "fileName": "zhi-mang-xing.ttf",
+          "bytes": 4063532,
+          "sha256": "644e0cae9b40f0b10ab729a01bd32032e3973bac22be3dccae01bf6ae7fde969",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/subtitle-fonts/abf721579e1074ceccdcb326ff72a9f5f8b81219/zhi-mang-xing/font.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeline-studio-vocal-remover",
+      "label": "Timeline Studio Vocal Remover",
+      "capability": "music",
+      "revision": "927cd9272154b85c53518daf44063ee033ee22c3",
+      "license": {
+        "name": "MIT",
+        "notice": "Pinned TensorFlow.js source-separation graph from the upstream Timeline Studio bundle."
+      },
+      "artifacts": [
+        {
+          "id": "model.json",
+          "fileName": "model.json",
+          "bytes": 761322,
+          "sha256": "4086f776a78c0ff692ba22cc8a8cc0433fea18ebf36849467c82f8e5b20a58d3",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/model.json"
+          ]
+        },
+        {
+          "id": "group1-shard1of16.bin",
+          "fileName": "group1-shard1of16.bin",
+          "bytes": 4194304,
+          "sha256": "654c6dbe8965d378c13112a33aa8e950a0324dc7401f3794e2c6efc801b8e0f3",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard1of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard2of16.bin",
+          "fileName": "group1-shard2of16.bin",
+          "bytes": 4194304,
+          "sha256": "4f7466ad4a0f5825c58aee3000c807b00cc2135ed83ef10dadafc7ed391f4ab9",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard2of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard3of16.bin",
+          "fileName": "group1-shard3of16.bin",
+          "bytes": 4194304,
+          "sha256": "15fcc44673f0167520c35ae3b2c94bb5eb2e2c4777ab0fdd83da45082138ffa7",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard3of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard4of16.bin",
+          "fileName": "group1-shard4of16.bin",
+          "bytes": 4194304,
+          "sha256": "fc73664649f48f2eb231a8572fec76f2950a94b09ea99bb8f747587a1ef1be77",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard4of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard5of16.bin",
+          "fileName": "group1-shard5of16.bin",
+          "bytes": 4194304,
+          "sha256": "f9714c503346f1cbf044d905d00eb877a579bf0c3d039c0b45105716992f0174",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard5of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard6of16.bin",
+          "fileName": "group1-shard6of16.bin",
+          "bytes": 4194304,
+          "sha256": "9ba68d5e92ee2a18c993205b3ae2aff637d645a0fb9009c473828220ee240a63",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard6of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard7of16.bin",
+          "fileName": "group1-shard7of16.bin",
+          "bytes": 4194304,
+          "sha256": "820e8e7c7d86c03044e0049ecc49c5e580039ca39b47daa85edbf5e958213221",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard7of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard8of16.bin",
+          "fileName": "group1-shard8of16.bin",
+          "bytes": 4194304,
+          "sha256": "1fde0138dc7c3e0ac249c3ac98fdf8729db236968ec57b8d6a65c4408132a935",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard8of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard9of16.bin",
+          "fileName": "group1-shard9of16.bin",
+          "bytes": 4194304,
+          "sha256": "1fdf4f851272eac91e8ce72915222e62cd0f369c0a53c7c49dd15aaa8b16e40a",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard9of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard10of16.bin",
+          "fileName": "group1-shard10of16.bin",
+          "bytes": 4194304,
+          "sha256": "2e3ed637699e91a99862af3091afdc9522e051729684f17d3a65d4887ff4548e",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard10of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard11of16.bin",
+          "fileName": "group1-shard11of16.bin",
+          "bytes": 4194304,
+          "sha256": "158ad262319363e1086130c113cc0a5ffc0616c619f920a33a9655fc3949425c",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard11of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard12of16.bin",
+          "fileName": "group1-shard12of16.bin",
+          "bytes": 4194304,
+          "sha256": "4636710c1665ec2516bb936da08ebb7ff3430fc7f9789665d44c130dfa974a20",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard12of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard13of16.bin",
+          "fileName": "group1-shard13of16.bin",
+          "bytes": 4194304,
+          "sha256": "ac9b7d8cc96956a6974d1b7086ffa19d3762dd57906b7def2433a13362b9e5c4",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard13of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard14of16.bin",
+          "fileName": "group1-shard14of16.bin",
+          "bytes": 4194304,
+          "sha256": "991e7a04fb630cd6244e77842852eed738a2cc3bf813f02bbbca26e90602bc08",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard14of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard15of16.bin",
+          "fileName": "group1-shard15of16.bin",
+          "bytes": 4194304,
+          "sha256": "19129d23e11435f05584a708e37025495d0b4074d36499858002d4729bd4b807",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard15of16.bin"
+          ]
+        },
+        {
+          "id": "group1-shard16of16.bin",
+          "fileName": "group1-shard16of16.bin",
+          "bytes": 3792112,
+          "sha256": "4842e733d6977c59b5f16de2c1b4e6df0e6b253ec145958d67eec75435895cf2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/timeline-studio-vocal-remover/927cd9272154b85c53518daf44063ee033ee22c3/group1-shard16of16.bin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hojo-tts-light-80m-zh",
+      "label": "Hojo TTS Light 80M Chinese",
+      "capability": "tts",
+      "revision": "9cb5ab964c014b182701153bd00f7a2202f5dce8",
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "notice": "Hojo-TTS-Light built-in Chinese synthesis bundle with precomputed reference codes."
+      },
+      "artifacts": [
+        {
+          "id": "manifest",
+          "fileName": "manifest.json",
+          "bytes": 6552,
+          "sha256": "ed157c9de6dc83e12acff27a4c14f62ff93125a26cec25c98a4386168e7a0d23",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/manifest.json"
+          ]
+        },
+        {
+          "id": "llm-000",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-000.bin",
+          "bytes": 16777216,
+          "sha256": "4e24e645fb85b61c3b216518b1f406a3fdcb713451b8de9b83435176fae16110",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-000.bin"
+          ]
+        },
+        {
+          "id": "llm-001",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-001.bin",
+          "bytes": 16777216,
+          "sha256": "ab1c4e3cbbde4774c9394070d03ad47d397e44b2434a7026bc38a6c3a5a48a19",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-001.bin"
+          ]
+        },
+        {
+          "id": "llm-002",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-002.bin",
+          "bytes": 16777216,
+          "sha256": "3b5e096d5a801244a1d0cea266f2c5ae4fca475bef7dc055cc8ee7130ffb9c92",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-002.bin"
+          ]
+        },
+        {
+          "id": "llm-003",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-003.bin",
+          "bytes": 16777216,
+          "sha256": "6b2ba601be9c2a6ca1e727c5c2dd031b0bc56c380d9c63f220510cf44c335b4b",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-003.bin"
+          ]
+        },
+        {
+          "id": "llm-004",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-004.bin",
+          "bytes": 16777216,
+          "sha256": "3745816b4e95a557740cce2f15948282e607ab905962d9b5f9809b5ea63e597f",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-004.bin"
+          ]
+        },
+        {
+          "id": "llm-005",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-005.bin",
+          "bytes": 16777216,
+          "sha256": "aceabf58adf753b2ef9c2af56c90f0f061ddd5c29bce9addc30c1ec980823e78",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-005.bin"
+          ]
+        },
+        {
+          "id": "llm-006",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-006.bin",
+          "bytes": 16777216,
+          "sha256": "503ab4ba7754d76d52fd0d44189ff11785da55856d669bdea0b2df53f90c75aa",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-006.bin"
+          ]
+        },
+        {
+          "id": "llm-007",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-007.bin",
+          "bytes": 16777216,
+          "sha256": "56ad74261b6d3ff17dff48bde6e4b83369e4cec2f8c37bd7e5b7dbe2331f1bf3",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-007.bin"
+          ]
+        },
+        {
+          "id": "llm-008",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-008.bin",
+          "bytes": 16777216,
+          "sha256": "043b667cc5b5838fa9747ababfdd3a8d620c27a0bbeaa495abfddd9c834a27f6",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-008.bin"
+          ]
+        },
+        {
+          "id": "llm-009",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-009.bin",
+          "bytes": 16777216,
+          "sha256": "976fe3f470ba188fc3e9b160f97521f0b37a2f4bc7605a484d43ac78abce3811",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-009.bin"
+          ]
+        },
+        {
+          "id": "llm-010",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-010.bin",
+          "bytes": 16777216,
+          "sha256": "bf3c1ffa0d403dd8a23538d2c6848e37c674f114dc115c26f6e8d47d83d35c81",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-010.bin"
+          ]
+        },
+        {
+          "id": "llm-011",
+          "fileName": "Hojo-TTS-Light-llm.onnx.part-011.bin",
+          "bytes": 3937665,
+          "sha256": "bd30e6aeebfa1157541f5857fcd1e88427a654ae53b4ede77bb0f54195b9c9fc",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-llm.onnx.part-011.bin"
+          ]
+        },
+        {
+          "id": "decoder-000",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-000.bin",
+          "bytes": 16777216,
+          "sha256": "f98f7e5ee093ae829daa2385c51b6541b8388517f1a625994ff3fdebca968f0f",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-000.bin"
+          ]
+        },
+        {
+          "id": "decoder-001",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-001.bin",
+          "bytes": 16777216,
+          "sha256": "9484a28a05d9f3b4ae2ca666d438e30e457dbb37d069134c538917bc4cbe8cfa",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-001.bin"
+          ]
+        },
+        {
+          "id": "decoder-002",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-002.bin",
+          "bytes": 16777216,
+          "sha256": "6ae30bd0f048dd2720f8db58442d84cccf0dfc4e4886684e9a6ab635fc2e5fee",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-002.bin"
+          ]
+        },
+        {
+          "id": "decoder-003",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-003.bin",
+          "bytes": 16777216,
+          "sha256": "de75c3603acd19653ee19ca37e35b9e468eb7582073c9c4f925c1d22abdfee33",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-003.bin"
+          ]
+        },
+        {
+          "id": "decoder-004",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-004.bin",
+          "bytes": 16777216,
+          "sha256": "c0495ed17de88e31406beb403cdddd7365c1f5fa0d98c22f41730b04bfbdd1c1",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-004.bin"
+          ]
+        },
+        {
+          "id": "decoder-005",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-005.bin",
+          "bytes": 16777216,
+          "sha256": "cc63ca8b6834934db9e2021f5f104c02e85ba77bdb9c752c0d14937fcd740613",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-005.bin"
+          ]
+        },
+        {
+          "id": "decoder-006",
+          "fileName": "Hojo-TTS-Light-decoder.onnx.part-006.bin",
+          "bytes": 12409219,
+          "sha256": "2541d9eb3cf010a96c588208d3e383cceafde0a249154e17e930e12f58794974",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/Hojo-TTS-Light-decoder.onnx.part-006.bin"
+          ]
+        },
+        {
+          "id": "config",
+          "fileName": "config.json",
+          "bytes": 1221,
+          "sha256": "8d055f7f9eb79776a2e8e46ffce87f4231c85227f9178b7e72744eec8cc7afbb",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/config.json"
+          ]
+        },
+        {
+          "id": "tokenizer",
+          "fileName": "tokenizer.json",
+          "bytes": 2071007,
+          "sha256": "395daae9cd5a4e166f1892d22e01c28a22421cfc92bc97aeb5d2b0fc6eaac499",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/tokenizer.json"
+          ]
+        },
+        {
+          "id": "tokenizer-config",
+          "fileName": "tokenizer_config.json",
+          "bytes": 1634641,
+          "sha256": "14476be0ed729810c2a382dea664b491d645576e6fccec709a49052b672a6aa2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/tokenizer_config.json"
+          ]
+        },
+        {
+          "id": "reference-codes",
+          "fileName": "reference-codes.json",
+          "bytes": 2202,
+          "sha256": "a547f9875dd2866fde2e513d5263edb3bc03b72491d87f3f5a3e35270ed509d5",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/hojo-tts-light-80m-zh/9cb5ab964c014b182701153bd00f7a2202f5dce8/reference-codes.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "whisper-small-q8",
+      "label": "Whisper Small q8 WASM",
+      "capability": "transcribe",
+      "revision": "36050c46d777d46dc4b5f43f6d90574fc38f8732",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "OpenAI Whisper small converted for the Transformers.js ONNX runtime."
+      },
+      "artifacts": [
+        {
+          "id": "config",
+          "fileName": "config.json",
+          "bytes": 2227,
+          "sha256": "457854d452f17661e197d74aee12b8e74fb75ba30ebfaa7426d0d61ea1e08a18",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/config.json"
+          ]
+        },
+        {
+          "id": "generation-config",
+          "fileName": "generation_config.json",
+          "bytes": 3893,
+          "sha256": "f538b28220c6a6d6f1af1458d4141cacb4ef4963df3de98a19490440c412ddf0",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/generation_config.json"
+          ]
+        },
+        {
+          "id": "preprocessor",
+          "fileName": "preprocessor_config.json",
+          "bytes": 339,
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/preprocessor_config.json"
+          ]
+        },
+        {
+          "id": "tokenizer",
+          "fileName": "tokenizer.json",
+          "bytes": 2480466,
+          "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/tokenizer.json"
+          ]
+        },
+        {
+          "id": "tokenizer-config",
+          "fileName": "tokenizer_config.json",
+          "bytes": 282683,
+          "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/tokenizer_config.json"
+          ]
+        },
+        {
+          "id": "encoder-q8",
+          "fileName": "encoder_model_quantized.onnx",
+          "bytes": 92326160,
+          "sha256": "a43a83f3c5361cd591cfa7c36f14b43cf7cb22f47a415cc14a8d557be800fa92",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/onnx/encoder_model_quantized.onnx"
+          ]
+        },
+        {
+          "id": "decoder-merged-q8",
+          "fileName": "decoder_model_merged_quantized.onnx",
+          "bytes": 156750845,
+          "sha256": "ec07c3cbb64172c39791e26ee870a65ac22b458c36722bfe2776b3dbf741e0c9",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/whisper-small-q8/36050c46d777d46dc4b5f43f6d90574fc38f8732/onnx/decoder_model_merged_quantized.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "silero-vad",
+      "label": "Silero VAD 人声检测",
+      "capability": "transcribe",
+      "revision": "7e30209a3e901f9842f81b225f3e93d8199902b1",
+      "license": {
+        "name": "MIT",
+        "url": "https://github.com/snakers4/silero-vad/blob/v6.2.1/LICENSE"
+      },
+      "artifacts": [
+        {
+          "id": "speech-vad",
+          "fileName": "silero_vad.onnx",
+          "bytes": 2327524,
+          "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+          "sources": [
+            "https://raw.githubusercontent.com/snakers4/silero-vad/7e30209a3e901f9842f81b225f3e93d8199902b1/src/silero_vad/data/silero_vad.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joyvasa-webgpu",
+      "label": "JoyVASA WebGPU Motion",
+      "capability": "avatar",
+      "revision": "a201b681c8f96672b5c3f624e32d4dc932f150af",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "JoyVASA audio-driven motion ONNX browser runtime."
+      },
+      "artifacts": [
+        {
+          "id": "audio-aa",
+          "fileName": "joyvasa-audio.onnx.part-aa",
+          "bytes": 50000000,
+          "sha256": "04a2c6323704c53557fa9e9a1e39aa5dada92afaaaa35e24164eae530ce06398",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-aa"
+          ]
+        },
+        {
+          "id": "audio-ab",
+          "fileName": "joyvasa-audio.onnx.part-ab",
+          "bytes": 50000000,
+          "sha256": "bf62033d0deb447bfa5589076958d1032c3267cb197b51976a8d383c80525605",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ab"
+          ]
+        },
+        {
+          "id": "audio-ac",
+          "fileName": "joyvasa-audio.onnx.part-ac",
+          "bytes": 50000000,
+          "sha256": "8bd0f0cfc185c7481664044f4a532431a58e4e7af9cbb758a10a55b5d0369c47",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ac"
+          ]
+        },
+        {
+          "id": "audio-ad",
+          "fileName": "joyvasa-audio.onnx.part-ad",
+          "bytes": 50000000,
+          "sha256": "f6f12014429cb22b7a4e06f4432173dabb6f64cae14c9fc956fbead7967fa22c",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ad"
+          ]
+        },
+        {
+          "id": "audio-ae",
+          "fileName": "joyvasa-audio.onnx.part-ae",
+          "bytes": 50000000,
+          "sha256": "20244e66e214d24f59919fcdced64f355ecd032d4c6c6a5391468b19ca57671b",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ae"
+          ]
+        },
+        {
+          "id": "audio-af",
+          "fileName": "joyvasa-audio.onnx.part-af",
+          "bytes": 50000000,
+          "sha256": "1853b78ffa1974cca1a11095fba602e686a19c6799d77e9a9069033d82f068bf",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-af"
+          ]
+        },
+        {
+          "id": "audio-ag",
+          "fileName": "joyvasa-audio.onnx.part-ag",
+          "bytes": 50000000,
+          "sha256": "1cee2a9538401bd50e4bce2d11e053c7661c6e6ac745d48b91ef1fea6db6f83a",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ag"
+          ]
+        },
+        {
+          "id": "audio-ah",
+          "fileName": "joyvasa-audio.onnx.part-ah",
+          "bytes": 28452736,
+          "sha256": "d5ef525a24cf4f888aeb13b1a2a5e1a6f841e5cb03e9e5c6dfbb774580abf767",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-audio.onnx.part-ah"
+          ]
+        },
+        {
+          "id": "conditioning",
+          "fileName": "joyvasa-conditioning.bin",
+          "bytes": 14184,
+          "sha256": "89e571e6b1491a88eeedfa7f17ba3ff43e70800e1daa6f544c1366c195dbd6ba",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-conditioning.bin"
+          ]
+        },
+        {
+          "id": "denoiser",
+          "fileName": "joyvasa-denoiser.onnx",
+          "bytes": 33558033,
+          "sha256": "6e0ea70203df8db5cdd663c75c1764134b207b87f2897ff4e53d279aa3f54928",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-denoiser.onnx"
+          ]
+        },
+        {
+          "id": "template",
+          "fileName": "joyvasa-motion-template.json",
+          "bytes": 9014,
+          "sha256": "f321337873a5b646ca26f80e97edd0efdc9d3c0f63d3a9d09ad7fb72d7d7f828",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-motion-template.json"
+          ]
+        },
+        {
+          "id": "schedule",
+          "fileName": "joyvasa-schedule.bin",
+          "bytes": 408,
+          "sha256": "8ef96b44a0673a6f699b0fa4c6259d89db183cd6d0f8b483203bd84ca8baa828",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/joyvasa-webgpu/a201b681c8f96672b5c3f624e32d4dc932f150af/joyvasa-schedule.bin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liveportrait-webgpu-common",
+      "label": "LivePortrait WebGPU Common",
+      "capability": "avatar",
+      "revision": "a201b681c8f96672b5c3f624e32d4dc932f150af",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "LivePortrait WebGPU feature, motion and stitching ONNX weights."
+      },
+      "artifacts": [
+        {
+          "id": "lp-appearance",
+          "fileName": "liveportrait-appearance_feature_extractor.onnx",
+          "bytes": 3355896,
+          "sha256": "e9cd2bd864a970f25bbe660e132778fc7f81a4f32945a97940a6225c8b2dafb0",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-common/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-appearance_feature_extractor.onnx"
+          ]
+        },
+        {
+          "id": "lp-motion-aa",
+          "fileName": "liveportrait-motion-extractor.onnx.part-aa",
+          "bytes": 50000000,
+          "sha256": "b70ee20ca46811f0eb4125aecf982389d99e843309738051692127a3626f1fb0",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-common/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-motion-extractor.onnx.part-aa"
+          ]
+        },
+        {
+          "id": "lp-motion-ab",
+          "fileName": "liveportrait-motion-extractor.onnx.part-ab",
+          "bytes": 50000000,
+          "sha256": "bcd583ba6f577ed9359f35b83b26584c7267f2d61585be5b263074697d3547d7",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-common/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-motion-extractor.onnx.part-ab"
+          ]
+        },
+        {
+          "id": "lp-motion-ac",
+          "fileName": "liveportrait-motion-extractor.onnx.part-ac",
+          "bytes": 12593241,
+          "sha256": "2dcd89050f2793c37fe7c0ce850869b1602d74a125e1e82d8b70e0f8efb90a74",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-common/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-motion-extractor.onnx.part-ac"
+          ]
+        },
+        {
+          "id": "lp-stitching",
+          "fileName": "liveportrait-stitching.onnx",
+          "bytes": 182363,
+          "sha256": "28b5fd0b97f3cee29b37b24937f2fa294d1548799b8a16d3cfe70fab1f49c785",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-common/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-stitching.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liveportrait-webgpu-preview",
+      "label": "LivePortrait WebGPU Preview Generator",
+      "capability": "avatar",
+      "revision": "a201b681c8f96672b5c3f624e32d4dc932f150af",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "LivePortrait preview FP16 generator ONNX weights."
+      },
+      "artifacts": [
+        {
+          "id": "lp-preview-aa",
+          "fileName": "liveportrait-generator-preview-fp16.onnx.part-aa",
+          "bytes": 50000000,
+          "sha256": "7498e3eb1ec9fd3b3a79574130d211c1e4e67ff5977d846ef6b4d14d495c6ebd",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-preview/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-preview-fp16.onnx.part-aa"
+          ]
+        },
+        {
+          "id": "lp-preview-ab",
+          "fileName": "liveportrait-generator-preview-fp16.onnx.part-ab",
+          "bytes": 50000000,
+          "sha256": "d19cc64b79f0de0fa4bdde1d16cfb0ce3ad7e6352b9b6e16673c39463b56f89c",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-preview/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-preview-fp16.onnx.part-ab"
+          ]
+        },
+        {
+          "id": "lp-preview-ac",
+          "fileName": "liveportrait-generator-preview-fp16.onnx.part-ac",
+          "bytes": 50000000,
+          "sha256": "ddcc84682d00c17f37f5ace95fd2b5c4c2a0a26027ec1ec3ce1b05b1c6e82b76",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-preview/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-preview-fp16.onnx.part-ac"
+          ]
+        },
+        {
+          "id": "lp-preview-ad",
+          "fileName": "liveportrait-generator-preview-fp16.onnx.part-ad",
+          "bytes": 50000000,
+          "sha256": "639cc033b9d160e71bbe646e2b4e1fb732ea84d90ee4934636919d1f493d751b",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-preview/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-preview-fp16.onnx.part-ad"
+          ]
+        },
+        {
+          "id": "lp-preview-ae",
+          "fileName": "liveportrait-generator-preview-fp16.onnx.part-ae",
+          "bytes": 10713705,
+          "sha256": "e2c82c32693411b1a97080f7c717eff520b4ff0dec71482d5ab6ff1be9505819",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-preview/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-preview-fp16.onnx.part-ae"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liveportrait-webgpu-quality",
+      "label": "LivePortrait WebGPU Quality Generator",
+      "capability": "avatar",
+      "revision": "a201b681c8f96672b5c3f624e32d4dc932f150af",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "LivePortrait quality FP16 generator ONNX weights."
+      },
+      "artifacts": [
+        {
+          "id": "lp-quality-aa",
+          "fileName": "liveportrait-generator-quality-fp16.onnx.part-aa",
+          "bytes": 50000000,
+          "sha256": "cf99983c7def0f6526617c4fa45b1b2ffd15ab2e4624ef96fa16d6971c82866e",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-quality/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-quality-fp16.onnx.part-aa"
+          ]
+        },
+        {
+          "id": "lp-quality-ab",
+          "fileName": "liveportrait-generator-quality-fp16.onnx.part-ab",
+          "bytes": 50000000,
+          "sha256": "f141b5c08f14a4a445ad26b21640d2b178179d3305534469fd7f595c631a79c5",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-quality/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-quality-fp16.onnx.part-ab"
+          ]
+        },
+        {
+          "id": "lp-quality-ac",
+          "fileName": "liveportrait-generator-quality-fp16.onnx.part-ac",
+          "bytes": 50000000,
+          "sha256": "4690258d33e8838fa622c0b0d453b8bb0927f8f8ab253c61951558c929c2a9bf",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-quality/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-quality-fp16.onnx.part-ac"
+          ]
+        },
+        {
+          "id": "lp-quality-ad",
+          "fileName": "liveportrait-generator-quality-fp16.onnx.part-ad",
+          "bytes": 50000000,
+          "sha256": "caef3f195d1d6ffefb71a69766b4d012351c4a187f68ebb49cc37bb4ea84f2c2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-quality/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-quality-fp16.onnx.part-ad"
+          ]
+        },
+        {
+          "id": "lp-quality-ae",
+          "fileName": "liveportrait-generator-quality-fp16.onnx.part-ae",
+          "bytes": 10713678,
+          "sha256": "166e5f3abee625597e104cb53ab5cf8dbed1abe45bd16876a448d001a2e5a294",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/liveportrait-webgpu-quality/a201b681c8f96672b5c3f624e32d4dc932f150af/liveportrait-generator-quality-fp16.onnx.part-ae"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "migan-256-webgpu",
+      "label": "MI-GAN 256 WebGPU",
+      "capability": "repair",
+      "revision": "d551be137b16ecdf12637387f2fb4776565e763f",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "MI-GAN 256 browser image/video inpainting weights."
+      },
+      "artifacts": [
+        {
+          "id": "weights",
+          "fileName": "migan-generator-256.onnx",
+          "bytes": 24743604,
+          "sha256": "21ec6e5697d60300750a3e54d83c1032e4146696975c03f1664f04e031a49f8d",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/migan-256-webgpu/d551be137b16ecdf12637387f2fb4776565e763f/migan-generator-256.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nanovsr-644k",
+      "label": "NanoVSR 644K (Image + Video)",
+      "capability": "restoration",
+      "revision": "d551be137b16ecdf12637387f2fb4776565e763f",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "notice": "NanoVSR 644K browser image/video restoration weights."
+      },
+      "artifacts": [
+        {
+          "id": "image",
+          "fileName": "nanovsr-644k-t1-fp16.onnx",
+          "bytes": 12373021,
+          "sha256": "4c030b79211b787e0bf1d1b1b2f9db370a30b0680f327744e16e09ef6abde8f6",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/nanovsr-644k/d551be137b16ecdf12637387f2fb4776565e763f/nanovsr-644k-t1-fp16.onnx"
+          ]
+        },
+        {
+          "id": "video",
+          "fileName": "nanovsr-644k-t5-fp16.onnx",
+          "bytes": 12459594,
+          "sha256": "ffa859ad09c0c9daf7aed9c60f4de915f395dbf12a4d82aa1359c71909d038d2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/nanovsr-644k/d551be137b16ecdf12637387f2fb4776565e763f/nanovsr-644k-t5-fp16.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "depth-anything-v2-small",
+      "label": "Depth Anything V2 Small Q4F16",
+      "capability": "depth",
+      "revision": "a0806c6fb9484894dcb78df523156d244461515d",
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "notice": "Depth Anything V2 Small inverse-depth estimation for cinematic depth and parallax."
+      },
+      "artifacts": [
+        {
+          "id": "config",
+          "fileName": "config.json",
+          "bytes": 38,
+          "sha256": "3aee5b9bc4f711ee885c2526d871f0c8c6c8c4b26b8e04253d0167f6a83264f5",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/depth-anything-v2-small/a0806c6fb9484894dcb78df523156d244461515d/config.json"
+          ]
+        },
+        {
+          "id": "preprocessor",
+          "fileName": "preprocessor_config.json",
+          "bytes": 461,
+          "sha256": "03576db3c13dd0471fdf5f5e1428befcb95de063fe699879150b293dc9e0a2c6",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/depth-anything-v2-small/a0806c6fb9484894dcb78df523156d244461515d/preprocessor_config.json"
+          ]
+        },
+        {
+          "id": "model-q4f16",
+          "fileName": "model_q4f16.onnx",
+          "bytes": 19126267,
+          "sha256": "eca72971aea64216d767c70c534160de53b5435b588d362bac6dbd5a73f9bf1e",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/depth-anything-v2-small/a0806c6fb9484894dcb78df523156d244461515d/onnx/model_q4f16.onnx"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "object-segmentation-v1",
+      "label": "Object Segmentation (NanoDet + MagicTouch)",
+      "capability": "segmentation",
+      "revision": "f1005093a90dec7a23746518f9623ee6aaba9cdc",
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "notice": "NanoDet object proposals and MediaPipe MagicTouch interactive segmentation."
+      },
+      "artifacts": [
+        {
+          "id": "nanodet",
+          "fileName": "nanodet-plus-m_320.onnx",
+          "bytes": 4793615,
+          "sha256": "4f12723cce3d48e47ca92cb925ba74d97a965c069208edca660bbb9f7ce2c610",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/object-segmentation-v1/f1005093a90dec7a23746518f9623ee6aaba9cdc/nanodet-plus-m_320.onnx"
+          ]
+        },
+        {
+          "id": "magic-touch",
+          "fileName": "magic_touch_512.tflite",
+          "bytes": 18000426,
+          "sha256": "2baa1c9783d03dd26f91e3c49efbcab11dd1361ff80e40e7209e81f84f281b6a",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/object-segmentation-v1/f1005093a90dec7a23746518f9623ee6aaba9cdc/magic_touch_512.tflite"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slimsam-77-uniform",
+      "label": "SlimSAM 77 Uniform",
+      "capability": "segmentation",
+      "revision": "5850ab45f587c112167512ffef949107115e26a0",
+      "license": {
+        "name": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "notice": "SlimSAM person and fallback object segmentation ONNX weights."
+      },
+      "artifacts": [
+        {
+          "id": "mediapipe-selfie",
+          "fileName": "selfie_segmenter.tflite",
+          "bytes": 249537,
+          "sha256": "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+          "sources": [
+            "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite"
+          ]
+        },
+        {
+          "id": "config",
+          "fileName": "config.json",
+          "bytes": 379,
+          "sha256": "6339884f168658d3ca6473b486973913fb33e84e625e06ae2dd7b4a808187419",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/config.json"
+          ]
+        },
+        {
+          "id": "preprocessor",
+          "fileName": "preprocessor_config.json",
+          "bytes": 466,
+          "sha256": "225545a743c654e3c495ec6f545a0eaba57c8ba3fbbd8483b3cb1c0fc58db517",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/preprocessor_config.json"
+          ]
+        },
+        {
+          "id": "vision-fp16",
+          "fileName": "vision_encoder_fp16.onnx",
+          "bytes": 12170657,
+          "sha256": "11aaeb49c75e7b3f4cbf8a32c2c819406520c6b3affb4068ff474b2240c8aa38",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/onnx/vision_encoder_fp16.onnx"
+          ]
+        },
+        {
+          "id": "prompt-fp16",
+          "fileName": "prompt_encoder_mask_decoder_fp16.onnx",
+          "bytes": 8550118,
+          "sha256": "df24d49a6f1a5dc0dbbecd84ca0fff9f14c76e63b81fd35c2b92c1321b007f71",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/onnx/prompt_encoder_mask_decoder_fp16.onnx"
+          ]
+        },
+        {
+          "id": "vision-q8",
+          "fileName": "vision_encoder_quantized.onnx",
+          "bytes": 8882165,
+          "sha256": "cce23c7b2e5d4f330932738fb67ba518e04b0d99ccdd1cccd22a7da4e01f2971",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/onnx/vision_encoder_quantized.onnx"
+          ]
+        },
+        {
+          "id": "prompt-q8",
+          "fileName": "prompt_encoder_mask_decoder_quantized.onnx",
+          "bytes": 4903810,
+          "sha256": "cb90b279f549d2cab7fd6e20c38522438c65d84bdcca3d2a764cff7d857fdce2",
+          "sources": [
+            "https://vibedev.jzsaas.com/video-editor-models/slimsam-77-uniform/5850ab45f587c112167512ffef949107115e26a0/onnx/prompt_encoder_mask_decoder_quantized.onnx"
+          ]
+        }
+      ]
+    }
+  ]
+}

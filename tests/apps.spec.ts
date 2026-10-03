@@ -130,7 +130,7 @@ describe('dsh-film plugin with apps', () => {
         },
       },
     })
-    const fiber = await ctx.plugin(Film, { appsDir: root })
+    const fiber = await ctx.plugin(Film, { appsDir: root, modelsDir: join(root, 'models') })
     expect(registered).toContain('/api/dsh-film/project')
     expect(registered).toContain('/api/dsh-film/apps/canvas/index.html')
     expect(registered.filter(path => path.startsWith('/api/dsh-film/apps/'))).toHaveLength(4)

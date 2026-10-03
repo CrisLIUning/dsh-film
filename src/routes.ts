@@ -27,6 +27,8 @@ import { addTextRoutes } from './studio/text-routes.js'
 import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
 import { addTimelineRoutes } from './studio/timeline-routes.js'
+import { addModelRoutes } from './studio/model-routes.js'
+import type { EditorModels } from './models/service.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -134,6 +136,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     const video = (await media()?.models())?.find(entry => entry.id === model)?.video
     return video?.nativeAudio
   })
+  if (options.models !== undefined) addModelRoutes(router, options.models)
   return router
 }
 
@@ -144,4 +147,6 @@ export interface StudioRouterOptions {
   tasks?: FilmMediaTasks
   /** DSH's model services, read at each request (text-node answers, the prompt writer). */
   text?: () => TextServices
+  /** The editing desk's AI models; without it the model endpoints are not offered. */
+  models?: EditorModels
 }

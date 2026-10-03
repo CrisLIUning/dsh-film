@@ -21,6 +21,7 @@
     "client",
     "apps",
     "vendor",
+    "models",
     "locale",
     "icon.svg",
     "cordis.patch.yml",
