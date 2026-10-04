@@ -116,13 +116,13 @@ export interface FilmTask {
   error?: FilmTaskError | null
   /** dsh-media's task, for videos. */
   mediaTaskId?: string
-  /** Work the Host ran itself (0.1 records only). */
+  /** Work the Host ran itself: a media edit since 0.3 (cut, join, extract audio), or a 0.1 cut. */
   kind?: 'local'
-  /** What an old local task was asked to do: its capability, idempotency key and parameters. */
+  /** What a local task was asked to do: its capability, idempotency key and parameters. */
   request?: { capability: string; requestId?: string; parameters?: Record<string, unknown> }
-  /** What a restart of the Host leaves an old running local task as. */
+  /** What a restart of the Host leaves a running local task as. */
   interruption?: FilmTaskError
-  /** What a cancel left an old local task as. */
+  /** What a cancel left a local task as. */
   cancellation?: FilmTaskError
 }
 
