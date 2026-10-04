@@ -1,0 +1,1487 @@
+{
+  "project": {
+    "version": 2,
+    "scene": {
+      "scale": 1,
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "backgroundColor": "#000000",
+      "backgroundBrightness": 1,
+      "panoramaYaw": 0,
+      "panoramaRadius": 50,
+      "showLabels": true,
+      "snapToGrid": false,
+      "showGrid": true,
+      "showGround": true,
+      "groundMaterialPreset": "studio",
+      "groundTextureScale": 1,
+      "groundColor": "#333333",
+      "groundBrightness": 1,
+      "groundOpacity": 1,
+      "groundHeight": 0,
+      "pathCollisionEnabled": true
+    },
+    "assets": [],
+    "animationAssets": [],
+    "objects": [
+      {
+        "id": "char_1",
+        "name": "人物1",
+        "kind": "character",
+        "visible": true,
+        "locked": false,
+        "bodyType": "mannequin",
+        "color": "#4F8EF7",
+        "transform": {
+          "position": [
+            -6,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "characterRig": {
+          "rigType": "ue4-mannequin",
+          "posePresetId": "stand",
+          "controls": {}
+        },
+        "motionClips": [
+          {
+            "id": "char_1_clip_1",
+            "start": 0,
+            "end": 8,
+            "interpolation": "smooth",
+            "speedMode": "soft",
+            "keyframes": [
+              {
+                "id": "k1",
+                "time": 0,
+                "transform": {
+                  "position": [
+                    -6,
+                    0,
+                    4
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": "walk-cycle",
+                "facingMode": "path",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              },
+              {
+                "id": "k2",
+                "time": 3.6,
+                "transform": {
+                  "position": [
+                    0,
+                    0,
+                    4
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": null,
+                "facingMode": "path",
+                "pointBehavior": "hold",
+                "holdSeconds": 1.2,
+                "holdAction": "stand",
+                "holdActionPresetId": null
+              },
+              {
+                "id": "k3",
+                "time": 8,
+                "transform": {
+                  "position": [
+                    5,
+                    0,
+                    -3
+                  ],
+                  "rotation": [
+                    0,
+                    1.2,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": null,
+                "facingMode": "manual",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "char_2",
+        "name": "人物2",
+        "kind": "character",
+        "visible": true,
+        "locked": false,
+        "bodyType": "female",
+        "color": "#F76F4F",
+        "transform": {
+          "position": [
+            3,
+            0,
+            6
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "characterRig": {
+          "rigType": "ue4-mannequin",
+          "posePresetId": "stand",
+          "actionPresetId": "idle",
+          "controls": {}
+        },
+        "motionClips": [
+          {
+            "id": "char_2_in",
+            "start": 1,
+            "end": 3,
+            "interpolation": "linear",
+            "speedMode": "uniform",
+            "keyframes": [
+              {
+                "id": "in_1",
+                "time": 0,
+                "transform": {
+                  "position": [
+                    3,
+                    0,
+                    6
+                  ],
+                  "rotation": [
+                    0,
+                    3.141592653589793,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": "walk-cycle",
+                "facingMode": "path",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              },
+              {
+                "id": "in_2",
+                "time": 2,
+                "transform": {
+                  "position": [
+                    3,
+                    0,
+                    2
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": null,
+                "facingMode": "path",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              }
+            ]
+          },
+          {
+            "id": "char_2_out",
+            "start": 5,
+            "end": 7.5,
+            "interpolation": "linear",
+            "speedMode": "custom",
+            "customEasing": [
+              0.3,
+              0,
+              0.7,
+              1
+            ],
+            "keyframes": [
+              {
+                "id": "out_1",
+                "time": 0,
+                "transform": {
+                  "position": [
+                    3,
+                    0,
+                    2
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": "walk-cycle",
+                "facingMode": "path",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              },
+              {
+                "id": "out_2",
+                "time": 2.5,
+                "transform": {
+                  "position": [
+                    -1,
+                    0,
+                    2
+                  ],
+                  "rotation": [
+                    0,
+                    0.5,
+                    0
+                  ],
+                  "scale": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "actionPresetId": "sit",
+                "facingMode": "manual",
+                "pointBehavior": "pass",
+                "holdSeconds": 0,
+                "holdAction": "current",
+                "holdActionPresetId": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "wall",
+        "name": "墙",
+        "kind": "prop",
+        "visible": true,
+        "locked": false,
+        "geometryType": "box",
+        "color": "#888888",
+        "transform": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      }
+    ],
+    "cameras": [
+      {
+        "id": "cam_track",
+        "name": "机位1",
+        "fov": 35,
+        "transform": {
+          "position": [
+            -2,
+            1.6,
+            12
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "targetMode": "object",
+        "targetObjectId": "char_1",
+        "target": [
+          0,
+          1,
+          0
+        ],
+        "motionPath": {
+          "duration": 8,
+          "loop": false,
+          "interpolation": "smooth",
+          "easing": "ease-in-out",
+          "speedMode": "custom",
+          "customEasing": [
+            0.4,
+            0,
+            0.6,
+            1
+          ],
+          "keyframes": [
+            {
+              "id": "c1",
+              "time": 0,
+              "position": [
+                -2,
+                1.6,
+                12
+              ],
+              "target": [
+                -6,
+                1,
+                4
+              ],
+              "fov": 35,
+              "targetMode": "object",
+              "targetObjectId": "char_1",
+              "targetBodyPart": "head",
+              "targetFollowMode": "smooth"
+            },
+            {
+              "id": "c2",
+              "time": 0.5,
+              "position": [
+                4,
+                2.2,
+                10
+              ],
+              "target": [
+                0,
+                1,
+                4
+              ],
+              "fov": 40,
+              "targetMode": "object",
+              "targetObjectId": "char_2",
+              "targetBodyPart": "chest",
+              "targetFollowMode": "immediate",
+              "pointBehavior": "hold",
+              "holdSeconds": 0.8
+            },
+            {
+              "id": "c3",
+              "time": 1,
+              "position": [
+                9,
+                3,
+                2
+              ],
+              "target": [
+                5,
+                1,
+                -3
+              ],
+              "fov": 50,
+              "targetMode": "manual"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cam_static",
+        "name": "机位2",
+        "fov": 28,
+        "transform": {
+          "position": [
+            0,
+            1.4,
+            -9
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "targetMode": "object",
+        "targetObjectId": "char_2",
+        "target": [
+          0,
+          1,
+          0
+        ]
+      }
+    ],
+    "activeCameraId": "cam_track",
+    "panoramaAssetId": null
+  },
+  "duration": 8,
+  "focusTargets": {
+    "char_1": [
+      -6,
+      1.02,
+      4
+    ],
+    "char_2": [
+      3,
+      0.99,
+      6
+    ],
+    "wall": [
+      2,
+      3,
+      4
+    ]
+  },
+  "samples": [
+    {
+      "t": 0,
+      "objects": {
+        "char_1": {
+          "position": [
+            -6,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            1.5707739728597885,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            6
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 0,
+          "holdingPointIndex": 0
+        },
+        "char_2": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 35,
+          "position": [
+            -2,
+            1.6,
+            12
+          ],
+          "target": [
+            -6,
+            1.02,
+            4
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            6
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          -6,
+          1.02,
+          4
+        ],
+        "followMode": "smooth",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.1,
+      "objects": {
+        "char_1": {
+          "position": [
+            -5.439485576109216,
+            0,
+            4.0628359483536105
+          ],
+          "rotation": [
+            0,
+            1.4021785168028358,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            6
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 0.8,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0.8,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0.8,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 35.70084699197246,
+          "position": [
+            -1.4614222176051912,
+            1.651323755104945,
+            11.873970116486381
+          ],
+          "target": [
+            -4.256528,
+            1.015795,
+            4.334367
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            6
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          -4.256528,
+          1.015795,
+          4.334367
+        ],
+        "followMode": "smooth",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.25,
+      "objects": {
+        "char_1": {
+          "position": [
+            -2.9548313189091098,
+            0,
+            4.4775164766948246
+          ],
+          "rotation": [
+            0,
+            1.475565843770621,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 2,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 2,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 2,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 37.830680790007314,
+          "position": [
+            1.1466410990530118,
+            1.8938054451827877,
+            11.391469222235399
+          ],
+          "target": [
+            0.416414,
+            1.003016,
+            4.207177
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            5
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          0.416414,
+          1.003016,
+          4.207177
+        ],
+        "followMode": "smooth",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.45,
+      "objects": {
+        "char_1": {
+          "position": [
+            0,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0,
+          "holdingPointIndex": 1
+        },
+        "char_2": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 3.6,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 3.6,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 39.907826820977256,
+          "position": [
+            3.8972720865080404,
+            2.187063024306923,
+            10.090486529534823
+          ],
+          "target": [
+            2.944696,
+            0.990553,
+            2.036869
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            2.6
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          2.944696,
+          0.990553,
+          2.036869
+        ],
+        "followMode": "smooth",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.5,
+      "objects": {
+        "char_1": {
+          "position": [
+            0,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 0,
+          "holdingPointIndex": 1
+        },
+        "char_2": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 4,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 4,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 40,
+          "position": [
+            4,
+            2.2,
+            10
+          ],
+          "target": [
+            3,
+            0.99,
+            2
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            2
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          3,
+          0.99,
+          2
+        ],
+        "followMode": "immediate",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.62,
+      "objects": {
+        "char_1": {
+          "position": [
+            1.6808129603433313,
+            0,
+            2.261403756645409
+          ],
+          "rotation": [
+            0,
+            2.499128634429162,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            3,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 4.96,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 4.96,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 4.96,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 40.06502738715369,
+          "position": [
+            4.035827941406174,
+            2.204577150981099,
+            9.967065375121098
+          ],
+          "target": [
+            3.013005,
+            0.990065,
+            1.967486
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            2
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          3.013005,
+          0.990065,
+          1.967486
+        ],
+        "followMode": "immediate",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.75,
+      "objects": {
+        "char_1": {
+          "position": [
+            3.403993668921033,
+            0,
+            -0.36134441177620147
+          ],
+          "rotation": [
+            0,
+            2.5996831220700023,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            1.5654752203386235,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            -1.5707963267948966,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 6,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 6,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 6,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 43.00898867924004,
+          "position": [
+            5.7362671221930945,
+            2.4513315736611094,
+            7.780808328830975
+          ],
+          "target": [
+            2.59892,
+            0.993009,
+            0.495506
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            3,
+            0.99,
+            2
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          2.59892,
+          0.993009,
+          0.495506
+        ],
+        "followMode": "immediate",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 0.9,
+      "objects": {
+        "char_1": {
+          "position": [
+            4.692053324027369,
+            0,
+            -2.5278380523404405
+          ],
+          "rotation": [
+            0,
+            2.58835946865313,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            -0.8193297088422904,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            -1.5707963267948966,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 7.2,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": "walk-cycle",
+          "animationTimeSeconds": 7.2,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 7.2,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 48.091067449411405,
+          "position": [
+            8.372698195713959,
+            2.8943245841528005,
+            3.115722238043472
+          ],
+          "target": [
+            3.889129,
+            0.998091,
+            -2.045534
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            2.694864,
+            0.99,
+            2
+          ]
+        }
+      },
+      "focus": {
+        "target": [
+          3.889129,
+          0.998091,
+          -2.045534
+        ],
+        "followMode": "immediate",
+        "stabilizationEnabled": false
+      }
+    },
+    {
+      "t": 1,
+      "objects": {
+        "char_1": {
+          "position": [
+            5,
+            0,
+            -3
+          ],
+          "rotation": [
+            0,
+            2.521350664934965,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "char_2": {
+          "position": [
+            -1,
+            0,
+            2
+          ],
+          "rotation": [
+            0,
+            -1.5707963267948966,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "wall": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      },
+      "actions": {
+        "char_1": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 8,
+          "holdingPointIndex": null
+        },
+        "char_2": {
+          "actionPresetId": "sit",
+          "animationTimeSeconds": 8,
+          "holdingPointIndex": null
+        },
+        "wall": {
+          "actionPresetId": null,
+          "animationTimeSeconds": 8,
+          "holdingPointIndex": null
+        }
+      },
+      "cameras": {
+        "cam_track": {
+          "fov": 50,
+          "position": [
+            9,
+            3,
+            2
+          ],
+          "target": [
+            5,
+            1,
+            -3
+          ]
+        },
+        "cam_static": {
+          "fov": 28,
+          "position": [
+            0,
+            1.319191,
+            -7.181795
+          ],
+          "target": [
+            1.565475,
+            0.99,
+            2
+          ]
+        }
+      },
+      "focus": null
+    }
+  ]
+}

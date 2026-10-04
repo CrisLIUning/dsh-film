@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/CrisLIUning/vibedev-director-desk.git",
+  "sourceCommit": "2fe7d9adc4c75dfc009f459bd24384d68da54787",
+  "sourceDirectory": "src/editor",
+  "rewrite": "relative imports gain .js (NodeNext)",
+  "files": {
+    "schema/directorProject.ts": {
+      "source": "fec4ee1a4ae3a637707f617b1ece3918890c359c47484be32006e100447dee59",
+      "vendored": "a749c35b36e6f6b21db52aab59f4a132e1a3c1a1b73e9d55106b43215b52901f"
+    },
+    "schema/sceneLighting.ts": {
+      "source": "7ecaf393b22dae26a0c4249bdcc4d52cfad42fb04029b41e96a776951e40250d",
+      "vendored": "4068033b59d75b2702cc7d42cc0045c31c0ec5e3018c8713edf9c6a30abae285"
+    },
+    "schema/lightTemperature.ts": {
+      "source": "b899f1adddff8d0ec58fb1dae1341fa3803e34979181902a18746ea229bb6342",
+      "vendored": "881a2588d4148b275d9e08ad542b7c12ef65c5d6f351e99fb86d9a5aa70dba33"
+    },
+    "schema/characterSizing.ts": {
+      "source": "e0e10fa425ac580242f99ddea3a8c8c0de426f7b5b8df699dc32ba6d2d688bbe",
+      "vendored": "8180e233ee26882d8292c1aba87e1b304d6cda3cf4c23f73b272cce3615e136f"
+    },
+    "schema/directorProjectMigration.ts": {
+      "source": "46a990c0eb3af9f8603266a74075e8c018e8b188382360e78c7d56fcdcd0394a",
+      "vendored": "d639beff22cb13157c7d4aa19432d2b373ab7015976a4a87ca608ccf3f6fc4e1"
+    },
+    "schema/sceneDefaults.ts": {
+      "source": "97aeebe88519704869f1392e11f1116f1de3e2350850652db47f00aabdca6419",
+      "vendored": "cee6500b2a253cd623e2cc32432e67e405abee0ba351fa9f13533d87be29f80c"
+    },
+    "schema/sceneTime.ts": {
+      "source": "f0c6f74ee0ec16f708e20d040add3effdf19285468084aa79da7c13d1f2bc78f",
+      "vendored": "89197c284131b258834432b8ae8cf15f780e49fa7a344134c8a12a438a27335d"
+    },
+    "schema/sceneEvents.ts": {
+      "source": "ab0f615e8e840492dbfd6cc0dbc5b51a0296f5d92ae9a4d0d1719a52fdb460a8",
+      "vendored": "2328e931d4b29cff1b587666555675845bedbaf4135bb95a4b7164696259848a"
+    },
+    "schema/sceneEventEditing.ts": {
+      "source": "2e111cc7420576e99553e56e55670be001d5912e04c46d3d8b50ddfc8bb92c3d",
+      "vendored": "158f0f8b8f275506dbc04221b93ef30aafa56785bd2cae2bf8b7b6730b2f864f"
+    },
+    "schema/shotSequence.ts": {
+      "source": "131088f784ce3f975c905dc0ccd00c361c492bd86e374f10e257bc5fa44b207d",
+      "vendored": "f62e50788d8e5149b7d5f873e43a608e9ef8c5ab44e382eebfa805f814a95746"
+    },
+    "schema/projectFingerprint.ts": {
+      "source": "37abd1bf4cab57da4068d7e947b648f7ea6b1d754125302ec742d2793c4cebd6",
+      "vendored": "be6b9fcac06a2e8a36c67efb01aa6da452e54f08cd878304350804d9bad03f8f"
+    },
+    "schema/semanticBody.ts": {
+      "source": "cb968a5e4a0dc1deab5a84b76627d9b8f02edd3cfd06cd52299159cb7584a402",
+      "vendored": "8e6910ab757fafda4a57ff4ee88c579fce65823d99bb3303821c1255a113a5ab"
+    },
+    "schema/routeTiming.ts": {
+      "source": "0fced8522ee402de3ea8902a57c6ef6f756b6721ec2046ad929277d78882e9cb",
+      "vendored": "f47c23ab001756274952169401d0c4d7101e350f8fc4c8ee90a9a21fff5acfd5"
+    },
+    "schema/vec3.ts": {
+      "source": "0dd2642256fe60c402274a50c7fd47eb6e62ea82fcf9bb926896475cc47b585e",
+      "vendored": "ada45c4960e3258c7a9b4593de471e2ee2d86a9128acbd32d17a46e4780948bc"
+    },
+    "schema/objectMotion.ts": {
+      "source": "a3d2e8c4ce42d5a275f16a87fb4690a39de54b5d71e2e079f4bb9da1a60115d8",
+      "vendored": "84202b77518a9c40f49a7db2df7e4c9bdf8c7009a600ee15a3852ddaaa4655fe"
+    },
+    "schema/characterPerformance.ts": {
+      "source": "27ce69e7220b62fd23f3ae602010e74e5c380c41c23e42dd89b2bf5124e95b91",
+      "vendored": "d07f445e480ef8edd1f42247a7598fc983e675037aca196a92f20602b91578f4"
+    },
+    "schema/characterLook.ts": {
+      "source": "a366b99bb1cb74f37c298cc7df1f7d233995bdc695279d2ca6d40c6345733c36",
+      "vendored": "e67d6d33222ce238b739bf12642bd2659dfddacd15239d24aa448faf8d763776"
+    },
+    "schema/characterLookEditing.ts": {
+      "source": "eee9f8166e6fd5c247638244a764cd66f29a98c1777afd3780b149077789edb1",
+      "vendored": "f93ab326ef2236194cebff546d5a32549b101c491af86d8b707ea4a3e03e0fbe"
+    },
+    "schema/performanceClipEditing.ts": {
+      "source": "c1e8af4fa134222f90c8bd62ff1934c661765cf025c350365cd36289ded3bacf",
+      "vendored": "26d221cbb275f79992a4f7271d1b52cff26a6aaaecefa6a33b1f5bc930ae75bc"
+    },
+    "schema/characterActionEditing.ts": {
+      "source": "caaa291209f59c45888fe18cd9d8c0fda19d3cedef0022cc1c2064802872893c",
+      "vendored": "b586907191b311fe1fb23f72e378bb03c8d05e9e62e16a21a4bc8209162c000a"
+    },
+    "schema/legacyHoldActions.ts": {
+      "source": "88177c33ca2b147f9a47ae742bc8fdbefad503cdec0c44103b5abfb05f75c56b",
+      "vendored": "b0a2a12c60436f7af35f4203eb9b4440365c7902faaebbb0c8eefad1b4d636f9"
+    },
+    "schema/characterActionCatalog.ts": {
+      "source": "fc3b915f6be16eb06fe905497d2f044792a077e8910aa3993dc43092a02a2a02",
+      "vendored": "2babe5c88f5ae28f8d49c4048291e9fecb8df5e3257744242bdb88e81f8962de"
+    },
+    "schema/characterActionPresets.ts": {
+      "source": "6c39a9f45dc02b6cdb69dd231851f0ebb559510aa1a183ec213c1d9a5dc0bc0c",
+      "vendored": "230ecd6659d63a583f5b9f84c9614dc5ae5d8517f3370af303fa825cbab03e40"
+    },
+    "schema/characterAnimationCompatibility.ts": {
+      "source": "c9c0bd1069ab43607464609aac6b8da0786ec13cb18d356df54be926aa629977",
+      "vendored": "42933f2c4787558bbcf5e750ef07651a1a010ea7ecfdddbcbcdb550550c04d1d"
+    },
+    "schema/characterNativeActions.ts": {
+      "source": "2cc876be2a826b4b2cab220e68b44964f6eac270cc43b876605f38ca1227d361",
+      "vendored": "1e4f67ec869bc1eda6670e22245d01e7b50a039c040fb5b7487b262f04be8d15"
+    },
+    "schema/importedCharacterAction.ts": {
+      "source": "5c753967b38c5fdc54b9059c91112a868b84b869e0b76c1c70eb52504168d2d7",
+      "vendored": "43fee24754efbe5ab3a240639eb07636d8ce5aa80b0b0ead7192a9f0b3bea0d9"
+    },
+    "schema/motionClipTime.ts": {
+      "source": "35c023d78bb08403245186ba7c7d38368bb46dcf0737059c404f1d469442df03",
+      "vendored": "690a598e235dbc2eba47ce759b3a90227231373c3c15ae53228df88666dc35f2"
+    },
+    "schema/motionClipEditing.ts": {
+      "source": "28ff58c542e61fb9321a213a407c29b95fa0f796a4a445629565ff3b48f651fa",
+      "vendored": "33239ee72dd97d48dfd2cdc4562ac6bedd715c89411932544c412e8c8d9ea67e"
+    },
+    "schema/objectTransformEdit.ts": {
+      "source": "1c711361b6fe6a6f8a24015067161904dc5a0c1aee27742ac8654f52d715d9c0",
+      "vendored": "ee347c8ef8991aa16f248c3bd52bbbf2516d6e314c0d1ba2c1a603833d48b1a2"
+    },
+    "schema/assetPlacement.ts": {
+      "source": "cd8700b50d94c1b7c64094ef17d093a1ddea1c5afae3f403e46ea98dedfdfa86",
+      "vendored": "140454d2db9c67a473b8fafae7d339374eab07e5ea0d5d299af9a0c31db385b9"
+    },
+    "schema/assetRelink.ts": {
+      "source": "161766be718a662b83127358971a9886a380b120c138f251652230e59ac25113",
+      "vendored": "6ef714774ca8716c798db6fe92aad7121edc72f91bfacc006e9de3192d8fea48"
+    },
+    "schema/modelImport.ts": {
+      "source": "dd1b999230cf4d6d582354ab53f04429a6401d77a1978b0eb282797f6a243dd3",
+      "vendored": "f0dc60ca23830e08aaa3c5bc96ffadd39cbcc2a0f34c71f346103a9bae9112b9"
+    },
+    "schema/animationImport.ts": {
+      "source": "8c5b8250328bb18b4dd42a2fe8764a46038dae0632206acad96e982314fc6895",
+      "vendored": "717af2dd400039d5fa6a55b38513a91d82c0d5b9885d156f3d53e8de05ee6ca7"
+    },
+    "schema/authoredMotion.ts": {
+      "source": "00aa6c303f8e0c8665558abeec56d5de29bd303944384341d8e5efea0c5bf719",
+      "vendored": "17a699a57835bf6965f7a0f30556a408ad79edec923256c50773935d8c346995"
+    },
+    "schema/authoredMotionCurves.ts": {
+      "source": "f5aa130fa7991465363d01697399f97e15ef23c41537e3c2d022f1948986cec4",
+      "vendored": "796663b78a45501ae0e796360c36982f9ae247534cdc0c4e3390011d339dd1b1"
+    },
+    "schema/authoredMotionHands.ts": {
+      "source": "0d97fb43096213ba8bd62b2deb8b7124d6684fa1d5589b45346895e96fb00bda",
+      "vendored": "3b30a45b27c2cb8fffc5dd5fc28035b39241f53c9a9304ae9bd784ea3b8cee9f"
+    },
+    "schema/motionMath.ts": {
+      "source": "1f00328567d8512885fbb67190fee23dbcbc8967c1171f1ab877664a62169c37",
+      "vendored": "9bc3e574fbb9e69b7dcff4a5620ad32dc180fbafd36327129c3ca16daea062b2"
+    },
+    "schema/modelStructure.ts": {
+      "source": "65737e53a6a18403082f9833b7e1f4f39c4a142769296b66d1ae3b46a265a4ae",
+      "vendored": "4a886cb2747af5b6cee849000cba6e0b34906d8928d16aea80c9a4919875b067"
+    },
+    "schema/modelStructureStairs.ts": {
+      "source": "c48587305d0a6bbf21ad1b2021f7e6f0bbcd2e9e3267ce05b811a091f7933785",
+      "vendored": "b2ed4cb5473b91ae9ccadac73ae31c0f07014a37c81540792ded8d56ac7303a5"
+    },
+    "schema/modelCalibration.ts": {
+      "source": "26b3a06ed302f07b7f97deee4463654c36afd3b0dc673816bfb3f11245e175de",
+      "vendored": "10fb599b8b9f974d959306c3c4387bf49560c1c078e0b18dff4699922098ecc9"
+    },
+    "schema/spatialProfile.ts": {
+      "source": "1650741d960fa9a30e94d398e2d7a71bf9c6ade00002d2207a4938490275ba0f",
+      "vendored": "2a38dee62d4915700d5f8337682e5c4b3cda3ce03e6eb1b46a261bbaa4cde442"
+    },
+    "schema/spatialSweep.ts": {
+      "source": "b00b1ba5a26c6d42f91f43741af787764e5f268ba514e543ee859979bbfeac4d",
+      "vendored": "b87741c725fc5798debbd930a925f855d76c5382f83b3453a1e6ae55168f696c"
+    },
+    "schema/spatialCurve.ts": {
+      "source": "d723fb07c91c587569cc74e0d853d6d8f0cd73ccb3da24dbdad9a6892edbbe83",
+      "vendored": "8535fae054e5115446bd7063992e9bedb8710e7483e8e17ae6d6a2a8c7ba910b"
+    },
+    "schema/spatialGeometry.ts": {
+      "source": "cc47c5ace9f57889c4c61706c78bcd9fdb8339fb66f426b38f161a7b477b4357",
+      "vendored": "9c14ab2afb29f76713ccb68cd0ccc583cc0fa7cb729ab2b55fc90fca27d93ddd"
+    },
+    "schema/spatialTerrain.ts": {
+      "source": "f682f2b21dd85e1bbd35fabd4120633bbe095e646444b2a2c62a28f8a5c08742",
+      "vendored": "bed41bb5c4672c61328a3d3321ba39e571ef7d7284afac87124515b6c64bdfd9"
+    },
+    "schema/routeCollision.ts": {
+      "source": "200930d4231e8545a18e204fb74aab3030a2e1496bb1a071f939a05bf095d78b",
+      "vendored": "d001935ffe2e6e2a0c1e6d441777d14323a19c7ed56eb6db13efef8814b8aa3b"
+    },
+    "schema/cameraMotion.ts": {
+      "source": "c7be7fb7b8cc8fc0379d2b33d420680f6b9d16c322c2a8d4b9707076049946e5",
+      "vendored": "298a23eb6f13dd66abb989b933b356a869a6f26abfe17455c62b7d69caf54f9a"
+    },
+    "schema/cameraMotionClips.ts": {
+      "source": "eb7b2338f103204b9001f2272c77422671218d0369053f3df77a2e4107f2b627",
+      "vendored": "4d07566f6aeacfad8ea4cc921a906f113e9cabbb33dd8eb69160e1f6be49a649"
+    },
+    "schema/cameraMotionClipEditing.ts": {
+      "source": "cce6f8c107ee1962eb1c9bd7eb9330568f604f2abae886e77e906d71bfb9472b",
+      "vendored": "0754e2a37d7471bb5116d4cf49b85abee6fb7d77582ed2fe0eea848a970c9d32"
+    },
+    "schema/cameraMotionClipPreset.ts": {
+      "source": "c3a1acf19cd8569b3bdc27b07b306b4d832d04471f9b1636f7af425fa455def2",
+      "vendored": "ce2a2450f87e46778dabb9e0836ac3f93551a346652041a4aa209efa4e870b42"
+    },
+    "schema/cameraStroke.ts": {
+      "source": "3088d8feb2b586412da01aa57d11b1c054a2fd1e08ee532c4f9993ba743c6817",
+      "vendored": "087920404e94f2f5a57ffbc495852ba631c98662baeab93c780751b31f000c55"
+    },
+    "schema/strokeSampling.ts": {
+      "source": "8a878001fd05731fce351024ffeb94f87088a78fb6103ed60e72b81e4a22396d",
+      "vendored": "31b6511d576e1f9ae6dde6a6ff165c6f971acb87c9a8f228f098439a5f18ce51"
+    },
+    "schema/routeStroke.ts": {
+      "source": "58acc146c1967bd84960dcc4f2e274fc9138ed76de3c0583e4031b1c79d49b29",
+      "vendored": "25c6e68ed2508279ed5f12576bda02e27fb92be377787bc4d35803e142217ec0"
+    },
+    "schema/objectStroke.ts": {
+      "source": "e4096c8a20fa42d88a05c019782b6144d63858fee8bc3d38e45da82fed21bf25",
+      "vendored": "c46516fcb073599724c420acd6f7ddfc6f8cacdd301dcd73936ad4e19a21153d"
+    },
+    "schema/cameraKeyframe.ts": {
+      "source": "7f885a22e0c47bbbfe390de4974ef3f5abdc85256c2c896573e6dcbd3117a2bc",
+      "vendored": "2dce04f06c908a3646186de59dc8ba8555b56534a21642570f8a07ee72c8f623"
+    },
+    "schema/cameraComposition.ts": {
+      "source": "cdf8fb036b0e40df58727ddb0ce67271e6c640bafd734f28a2477025c0166ec9",
+      "vendored": "6dae686c553c411016291e85750a0244cc1d0e417e6f62a2593822a326c103ac"
+    },
+    "schema/cameraPhotography.ts": {
+      "source": "0282ec635161e9e92f2c01ab50de9008984a7c05ca58b5110f9ccc9a2fc64be0",
+      "vendored": "06d52dadf86100e63e10543b74ca1a601c14af9eeac6a9107ba3f79405f06b8f"
+    },
+    "schema/cameraOptics.ts": {
+      "source": "682a712e0f957b23187a8b5a0def8d653ff1b3368e591ee46a34c14dd434d3bb",
+      "vendored": "d45ebb81061deee423332082b1676458e8c8b3373b24cfc4ec1a0bd314303a5a"
+    },
+    "schema/cameraFrameBasis.ts": {
+      "source": "6e16e13010d03bd0354cf07b49da4b061ff513cb6a7ac0b05cedfca2742f5f28",
+      "vendored": "311e3bfb9552cc3345492436ec7467603b260d7f2edd90104f32435c9246c310"
+    },
+    "schema/cameraRoll.ts": {
+      "source": "f8832d53d47ec0c38232a2fc055294cf85ef9b9701f28a5baef729dbf9f0017f",
+      "vendored": "4462305edaf5d2ab20ea8cfe656e8361c2be08824d00195caea7560d7f4ee40c"
+    },
+    "schema/cameraCompositionEdit.ts": {
+      "source": "bd6e2f73f6934791054966c2a1d4f0af7b8c9a705d1fe4cba3d43add6af20415",
+      "vendored": "7fd2eaba0d05e072e2f69429abf8ceb1bc5ecd61378a10d66d45c3191b328dfd"
+    },
+    "schema/cameraPathTemplates.ts": {
+      "source": "3ad14e3083eb3cb3f83445e11b5a82bd854d0fa7477b0e6da95ad778a79b9c7c",
+      "vendored": "47806df11be1429a4e9f6b528b0d6677735d8f25d23d650f3cea2b5bd83a05e6"
+    },
+    "schema/cameraPreset.ts": {
+      "source": "63c409c0663ac1481085003241ad11707fa2792007e0d3806f8d4ba66d78345f",
+      "vendored": "25449862a41a2bd7f61a6081933f2832755e9a122767ac8a4bb6c6868b9cc4d9"
+    },
+    "schema/pathCollision.ts": {
+      "source": "420e49d4aa14b9a5256916e09ca42496040047bf12c4a87030bbadd0e5a276eb",
+      "vendored": "112d1c94456a080dc5f296c34352979c6edccbe2631e2bebd02ae32e0033e8f4"
+    },
+    "schema/cameraGeometry.ts": {
+      "source": "9c2090ab8c8d42a2303f46d1fe87475800dadc6df7d11dbf19f99de96a44b23a",
+      "vendored": "3d47c2f0a77b1a54054ff29f80b493ff03a1946b2fcb094d9e0dcddfd6466fb7"
+    },
+    "schema/cameraTarget.ts": {
+      "source": "a2f6b5ed503c95dac6e7ae4d0fd90ee5e706ca0d021df898c6cf682530ae5249",
+      "vendored": "38982ab64484bd0bd397f0d3bb0cb72eb528aeba3904fabb9591908733bdd677"
+    },
+    "schema/cameraPlayback.ts": {
+      "source": "f46790ef41144a61c268fbf58115266dc5ff7acd6b9673254efd7f6a49878ec9",
+      "vendored": "6e3a6e35645db0997c58585b157cec5a6c2b445f24a2efb5adbd0cf7e7506ca9"
+    },
+    "schema/cameraTemporalPlayback.ts": {
+      "source": "f80acab759a086f7451c61e34d5df86664e9b111b639cc69d8aea05c9aac4cea",
+      "vendored": "664cbbf0d08c7285a00ec1586998e148e4c60114d1451ca2c60ee0ebce4076aa"
+    },
+    "schema/cameraMicroMotion.ts": {
+      "source": "0d9a0b13ffe56511bae450ff1aeb2ad0240ccfaa69e64d538417ee0e453fb296",
+      "vendored": "635d6efa0fa4d3a6faba0ea748e5d8901f3d083c8c2a172f26ac1a0b866349d8"
+    },
+    "schema/cameraMicroMotionEditing.ts": {
+      "source": "a2cc98306f2531355c6b4b7d17c4dc74d9a9b5f4b4e459f799f1abb8861c8639",
+      "vendored": "be82a03af1eed866d7ff33693a4c2bc7dcf2bfaa12acd84c198549f20dd79e26"
+    },
+    "schema/cameraMicroMotionState.ts": {
+      "source": "b864240ce6f6434da88a722efd308c68800d016f46a6ae4a41a37d44424edad0",
+      "vendored": "ecc186ecbd4f3914312995c26f28f4b0eaa30cc1611d3706a5c1786c160a2e9f"
+    },
+    "schema/cameraMicroMotionCollision.ts": {
+      "source": "440c953bd8fe3018ca22270e7088280eb56992da2700811e2a45848d27c0ec50",
+      "vendored": "ccd674aacdf08e7cdb26354513bfc5f63cad33bf64e79ed1b99ba8a294a05abe"
+    },
+    "schema/cameraTrackingFilter.ts": {
+      "source": "d854710a10d8b302e5d535cbdb3ab4b4ce98485ed6b4a2c1268c02a506ee0c2b",
+      "vendored": "4d58188ddc60957a18d7c33277778eabf37dd22cb7da1c40c3e36f7cf0616490"
+    },
+    "runtime/mannequin/bodyTypes.ts": {
+      "source": "c54b85f2987fa7efa95e77bab54ad3c0f5a11bfb9c79c408b5326fa7e5abd3e7",
+      "vendored": "fdf049dfcda56bae901afc45c87311bb07a0e13738da4aea3137b81a953b230a"
+    },
+    "runtime/mannequin/mannequinPose.ts": {
+      "source": "f89696b1345ce57aca54b9682dab90f3d3ca74373e9a86a70b09623537ec9fc8",
+      "vendored": "17526ac4913d3ef3a3c184c363e9f4d461800f4a24329cafacd5b3179508ef63"
+    },
+    "runtime/ue4Mannequin/ue4MannequinBody.ts": {
+      "source": "3c745fd504fe8d19f16f6e63a626001089868bfc07298f4c44ae4e387e074e51",
+      "vendored": "904e6c7422f5520e728a564d78930812077cb125ec104fb9ac72af63391c1492"
+    }
+  }
+}

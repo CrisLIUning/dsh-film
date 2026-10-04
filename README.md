@@ -67,3 +67,5 @@ npm run build      # lib/ (Host half) + client/ (browser half)
 ## License
 
 MIT
+
+导演台的场景数学（`src/director/vendor/director-math/`，构建后在 `lib/director/vendor/director-math/`）原样复制自 [vibedev-director-desk](https://github.com/CrisLIUning/vibedev-director-desk)，Copyright (c) 2026 YZ，以 MIT 许可证发布（条款与上文相同，原文见该目录的 `LICENSE`）。

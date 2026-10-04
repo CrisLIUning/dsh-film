@@ -1,0 +1,3503 @@
+{
+  "recordedFrom": "v1 sampler, desk 859f6e695",
+  "duration": 7,
+  "project": {
+    "version": 1,
+    "scene": {
+      "scale": 1,
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "backgroundColor": "#000000",
+      "backgroundBrightness": 1,
+      "panoramaYaw": 0,
+      "panoramaRadius": 50,
+      "showLabels": true,
+      "snapToGrid": false,
+      "showGrid": true,
+      "showGround": true,
+      "groundMaterialPreset": "studio",
+      "groundTextureScale": 1,
+      "groundColor": "#333333",
+      "groundBrightness": 1,
+      "groundOpacity": 1,
+      "groundHeight": 0,
+      "pathCollisionEnabled": true
+    },
+    "assets": [],
+    "animationAssets": [],
+    "objects": [
+      {
+        "id": "char_1",
+        "name": "甲",
+        "kind": "character",
+        "visible": true,
+        "locked": false,
+        "bodyType": "mannequin",
+        "transform": {
+          "position": [
+            -6,
+            0,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "characterRig": {
+          "rigType": "ue4-mannequin",
+          "posePresetId": "stand",
+          "controls": {}
+        },
+        "motionPath": {
+          "interpolation": "smooth",
+          "speedMode": "soft",
+          "keyframes": [
+            {
+              "id": "a1",
+              "time": 0,
+              "transform": {
+                "position": [
+                  -6,
+                  0,
+                  4
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "actionPresetId": "walk-cycle",
+              "facingMode": "path"
+            },
+            {
+              "id": "a2",
+              "time": 0.45,
+              "transform": {
+                "position": [
+                  0,
+                  0,
+                  4
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "pointBehavior": "hold",
+              "holdSeconds": 1.2,
+              "holdAction": "custom",
+              "holdActionPresetId": "wave-cycle",
+              "facingMode": "path"
+            },
+            {
+              "id": "a3",
+              "time": 1,
+              "transform": {
+                "position": [
+                  5,
+                  0,
+                  -3
+                ],
+                "rotation": [
+                  0,
+                  1.2,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "facingMode": "manual"
+            }
+          ]
+        }
+      },
+      {
+        "id": "char_2",
+        "name": "乙",
+        "kind": "character",
+        "visible": true,
+        "locked": false,
+        "bodyType": "female",
+        "transform": {
+          "position": [
+            3,
+            0,
+            6
+          ],
+          "rotation": [
+            0,
+            3.141592653589793,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "characterRig": {
+          "rigType": "ue4-mannequin",
+          "posePresetId": "stand",
+          "controls": {}
+        },
+        "motionPath": {
+          "interpolation": "linear",
+          "speedMode": "custom",
+          "customEasing": [
+            0.2,
+            0,
+            0.8,
+            1
+          ],
+          "keyframes": [
+            {
+              "id": "b1",
+              "time": 0,
+              "transform": {
+                "position": [
+                  3,
+                  0,
+                  6
+                ],
+                "rotation": [
+                  0,
+                  3.141592653589793,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "actionPresetId": "walk-cycle",
+              "facingMode": "manual"
+            },
+            {
+              "id": "b2",
+              "time": 0.3,
+              "transform": {
+                "position": [
+                  3,
+                  0,
+                  1
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "pointBehavior": "hold",
+              "holdSeconds": 1.5,
+              "holdAction": "current",
+              "actionPresetId": "run-cycle",
+              "facingMode": "path"
+            },
+            {
+              "id": "b3",
+              "time": 0.7,
+              "transform": {
+                "position": [
+                  -2,
+                  0,
+                  1
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "actionPresetId": "walk-cycle",
+              "facingMode": "path"
+            },
+            {
+              "id": "b4",
+              "time": 1,
+              "transform": {
+                "position": [
+                  -2,
+                  0,
+                  -4
+                ],
+                "rotation": [
+                  0,
+                  0.4,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "facingMode": "manual"
+            }
+          ]
+        }
+      },
+      {
+        "id": "char_3",
+        "name": "丙",
+        "kind": "character",
+        "visible": true,
+        "locked": false,
+        "bodyType": "teen",
+        "transform": {
+          "position": [
+            8,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "characterRig": {
+          "rigType": "ue4-mannequin",
+          "posePresetId": "stand",
+          "controls": {}
+        },
+        "motionPath": {
+          "interpolation": "linear",
+          "keyframes": [
+            {
+              "id": "c1",
+              "time": 0,
+              "transform": {
+                "position": [
+                  8,
+                  0,
+                  0
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "facingMode": "path",
+              "actionPresetId": "walk-cycle"
+            },
+            {
+              "id": "c2",
+              "time": 0.4,
+              "transform": {
+                "position": [
+                  8,
+                  0,
+                  -5
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "facingMode": "path"
+            },
+            {
+              "id": "c3",
+              "time": 1,
+              "transform": {
+                "position": [
+                  2,
+                  0,
+                  -5
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "facingMode": "manual"
+            }
+          ]
+        }
+      },
+      {
+        "id": "prop_1",
+        "name": "箱",
+        "kind": "prop",
+        "visible": true,
+        "locked": false,
+        "geometryType": "box",
+        "transform": {
+          "position": [
+            0,
+            0.5,
+            -8
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "motionPath": {
+          "interpolation": "smooth",
+          "speedMode": "uniform",
+          "keyframes": [
+            {
+              "id": "p1",
+              "time": 0,
+              "transform": {
+                "position": [
+                  0,
+                  0.5,
+                  -8
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            {
+              "id": "p2",
+              "time": 1,
+              "transform": {
+                "position": [
+                  6,
+                  2.5,
+                  -8
+                ],
+                "rotation": [
+                  0,
+                  3.141592653589793,
+                  0
+                ],
+                "scale": [
+                  2,
+                  2,
+                  2
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "prop_2",
+        "name": "灯",
+        "kind": "prop",
+        "visible": true,
+        "locked": false,
+        "geometryType": "cylinder",
+        "transform": {
+          "position": [
+            -8,
+            1,
+            -8
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "motionPath": {
+          "interpolation": "smooth",
+          "speedMode": "uniform",
+          "keyframes": [
+            {
+              "id": "q1",
+              "time": 0.5,
+              "transform": {
+                "position": [
+                  -7,
+                  1,
+                  -7
+                ],
+                "rotation": [
+                  0,
+                  0,
+                  0
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "wall",
+        "name": "墙",
+        "kind": "prop",
+        "visible": true,
+        "locked": false,
+        "geometryType": "box",
+        "transform": {
+          "position": [
+            2,
+            1.5,
+            4
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.4,
+            3,
+            6
+          ]
+        }
+      }
+    ],
+    "cameras": [
+      {
+        "id": "cam_a",
+        "name": "机位A",
+        "fov": 35,
+        "transform": {
+          "position": [
+            -2,
+            1.6,
+            12
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "targetMode": "object",
+        "targetObjectId": "char_1",
+        "target": [
+          0,
+          1,
+          0
+        ],
+        "motionPath": {
+          "duration": 7,
+          "loop": false,
+          "interpolation": "smooth",
+          "easing": "ease-in-out",
+          "speedMode": "custom",
+          "customEasing": [
+            0.4,
+            0,
+            0.6,
+            1
+          ],
+          "keyframes": [
+            {
+              "id": "k1",
+              "time": 0,
+              "position": [
+                -2,
+                1.6,
+                12
+              ],
+              "target": [
+                -6,
+                1,
+                4
+              ],
+              "fov": 35,
+              "targetMode": "object",
+              "targetObjectId": "char_1",
+              "targetBodyPart": "chest",
+              "targetFollowMode": "smooth"
+            },
+            {
+              "id": "k2",
+              "time": 0.5,
+              "position": [
+                4,
+                2.2,
+                10
+              ],
+              "target": [
+                0,
+                1,
+                4
+              ],
+              "fov": 40,
+              "targetMode": "object",
+              "targetObjectId": "char_2",
+              "targetBodyPart": "head",
+              "targetFollowMode": "immediate",
+              "pointBehavior": "hold",
+              "holdSeconds": 0.8
+            },
+            {
+              "id": "k3",
+              "time": 1,
+              "position": [
+                9,
+                3,
+                2
+              ],
+              "target": [
+                5,
+                1,
+                -3
+              ],
+              "fov": 50,
+              "targetMode": "manual"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cam_b",
+        "name": "机位B",
+        "fov": 28,
+        "transform": {
+          "position": [
+            0,
+            1.4,
+            -9
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "targetMode": "object",
+        "targetObjectId": "char_2",
+        "target": [
+          0,
+          1,
+          0
+        ],
+        "motionPath": {
+          "duration": 4,
+          "loop": false,
+          "interpolation": "linear",
+          "easing": "linear",
+          "speedMode": "uniform",
+          "keyframes": [
+            {
+              "id": "m1",
+              "time": 0,
+              "position": [
+                0,
+                1.4,
+                -9
+              ],
+              "target": [
+                0,
+                1,
+                0
+              ],
+              "fov": 28
+            },
+            {
+              "id": "m2",
+              "time": 1,
+              "position": [
+                6,
+                1.4,
+                -9
+              ],
+              "target": [
+                0,
+                1,
+                0
+              ],
+              "fov": 28
+            }
+          ]
+        }
+      }
+    ],
+    "activeCameraId": "cam_a",
+    "panoramaAssetId": null
+  },
+  "plans": {
+    "char_1": {
+      "arrivals": [
+        0,
+        0.36697917665754043,
+        1
+      ],
+      "departures": [
+        3.9509364536830354e-7,
+        0.5384077480861118,
+        1
+      ]
+    },
+    "char_2": {
+      "arrivals": [
+        0,
+        0.3,
+        0.7,
+        1
+      ],
+      "departures": [
+        0,
+        0.5142857142857142,
+        0.7,
+        1
+      ]
+    },
+    "char_3": null,
+    "prop_1": {
+      "arrivals": [
+        0,
+        1
+      ],
+      "departures": [
+        4.76837158203125e-7,
+        1
+      ]
+    },
+    "prop_2": null,
+    "wall": null
+  },
+  "samples": [
+    {
+      "t": 0,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -6,
+              0,
+              4
+            ],
+            "rotation": [
+              0,
+              1.5707728022041552,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": 0
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              6
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              0,
+              0.5,
+              -8
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": 0
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 35,
+        "position": [
+          -2,
+          1.6,
+          12
+        ],
+        "target": [
+          -6,
+          1.02,
+          4
+        ]
+      }
+    },
+    {
+      "t": 0.02,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -5.975763659622671,
+              0,
+              4.000219047718024
+            ],
+            "rotation": [
+              0,
+              1.5530513927403742,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              5.874721315303901
+            ],
+            "rotation": [
+              0,
+              3.062877734491262,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -0.24999999999999997
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              0.12000000000000006,
+              0.54,
+              -8
+            ],
+            "rotation": [
+              0,
+              0.0628318530717959,
+              0
+            ],
+            "scale": [
+              1.02,
+              1.02,
+              1.02
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.14,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 35.032302836371244,
+        "position": [
+          -1.9803479389355378,
+          1.601958985715595,
+          11.993580632340931
+        ],
+        "target": [
+          -5.917775,
+          1.019806,
+          4.012329
+        ]
+      }
+    },
+    {
+      "t": 0.1,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -5.41109938157205,
+              0,
+              4.06770894183191
+            ],
+            "rotation": [
+              0,
+              1.399430509204934,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              4.527734573328574
+            ],
+            "rotation": [
+              0,
+              2.216541003876754,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -1.25
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              0.6000000000000003,
+              0.7000000000000001,
+              -8
+            ],
+            "rotation": [
+              0,
+              0.3141592653589795,
+              0
+            ],
+            "scale": [
+              1.1,
+              1.1,
+              1.1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 0.7000000000000001,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 35.70084699197246,
+        "position": [
+          -1.4614222176051912,
+          1.651323755104945,
+          11.873970116486381
+        ],
+        "target": [
+          -4.23212,
+          1.015795,
+          4.132191
+        ]
+      }
+    },
+    {
+      "t": 0.2,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -3.863146856966527,
+              0,
+              4.3563703961493125
+            ],
+            "rotation": [
+              0,
+              1.407060232502126,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              2.4722654266714263
+            ],
+            "rotation": [
+              0,
+              0.9250516497130392,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -2.5
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              1.2000000000000006,
+              0.9000000000000002,
+              -8
+            ],
+            "rotation": [
+              0,
+              0.628318530717959,
+              0
+            ],
+            "scale": [
+              1.2000000000000002,
+              1.2000000000000002,
+              1.2000000000000002
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 1.4000000000000001,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 37.082537843280804,
+        "position": [
+          0.12424035314754855,
+          1.797240521760378,
+          11.612460723987668
+        ],
+        "target": [
+          -1.004594,
+          1.007505,
+          3.571626
+        ]
+      }
+    },
+    {
+      "t": 0.3,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -1.6298259336248382,
+              0,
+              4.497557124758648
+            ],
+            "rotation": [
+              0,
+              1.6552268863686599,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -3.7499999999999996
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              1.800000000000001,
+              1.1000000000000003,
+              -8
+            ],
+            "rotation": [
+              0,
+              0.9424777960769384,
+              0
+            ],
+            "scale": [
+              1.3000000000000003,
+              1.3000000000000003,
+              1.3000000000000003
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.1,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 38.543468461043865,
+        "position": [
+          2.144898086319377,
+          1.9925436617077859,
+          11.081674850736754
+        ],
+        "target": [
+          1.651302,
+          0.998739,
+          2.01886
+        ]
+      }
+    },
+    {
+      "t": 0.33,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              -0.8841787980370373,
+              0,
+              4.37444813462362
+            ],
+            "rotation": [
+              0,
+              1.8239345959222084,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -4.125
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              1.980000000000001,
+              1.1600000000000004,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.0367255756846323,
+              0
+            ],
+            "scale": [
+              1.33,
+              1.33,
+              1.33
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.31,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 38.92892329657514,
+        "position": [
+          2.6726676340166,
+          2.0474264321033604,
+          10.861295560514137
+        ],
+        "target": [
+          2.167949,
+          0.996426,
+          1.722859
+        ]
+      }
+    },
+    {
+      "t": 0.4,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              0,
+              0,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "wave-cycle",
+            "animationTimeSeconds": 0.23114576339721715,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.8000000000000003,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              8,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -2.466851711366223,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 2.8000000000000003,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              2.4000000000000017,
+              1.3000000000000007,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.2566370614359181,
+              0
+            ],
+            "scale": [
+              1.4000000000000004,
+              1.4000000000000004,
+              1.4000000000000004
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.8000000000000003,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.8000000000000003,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 2.8000000000000003,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 39.62596229660399,
+        "position": [
+          3.5676390782103806,
+          2.147158831825504,
+          10.346894133835592
+        ],
+        "target": [
+          2.775577,
+          0.992244,
+          1.224423
+        ]
+      }
+    },
+    {
+      "t": 0.45,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              0,
+              0,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "wave-cycle",
+            "animationTimeSeconds": 0.5811457633972168,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 3.15,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              7.5,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.15,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              2.700000000000002,
+              1.4000000000000008,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.413716694115408,
+              0
+            ],
+            "scale": [
+              1.4500000000000004,
+              1.4500000000000004,
+              1.4500000000000004
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.15,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.15,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.15,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 39.907826820977256,
+        "position": [
+          3.8972720865080404,
+          2.187063024306923,
+          10.090486529534823
+        ],
+        "target": [
+          2.944696,
+          0.990553,
+          1.055304
+        ]
+      }
+    },
+    {
+      "t": 0.5,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              0,
+              0,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "wave-cycle",
+            "animationTimeSeconds": 0.9311457633972169,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 3.5,
+            "holdingPointIndex": 1
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              7,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.5,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              3.0000000000000018,
+              1.5000000000000007,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.5707963267948977,
+              0
+            ],
+            "scale": [
+              1.5000000000000004,
+              1.5000000000000004,
+              1.5000000000000004
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.5,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.5,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.5,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 40,
+        "position": [
+          4,
+          2.2,
+          10
+        ],
+        "target": [
+          3,
+          0.99,
+          1
+        ]
+      }
+    },
+    {
+      "t": 0.55,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              0.24894015621400623,
+              0,
+              3.822982794600295
+            ],
+            "rotation": [
+              0,
+              2.2345772813837668,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              2.3252616262501893,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "run-cycle",
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              6.5,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              3.300000000000003,
+              1.600000000000001,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.7278759594743878,
+              0
+            ],
+            "scale": [
+              1.5500000000000005,
+              1.5500000000000005,
+              1.5500000000000005
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 3.8500000000000005,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 40,
+        "position": [
+          4,
+          2.2,
+          10
+        ],
+        "target": [
+          2.325262,
+          0.99,
+          1
+        ]
+      }
+    },
+    {
+      "t": 0.6,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              1.1920991994923795,
+              0,
+              2.87929485337453
+            ],
+            "rotation": [
+              0,
+              2.4415446195334205,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              0.7402106055596311,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "run-cycle",
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              6,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              3.6000000000000023,
+              1.7000000000000008,
+              -8
+            ],
+            "rotation": [
+              0,
+              1.8849555921538772,
+              0
+            ],
+            "scale": [
+              1.6000000000000005,
+              1.6000000000000005,
+              1.6000000000000005
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.2,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 40,
+        "position": [
+          4,
+          2.2,
+          10
+        ],
+        "target": [
+          0.740211,
+          0.99,
+          1
+        ]
+      }
+    },
+    {
+      "t": 0.66,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              2.145423396329363,
+              0,
+              1.612864499266672
+            ],
+            "rotation": [
+              0,
+              2.538394245154655,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -1.203254912379835,
+              0,
+              1
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "run-cycle",
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              5.4,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              3.9600000000000026,
+              1.820000000000001,
+              -8
+            ],
+            "rotation": [
+              0,
+              2.073451151369265,
+              0
+            ],
+            "scale": [
+              1.6600000000000006,
+              1.6600000000000006,
+              1.6600000000000006
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.62,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 40.36725332728801,
+        "position": [
+          4.203913388514731,
+          2.226492216301151,
+          9.80323256877967
+        ],
+        "target": [
+          -0.975438,
+          0.990367,
+          0.853099
+        ]
+      }
+    },
+    {
+      "t": 0.7,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              2.7056904943349234,
+              0,
+              0.7670216035750601
+            ],
+            "rotation": [
+              0,
+              2.572395264082893,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -2,
+              0,
+              0.9999999999454304
+            ],
+            "rotation": [
+              0,
+              -1.9416916774577289,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              5.000000000000001,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              4.200000000000003,
+              1.9000000000000008,
+              -8
+            ],
+            "rotation": [
+              0,
+              2.1991148575128565,
+              0
+            ],
+            "scale": [
+              1.7000000000000004,
+              1.7000000000000004,
+              1.7000000000000004
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 4.8999999999999995,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 41.212941224460444,
+        "position": [
+          4.685617047327078,
+          2.2928409886121797,
+          9.25889832454657
+        ],
+        "target": [
+          -1.150941,
+          0.991213,
+          0.514824
+        ]
+      }
+    },
+    {
+      "t": 0.8,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              3.872561154939884,
+              0,
+              -1.1491349482592108
+            ],
+            "rotation": [
+              0,
+              2.60894767497327,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -2,
+              0,
+              -0.47226542667142635
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              4,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              4.8000000000000025,
+              2.1000000000000005,
+              -8
+            ],
+            "rotation": [
+              0,
+              2.513274122871836,
+              0
+            ],
+            "scale": [
+              1.8000000000000003,
+              1.8000000000000003,
+              1.8000000000000003
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 5.6000000000000005,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 44.461080872577284,
+        "position": [
+          6.5745510132170315,
+          2.58729259014656,
+          6.400802675958457
+        ],
+        "target": [
+          1.122757,
+          0.994461,
+          -1.599908
+        ]
+      }
+    },
+    {
+      "t": 0.9,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              4.6772929070689155,
+              0,
+              -2.5038988182470314
+            ],
+            "rotation": [
+              0,
+              2.5897735083088618,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -2,
+              0,
+              -2.5277345733285737
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              3,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              5.4,
+              2.3000000000000003,
+              -8
+            ],
+            "rotation": [
+              0,
+              2.8274333882308142,
+              0
+            ],
+            "scale": [
+              1.9000000000000001,
+              1.9000000000000001,
+              1.9000000000000001
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.3,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 47.97947431667716,
+        "position": [
+          8.327652686844715,
+          2.8865606786691194,
+          3.1995460047092035
+        ],
+        "target": [
+          3.585632,
+          0.997979,
+          -2.904578
+        ]
+      }
+    },
+    {
+      "t": 0.95,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              4.9123424061192384,
+              0,
+              -2.8728253955655436
+            ],
+            "rotation": [
+              0,
+              2.551964629860147,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -2,
+              0,
+              -3.455142340049621
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              2.5,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              5.7,
+              2.4000000000000004,
+              -8
+            ],
+            "rotation": [
+              0,
+              2.9845130209103035,
+              0
+            ],
+            "scale": [
+              1.9500000000000002,
+              1.9500000000000002,
+              1.9500000000000002
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 6.6499999999999995,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 49.37153986479891,
+        "position": [
+          8.825608105752304,
+          2.9714310442985585,
+          2.2930923639234155
+        ],
+        "target": [
+          4.560078,
+          0.999372,
+          -3.028604
+        ]
+      }
+    },
+    {
+      "t": 1,
+      "objects": {
+        "char_1": {
+          "transform": {
+            "position": [
+              5,
+              0,
+              -3
+            ],
+            "rotation": [
+              0,
+              2.521351057543963,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        },
+        "char_2": {
+          "transform": {
+            "position": [
+              -2,
+              0,
+              -4
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": "walk-cycle",
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        },
+        "char_3": {
+          "transform": {
+            "position": [
+              2,
+              0,
+              -5
+            ],
+            "rotation": [
+              0,
+              -1.5707963267948966,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_1": {
+          "transform": {
+            "position": [
+              6,
+              2.5,
+              -8
+            ],
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "scale": [
+              2,
+              2,
+              2
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        },
+        "prop_2": {
+          "transform": {
+            "position": [
+              -7,
+              1,
+              -7
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        },
+        "wall": {
+          "transform": {
+            "position": [
+              2,
+              1.5,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.4,
+              3,
+              6
+            ]
+          },
+          "action": {
+            "actionPresetId": null,
+            "animationTimeSeconds": 7,
+            "holdingPointIndex": null
+          }
+        }
+      },
+      "cameraA": {
+        "fov": 50,
+        "position": [
+          9,
+          3,
+          2
+        ],
+        "target": [
+          5,
+          1,
+          -3
+        ]
+      }
+    }
+  ]
+}

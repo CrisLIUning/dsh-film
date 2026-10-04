@@ -17,7 +17,7 @@ import { createProject, parseNewProject, readProject, workspaceDirectory } from 
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
-import type { CanvasBoardAgent } from './canvas/board-agent.js'
+import { CanvasBoardAgent } from './canvas/board-agent.js'
 import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
@@ -28,6 +28,7 @@ import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
 import { addTimelineRoutes } from './studio/timeline-routes.js'
 import { addModelRoutes } from './studio/model-routes.js'
+import { addDirectorRoutes } from './studio/director-routes.js'
 import type { EditorModels } from './models/service.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
@@ -132,7 +133,9 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     onChange: (cwd, documentId, revision) => { events.emit(cwd, { type: 'story-changed', documentId, revision }) },
   })
   addScreenwriterRoutes(router, story)
-  addCanvasRoutes(router, events, options.boardAgent)
+  const boardAgent = options.boardAgent ?? new CanvasBoardAgent()
+  addCanvasRoutes(router, events, boardAgent)
+  addDirectorRoutes(router, { events, boardAgent })
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)
