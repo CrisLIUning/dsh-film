@@ -9,6 +9,7 @@ import { filmAgentTools, filmCoreTools, filmToolGroups, filmToolsTool } from '..
 import type { FilmToolServices } from '../src/agent/index.js'
 import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
+import { summariseMaterial } from '../src/agent/timeline-tools.js'
 import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
@@ -244,6 +245,28 @@ describe('story_asset_bindings', () => {
       action: 'bind', documentId, expectedRevision: bound.document.revision, binding: { ...binding, purpose: 'identity', filePath: own.filePath, expectedSha256: own.sha256 },
     })
     expect(inPlace.assets).toEqual([expect.objectContaining({ projectRelativePath: 'media/own.png' })])
+  })
+
+  it('lists and binds images kept anywhere in the workspace outside film/', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'refs', 'cast'), { recursive: true })
+    await writeFile(join(cwd, 'refs', 'cast', 'lin.png'), 'lin bytes')
+    await mkdir(join(cwd, '.cache'), { recursive: true })
+    await writeFile(join(cwd, '.cache', 'thumb.png'), 'thumb')
+    const made = await run('story_create', { title: '第一集' })
+    const { documentId } = made.document as { documentId: string }
+    const withPerson = await run('story_apply_ops', {
+      documentId, expectedRevision: made.document.revision,
+      operations: [{ kind: 'upsertEntity', entity: { id: 'person_lin', kind: 'person', profileBlockId: 'block_lin' }, profileMarkdown: '### 林\n' }],
+    })
+    const listed = await run('story_asset_bindings', { action: 'list' })
+    expect(listed.workspaceImages).toEqual([expect.objectContaining({ path: 'refs/cast/lin.png', sha256: expect.stringMatching(/^[0-9a-f]{64}$/u) })])
+    const image = listed.workspaceImages[0] as { path: string; sha256: string }
+    const bound = await run('story_asset_bindings', {
+      action: 'bind', documentId, expectedRevision: withPerson.document.revision,
+      binding: { target: { kind: 'entity', id: 'person_lin' }, scope: { kind: 'document' }, purpose: 'appearance', primary: true, filePath: image.path, expectedSha256: image.sha256 },
+    })
+    expect(bound.assets).toEqual([expect.objectContaining({ projectRelativePath: 'canvas/media/lin.png' })])
   })
 })
 
@@ -607,6 +630,20 @@ describe('canvas_attach_media', () => {
     expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'gen.png'), 'utf8')).toBe('generated')
     await expect(run('canvas_attach_media', { targetNodeId: 'img-2', path: join(tmpdir(), 'elsewhere.png'), expectedContent: '' })).rejects.toThrow(/outside this workspace/u)
   })
+
+  it('takes a media file from anywhere in the workspace, not only media/', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'footage', 'stills'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'stills', 'inn.png'), 'inn')
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'img-3', nodeType: 'image' }, { type: 'add_node', id: 'img-4', nodeType: 'image' }] })
+    expect((await run('canvas_attach_media', { targetNodeId: 'img-3', path: 'footage/stills/inn.png', expectedContent: '' })).landed.path).toBe('canvas/media/inn.png')
+    // The same file for another node: the film's copy again, not inn-2.png.
+    expect((await run('canvas_attach_media', { targetNodeId: 'img-4', path: 'footage\\stills\\inn.png', expectedContent: '' })).landed.path).toBe('canvas/media/inn.png')
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['inn.png'])
+    await mkdir(join(cwd, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(cwd, 'node_modules', 'pkg', 'logo.png'), 'logo')
+    await expect(run('canvas_attach_media', { targetNodeId: 'img-4', path: 'node_modules/pkg/logo.png', expectedContent: '' })).rejects.toThrow(/CANVAS_TIMELINE_IMPORT_INVALID/u)
+  })
 })
 
 describe('timeline tools', () => {
@@ -640,6 +677,49 @@ describe('timeline tools', () => {
     await startFilm()
     const preview = await run('timeline_edit', { dryRun: true, operations: [{ id: 'ratio-1', type: 'project.set_ratio', ratio: '9:16' }] })
     expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+  })
+
+  it('places and swaps in workspace files by their workspace path, bringing each into the film once', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'media'), { recursive: true })
+    await writeFile(join(cwd, 'media', 'gen.png'), 'generated')
+    await mkdir(join(cwd, 'takes'), { recursive: true })
+    await writeFile(join(cwd, 'takes', 'b.png'), 'take b')
+    const preview = await run('timeline_edit', { dryRun: true, place: { path: 'media/gen.png', durationSeconds: 2 }, operationId: 'op-gen' })
+    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+    const placed = await run('timeline_edit', { baseRevision: 0, place: { path: join(cwd, 'media', 'gen.png'), durationSeconds: 2 }, operationId: 'op-gen' })
+    expect(placed).toMatchObject({ result: { committed: true, revision: 1 }, placed: { path: 'canvas/media/gen.png', track: 'visuals' } })
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['gen.png'])
+    const swapped = await run('timeline_edit', { baseRevision: 1, version: { clipId: placed.placed.clipId, path: 'takes/b.png' }, operationId: 'op-take-b' })
+    expect(swapped).toMatchObject({ result: { committed: true, revision: 2 }, swapped: { from: 'canvas/media/gen.png', to: 'canvas/media/b.png' } })
+    expect((await run('timeline_query')).visuals).toEqual([expect.objectContaining({ id: placed.placed.clipId, path: 'canvas/media/b.png' })])
+  })
+
+  it('lists the film\'s files and the workspace\'s media not in the film yet', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'shot.mp4'), 'mp4')
+    await mkdir(join(cwd, 'footage'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'take.mov'), 'mov!')
+    await writeFile(join(cwd, 'footage', 'used.png'), 'png')
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'img-1', nodeType: 'image' }] })
+    await run('canvas_attach_media', { targetNodeId: 'img-1', path: 'footage/used.png', expectedContent: '' })
+    const material = await run('timeline_query', { kind: 'material' })
+    expect(material.truncated).toBe(false)
+    expect(material.film.map((file: { path: string }) => file.path).sort()).toEqual(['canvas/media/shot.mp4', 'canvas/media/used.png'])
+    expect(material.film).toContainEqual({ path: 'canvas/media/shot.mp4', kind: 'video', sizeBytes: 3 })
+    expect(material.workspace).toEqual([{ path: 'footage/take.mov', kind: 'video', sizeBytes: 4 }])
+  })
+
+  it('keeps a material answer to 200 files of each kind and says when it is cut', () => {
+    const assets = Array.from({ length: 250 }, (_, index) => ({ assetId: `canvas-file:canvas/media/${index}.png`, kind: 'image', name: `${index}.png`, sizeBytes: 1 }))
+    const projectFiles = Array.from({ length: 3 }, (_, index) => ({ path: `media/${index}.png`, kind: 'image', sizeBytes: 1, url: 'u' }))
+    const summary = summariseMaterial({ assets, projectFiles, truncated: false }) as { film: unknown[]; workspace: unknown[]; truncated: boolean }
+    expect(summary.film).toHaveLength(200)
+    expect(summary.film[0]).toEqual({ path: 'canvas/media/0.png', kind: 'image', sizeBytes: 1 })
+    expect(summary.workspace).toEqual([{ path: 'media/0.png', kind: 'image', sizeBytes: 1 }, { path: 'media/1.png', kind: 'image', sizeBytes: 1 }, { path: 'media/2.png', kind: 'image', sizeBytes: 1 }])
+    expect(summary.truncated).toBe(true)
+    expect((summariseMaterial({ assets: [], projectFiles: [], truncated: true }) as { truncated: boolean }).truncated).toBe(true)
   })
 })
 

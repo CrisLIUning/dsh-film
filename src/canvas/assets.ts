@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { entryKind, listWorkspaceMedia, workspaceMediaUrl } from '../media.js'
 
 export interface CanvasAsset {
   id: string
@@ -104,13 +105,15 @@ export async function scanMedia(directory: string): Promise<ScannedFile[]> {
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
       const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`
-      if (entry.isDirectory()) {
+      // A reparse point is asked again (a cloud placeholder is a file); links are never followed.
+      const { kind, stats } = await entryKind(entry, join(folder, entry.name))
+      if (kind === 'dir') {
         if (!SKIPPED_DIRECTORIES.has(entry.name) && !MODEL_VERSIONS.test(relative)) await walk(join(folder, entry.name), relative)
         continue
       }
-      if (!entry.isFile() || mediaKindFor(entry.name) === null) continue
+      if (kind !== 'file' || mediaKindFor(entry.name) === null) continue
       try {
-        const info = await stat(join(folder, entry.name))
+        const info = stats ?? await stat(join(folder, entry.name))
         found.push({ filePath: relative, sizeBytes: info.size, mtimeMs: info.mtimeMs })
       } catch {
         // Gone between readdir and stat.
@@ -209,6 +212,46 @@ async function updateLibrary(file: string, update: (state: StoredLibrary) => voi
   } finally {
     if (writes.get(file) === next) writes.delete(file)
   }
+}
+
+/** A media file of the workspace outside `film/`, offered beside the library (not part of it until imported). */
+export interface CanvasWorkspaceFile {
+  /** `workspace-file:<path>`. */
+  id: string
+  /** Relative to the workspace, with `/` separators. */
+  path: string
+  kind: 'image' | 'video' | 'audio'
+  title: string
+  /** Where a page plays it: `/api/dsh-film/media?cwd=…&path=…`. */
+  url: string
+  sizeBytes: number
+  mimeType: string
+  /** ISO 8601. */
+  modifiedAt: string
+}
+
+/**
+ * The workspace's own media the board can show (the canvas's image, video
+ * and audio types), newest first, from the shared workspace scan.
+ * @param cwd - the workspace directory.
+ * @returns the files.
+ */
+export async function workspaceAssetFiles(cwd: string): Promise<CanvasWorkspaceFile[]> {
+  const { files } = await listWorkspaceMedia(cwd)
+  return files.flatMap((file) => {
+    const kind = mediaKindFor(file.path)
+    if (kind !== 'image' && kind !== 'video' && kind !== 'audio') return []
+    return [{
+      id: `workspace-file:${file.path}`,
+      path: file.path,
+      kind,
+      title: file.path.split('/').pop() || file.path,
+      url: workspaceMediaUrl(cwd, file.path),
+      sizeBytes: file.bytes,
+      mimeType: MIME_BY_EXTENSION.get(extensionOf(file.path)) ?? 'application/octet-stream',
+      modifiedAt: file.modifiedAt,
+    }]
+  })
 }
 
 /** The asset library of one workspace's board. */

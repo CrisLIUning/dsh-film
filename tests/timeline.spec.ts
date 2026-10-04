@@ -1,10 +1,12 @@
 /** The editing desk's cut: the store, and the timeline endpoints as the desk's host page calls them. */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { invalidateWorkspaceMedia } from '../src/media.js'
 import { createStudioRouter } from '../src/routes.js'
+import { ProjectEvents } from '../src/studio/events.js'
 import { createEmptyTimelineArchive } from '../src/timeline/archive.js'
 import { MAX_HISTORY, TimelineConflictError, TimelineInvalidError, TimelineStore } from '../src/timeline/store.js'
 
@@ -14,6 +16,7 @@ let router: ReturnType<typeof createStudioRouter>
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-timeline-'))
   router = createStudioRouter()
+  invalidateWorkspaceMedia()
 })
 
 afterEach(async () => {
@@ -155,38 +158,134 @@ describe('timeline endpoints', () => {
     expect((await call('/api/canvas/timelines/film-1/commands', { method: 'POST', json: { ...plan('canvas-file:x.png'), plan: { ...plan('canvas-file:x.png').plan, baseRevision: 5 } } })).status).toBe(409)
   })
 
-  it('lists the film\'s media as assets and the workspace media folder as importable files', async () => {
+  it('lists the film\'s media as assets and the workspace\'s own media as importable files, by workspace-relative URL', async () => {
     await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
     await mkdir(join(cwd, 'media'), { recursive: true })
     await writeFile(join(cwd, 'film', 'canvas', 'media', 'shot 1.mp4'), 'mp4')
     await writeFile(join(cwd, 'film', 'canvas', 'media', 'notes.txt'), 'x')
     await writeFile(join(cwd, 'media', 'music.mp3'), 'mp3')
+    await mkdir(join(cwd, 'footage', 'day 1'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'day 1', 'take.mov'), 'mov')
+    await mkdir(join(cwd, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(cwd, 'node_modules', 'pkg', 'logo.png'), 'png')
     const { body } = await call('/api/canvas/timelines/film-1/material?project=film-1')
     expect(body.assets).toEqual([{
       assetId: 'canvas-file:canvas/media/shot 1.mp4', versionId: 'canvas-file:canvas/media/shot 1.mp4', kind: 'video', name: 'shot 1.mp4',
       url: '/api/projects/film-1/raw/canvas/media/shot%201.mp4', mimeType: 'video/mp4', sizeBytes: 3,
     }])
-    expect(body.projectFiles).toHaveLength(1)
-    expect(body.projectFiles[0]).toMatchObject({ id: 'workspace:media/music.mp3', path: 'media/music.mp3', kind: 'audio', mimeType: 'audio/mpeg' })
-    expect(new URL(body.projectFiles[0].url, 'http://host').searchParams.get('path')).toBe(join(cwd, 'media', 'music.mp3'))
+    expect(body.truncated).toBe(false)
+    expect(body.projectFiles.map((file: { path: string }) => file.path).sort()).toEqual(['footage/day 1/take.mov', 'media/music.mp3'])
+    const music = body.projectFiles.find((file: { path: string }) => file.path === 'media/music.mp3')
+    expect(music).toMatchObject({ id: 'workspace:media/music.mp3', name: 'music.mp3', kind: 'audio', mimeType: 'audio/mpeg', sizeBytes: 3 })
+    const url = new URL(music.url, 'http://host')
+    expect(url.pathname).toBe('/api/dsh-film/media')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ cwd, path: 'media/music.mp3' })
+  })
+
+  it('keeps every film file in the editor\'s list however many files the workspace holds', async () => {
+    // A shared 2000-file listing used to fill up with media/ and drop every film/ asset, and the editor's next save dropped their clips.
+    await mkdir(join(cwd, 'media'), { recursive: true })
+    await Promise.all(Array.from({ length: 2001 }, (_, index) => writeFile(join(cwd, 'media', `still-${index}.png`), 'p')))
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'shot.mp4'), 'mp4')
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'voice.wav'), 'wav')
+    const { body } = await call('/api/canvas/timelines/film-1/material?project=film-1')
+    expect(body.assets.map((asset: { name: string }) => asset.name).sort()).toEqual(['shot.mp4', 'voice.wav'])
+    expect(body.projectFiles).toHaveLength(2000)
+    expect(body.truncated).toBe(true)
+  }, 60_000)
+
+  it('stops offering a file the film imported until it changes or the film\'s copy goes', async () => {
+    await mkdir(join(cwd, 'footage'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'take.mp4'), 'take')
+    const offered = async (): Promise<string[]> => (await call('/api/canvas/timelines/film-1/material?project=film-1')).body.projectFiles.map((file: { path: string }) => file.path)
+    expect(await offered()).toEqual(['footage/take.mp4'])
+    const imported = await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'footage/take.mp4' } })
+    expect(imported.body.file.name).toBe('canvas/media/take.mp4')
+    const record = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'imports.json'), 'utf8'))
+    expect(record).toMatchObject({ version: 1, imports: { 'footage/take.mp4': { target: 'canvas/media/take.mp4', size: 4 } } })
+    expect(await offered()).toEqual([])
+    // The same file again is answered with the film's copy and offered no more.
+    expect((await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'footage/take.mp4' } })).body).toMatchObject({ reused: true, file: { name: 'canvas/media/take.mp4' } })
+    // A copy rather than a link (another volume), changed afterwards: offered again.
+    await rm(join(cwd, 'film', 'canvas', 'media', 'take.mp4'))
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'take')
+    await writeFile(join(cwd, 'footage', 'take.mp4'), 'take, second cut')
+    // An edit made outside the plugin is seen once the short-lived listing expires.
+    invalidateWorkspaceMedia(cwd)
+    expect(await offered()).toEqual(['footage/take.mp4'])
+    await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'footage/take.mp4' } })
+    expect(await offered()).toEqual([])
+    await rm(join(cwd, 'film', 'canvas', 'media', 'take-2.mp4'))
+    expect(await offered()).toEqual(['footage/take.mp4'])
+  })
+
+  it('imports any workspace media file into the film under a free name, as a hard link', async () => {
+    await mkdir(join(cwd, 'footage', 'day 1'), { recursive: true })
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'day 1', 'take.mp4'), 'new')
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'old')
+    const seen: unknown[] = []
+    const events = new ProjectEvents()
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    router = createStudioRouter({ events })
+    const imported = await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'footage\\day 1\\take.mp4' } })
+    expect(imported).toEqual({ status: 200, body: { file: { name: 'canvas/media/take-2.mp4', size: 3, mime: 'video/mp4' } } })
+    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take-2.mp4'), 'utf8')).toBe('new')
+    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'utf8')).toBe('old')
+    const [source, copy] = await Promise.all([stat(join(cwd, 'footage', 'day 1', 'take.mp4'), { bigint: true }), stat(join(cwd, 'film', 'canvas', 'media', 'take-2.mp4'), { bigint: true })])
+    expect(copy.ino).toBe(source.ino)
+    expect(copy.nlink).toBe(2n)
+    expect(seen).toEqual([{ type: 'file-changed', projectId: 'film', path: 'canvas/media/take-2.mp4' }])
+    // The same bytes again: the earlier import, no new file and no event.
+    expect((await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'footage/day 1/take.mp4' } })).body).toEqual({ file: { name: 'canvas/media/take-2.mp4', size: 3, mime: 'video/mp4' }, reused: true })
+    expect(seen).toHaveLength(1)
+    expect((await readdir(join(cwd, 'film', 'canvas', 'media'))).sort()).toEqual(['take-2.mp4', 'take.mp4'])
+  })
+
+  it('answers a file already in the film with its film path and copies nothing', async () => {
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'still.png'), 'png')
+    expect(await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'film/canvas/media/still.png' } }))
+      .toEqual({ status: 200, body: { file: { name: 'canvas/media/still.png', size: 3, mime: 'image/png' } } })
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['still.png'])
+  })
+
+  it('refuses what the workspace scan would not list, and paths that leave the workspace', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-film-outside-'))
+    try {
+      await writeFile(join(outside, 'secret.mp4'), 'secret')
+      await symlink(outside, join(cwd, 'linked'), 'junction')
+      for (const [path, content] of [['node_modules/pkg/a.mp4', 'x'], ['.private/a.mp4', 'x'], ['build/a.mp4', 'x'], ['.ssh/a.png', 'x'], ['notes.txt', 'x']] as const) {
+        await mkdir(join(cwd, ...path.split('/').slice(0, -1)), { recursive: true })
+        await writeFile(join(cwd, ...path.split('/')), content)
+      }
+      const status = async (path: unknown): Promise<[number, string]> => {
+        const { status: code, body } = await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path } })
+        return [code, body.code]
+      }
+      const invalid = [400, 'CANVAS_TIMELINE_IMPORT_INVALID']
+      expect(await status('film/film.json')).toEqual(invalid)
+      expect(await status('media/../secret.mp4')).toEqual(invalid)
+      expect(await status('./media/./a.mp4')).toEqual(invalid)
+      expect(await status(join(outside, 'secret.mp4'))).toEqual(invalid)
+      expect(await status('linked/secret.mp4')).toEqual(invalid)
+      expect(await status('node_modules/pkg/a.mp4')).toEqual(invalid)
+      expect(await status('.private/a.mp4')).toEqual(invalid)
+      expect(await status('build/a.mp4')).toEqual(invalid)
+      expect(await status('.ssh/a.png')).toEqual(invalid)
+      expect(await status('notes.txt')).toEqual(invalid)
+      expect(await status('media/a\0.mp4')).toEqual(invalid)
+      expect(await status(undefined)).toEqual(invalid)
+      expect(await status('media/none.mp4')).toEqual([404, 'CANVAS_TIMELINE_IMPORT_NOT_FOUND'])
+      await expect(stat(join(cwd, 'film'))).rejects.toThrow()
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 
   it('answers the community library the editor asks first with nothing', async () => {
     expect(await call('/api/community/media?kind=image&limit=24')).toEqual({ status: 200, body: { items: [] } })
-  })
-
-  it('imports a workspace media file into the film under a free name', async () => {
-    await mkdir(join(cwd, 'media'), { recursive: true })
-    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
-    await writeFile(join(cwd, 'media', 'take.mp4'), 'new')
-    await writeFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'old')
-    const imported = await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'media/take.mp4' } })
-    expect(imported).toMatchObject({ status: 200, body: { file: { name: 'canvas/media/take-2.mp4', size: 3, mime: 'video/mp4' } } })
-    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take-2.mp4'), 'utf8')).toBe('new')
-    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'utf8')).toBe('old')
-    expect((await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'film/film.json' } })).status).toBe(400)
-    expect((await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'media/../secret.mp4' } })).status).toBe(400)
-    expect((await call('/api/canvas/timelines/film-1/import', { method: 'POST', json: { path: 'media/none.mp4' } })).status).toBe(404)
   })
 
   it('takes a raw upload, keeping an existing file when asked for a unique name', async () => {

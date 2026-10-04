@@ -36,7 +36,7 @@ Continues Batches A–D in operations.md. Omitting `profileMarkdown` keeps the e
 
 ## Reference images
 `story_asset_bindings` ties a chosen image version to a card:
-- `action: "list"` shows the film's image library and the images the media tools saved under `media/`, with `filePath` and `sha256`.
+- `action: "list"` shows the film's image library (`assets`, `filePath` relative to `film/`) and the workspace's own images outside `film/` (`workspaceImages`, `path` relative to the workspace; the media tools save under `media/`), each with its `sha256`. Binding a workspace image brings it into the film first.
 - `action: "bind"` with `documentId`, `expectedRevision` and `binding: {target: {kind: "entity" | "shot", id}, scope: {kind: "document"} | {kind: "scene", sceneId}, purpose, primary, filePath, expectedSha256}` — the last two exactly as `list` returned them. `replaceBindingId` swaps the card's earlier binding.
 - `action: "references"` resolves every bound version: available, relocated, ambiguous, version-mismatch and missing are different outcomes. Never bind or accept a file because its name looks right; changed bytes are a different version.
 - `action: "unbind"` removes the link only. Binding never moves or deletes a file and never starts a generation.

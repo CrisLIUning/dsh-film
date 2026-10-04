@@ -199,16 +199,10 @@ describe('title editing', () => {
 })
 
 describe('media paths', () => {
-  it('joins workspace paths with the workspace separator', async () => {
-    const { absolutePath } = await api()
-    expect(absolutePath('C:\\ws\\', 'media/videos/a.mp4')).toBe('C:\\ws\\media\\videos\\a.mp4')
-    expect(absolutePath('/home/me/ws', 'media/a.png')).toBe('/home/me/ws/media/a.png')
-  })
-
-  it('builds the media URL with the absolute path in the query', async () => {
+  it('builds the media URL from the workspace and the path relative to it', async () => {
     const { mediaUrl } = await api()
-    const url = new URL(mediaUrl('/home/me/ws', 'media/a b.mp4'))
+    const url = new URL(mediaUrl('C:\\ws', 'footage/a b.mp4'))
     expect(url.pathname).toBe('/base/api/dsh-film/media')
-    expect(url.searchParams.get('path')).toBe('/home/me/ws/media/a b.mp4')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ cwd: 'C:\\ws', path: 'footage/a b.mp4' })
   })
 })

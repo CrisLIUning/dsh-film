@@ -6,6 +6,7 @@
  */
 
 import { resolve } from 'node:path'
+import { invalidateWorkspaceMedia } from '../media.js'
 
 export interface ProjectEvent {
   type: 'file-changed' | 'story-changed' | 'story-canvas-changed' | 'project-changed'
@@ -35,6 +36,7 @@ export class ProjectEvents {
   }
 
   emit(cwd: string, event: ProjectEvent): void {
+    invalidateWorkspaceMedia(cwd)
     for (const listener of this.listeners.get(resolve(cwd)) ?? []) {
       try {
         listener(event)

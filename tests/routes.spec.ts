@@ -131,21 +131,32 @@ describe('/api/dsh-film/project', () => {
 })
 
 describe('/api/dsh-film/assets and /media', () => {
-  it('lists a media file and plays it by range', async () => {
+  it('lists the workspace\'s media and plays a file by its workspace-relative path', async () => {
     await mkdir(join(cwd, 'media', 'videos'), { recursive: true })
     await writeFile(join(cwd, 'media', 'videos', 'shot.mp4'), 'abcdefghij')
+    await mkdir(join(cwd, 'footage'), { recursive: true })
+    await writeFile(join(cwd, 'footage', 'take.mov'), 'mov')
     const listing = await call('/api/dsh-film/assets', { cwd })
-    expect(listing.body.assets).toMatchObject([{ path: 'media/videos/shot.mp4', kind: 'video', bytes: 10 }])
-    const media = await call('/api/dsh-film/media', { path: join(cwd, 'media', 'videos', 'shot.mp4') }, { headers: { range: 'bytes=2-4' } })
+    expect(listing.body.truncated).toBe(false)
+    expect(listing.body.assets.map((asset: { path: string }) => asset.path).sort()).toEqual(['footage/take.mov', 'media/videos/shot.mp4'])
+    const media = await call('/api/dsh-film/media', { cwd, path: 'media/videos/shot.mp4' }, { headers: { range: 'bytes=2-4' } })
     expect(media.status).toBe(206)
     expect(await media.response.text()).toBe('cde')
   })
 
+  it('serves nothing by absolute path or outside the workspace', async () => {
+    await mkdir(join(cwd, 'media'), { recursive: true })
+    await writeFile(join(cwd, 'media', 'shot.mp4'), 'abc')
+    expect(await call('/api/dsh-film/media', { path: join(cwd, 'media', 'shot.mp4') })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
+    expect(await call('/api/dsh-film/media', { cwd, path: join(cwd, 'media', 'shot.mp4') })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
+    expect(await call('/api/dsh-film/media', { cwd: join(cwd, 'media'), path: '../media/shot.mp4' })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
+  })
+
   it('answers failures with the code and no body for HEAD', async () => {
     await writeFile(join(cwd, 'notes.txt'), 'x')
-    const get = await call('/api/dsh-film/media', { path: join(cwd, 'notes.txt') })
+    const get = await call('/api/dsh-film/media', { cwd, path: 'notes.txt' })
     expect(get).toMatchObject({ status: 415, body: { error: { code: 'NOT_MEDIA' } } })
-    const head = await call('/api/dsh-film/media', { path: join(cwd, 'notes.txt') }, { method: 'HEAD' })
+    const head = await call('/api/dsh-film/media', { cwd, path: 'notes.txt' }, { method: 'HEAD' })
     expect(head.status).toBe(415)
     expect(head.response.body).toBeNull()
   })

@@ -79,21 +79,26 @@ Then open the right sidebar of a session that has a workspace and pick a part on
   film/canvas/document.json  分镜画布
   film/canvas/timeline.json  剪辑台的剪辑和撤销历史（与 VibeDev Studio 同一格式）
   film/canvas/media/         生成、导入的素材
+  film/canvas/imports.json   从工作区导入过的文件（没改过的不再列为可导入）
   film/canvas/renders/       剪辑台导出的成片
-  media/                     dsh-media 生成的素材；剪辑台第一次用到时复制进 film/
+  media/                     dsh-media 生成的素材；和工作区里其他素材一样，用到时放进 film/
 ```
 
 一个工作区放一部片。已有的 `film/film.json` 不会被覆盖；建影片时已有的画布（哪怕读不出来）和删除画布留下的记录也不会被覆盖，工作区里原有的画布会沿用它的 id。
+
+工作区里 `film/` 以外的图片、视频和音频都算素材：剪辑台和分镜画布的素材库、工作台的素材列表都会列出它们。隐藏的文件和文件夹、`node_modules`、构建输出和缓存之类的生成目录、`.ssh` 等凭据目录和链接不列；文件太多时只读一部分（最多 2000 个素材、12 层目录），并标明列表不完整。用到时插件把文件硬链接进 `film/canvas/media/`（不能链接时复制），同样的字节只放一份；导入过、之后没改过的文件不再出现在剪辑台的可导入列表里。
+
+Media anywhere in the workspace outside `film/` is material: the editing desk's and the storyboard's libraries and the workbench's media list show it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is hard-linked into `film/canvas/media/` when used (copied where linking is not possible), the same bytes only once; an imported file that has not changed since is no longer offered for import.
 
 ## Agent 的影视工具 · Agent tools
 
 每个会话都有 `film_project`：查看工作区的影片项目，在用户要做片时新建一个（用户打开影视标签时也会自动建好），或改片名和画幅（`update`）。工作区有影片项目的会话还会常驻 35 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
 
-- **剧本** `story_query` `story_asset_bindings` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。`story_asset_bindings` 给人物、地点、道具和镜头绑定参考图（只认选中的那份字节，五种解析结果分开报告），工作区 `media/` 下的图片先复制进影片再绑定。
+- **剧本** `story_query` `story_asset_bindings` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。`story_asset_bindings` 给人物、地点、道具和镜头绑定参考图（只认选中的那份字节，五种解析结果分开报告），工作区里 `film/` 以外的图片先放进影片再绑定。
 - **导入导出** `story_import` `story_export`：先预览再导入为新副本（从不覆盖）；导出完整 Markdown、仅正文，或连同参考图打成素材包存到 `film/story-exports/`。
 - **剧本到分镜** `story_source` `story_handoff` `story_adopt` `story_impact` `story_director_links`：把保存的人物、场景、道具、场次或镜头读成制作素材，送到画布成为独立的剧本来源卡（可同时准备一个连好线、只待确认提示词的图片节点，不会自动生成）；按节点保存的字段显式采用描述或参考图（参考图另存一份字节快照）；剧本改动后查看影响了哪些采用、产物、导演镜头和剪辑片段；给导演台已保存的机位记下剧本来源。分镜标签不开也能用。
-- **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片）放进指定节点，不重复生成。
-- **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）和画布可用的素材、剧本；按版本号放素材、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
+- **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片，或工作区里别处的图片、视频、音频）放进指定节点，不重复生成。
+- **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）、画布可用的素材和剧本、影片和工作区的素材文件；按版本号放素材（工作区里的文件先放进影片）、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
 - **原声字幕** `timeline_transcribe` `timeline_apply_captions` `media_get_task` `media_cancel_task`：识别剪辑里的原声对白，后台任务产出待审的字幕草稿（按句分页读），审过后先 dryRun 再写入，只改识别范围内的字幕，人工和已审过的字幕不动。识别用剪辑台自带的 Whisper：免费、不出本机，在打开的 VibeDev/DSH 窗口里的隐藏页面运行，需同意下载模型。`timeline_query` 的 `caption-tasks` 列出最近的识别和是否已写入。
 - **渲染** `timeline_render`：先 `check` 看能不能渲、出什么样的文件，再按版本号在本机把剪辑渲染成 MP4（见下文“后台渲染”），最多等 4 分钟，没完成就交回任务号接着等或取消。
 - **导演组（按需）** `director_query` `director_stage` `director_render` `director_render_status` `director_render_cancel` `director_inspect_model` `director_review` `director_compile_motion` `director_modeling_brief`：读导演台场景（结构、采样、事件、诊断、动作），按指纹分步调度（先 dryRun），编译动作，管理审阅版本。查询和调度在导演标签关着时作用于保存的节点，开着时作用于桌面上的实时场景；渲染、检视模型和审阅版本要导演标签开着。后台无头渲染暂未接入。

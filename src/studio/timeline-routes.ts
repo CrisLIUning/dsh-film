@@ -8,8 +8,9 @@
  * - `POST /api/canvas/timelines/:boardId/undo|redo` — step through the history.
  * - `POST /api/canvas/timelines/:boardId/commands` — a command plan (placements).
  * - `GET /api/canvas/timelines/:boardId/material` — the film's media as the
- *   editor's authorized assets, and the workspace's `media/` as files it may import.
- * - `POST /api/canvas/timelines/:boardId/import` — copy a workspace media file into the film.
+ *   editor's authorized assets, and the workspace's own media (outside
+ *   `film/`) as files it may import (see `material.ts`).
+ * - `POST /api/canvas/timelines/:boardId/import` — bring a workspace media file into the film.
  * - `GET /api/canvas/timelines/:boardId/media` — the board's media nodes;
  *   `POST .../media` lands a film file on the board (an exported cut);
  *   `POST .../place` puts a board node (or a film file) on the cut.
@@ -23,133 +24,25 @@
  * @module dsh-film/studio/timeline-routes
  */
 
-import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, stat } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import { BoardAttachError, attachFileToNode, landFileOnBoard, listBoardMedia, mediaKindOfPath } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
-import { listAssets, mediaTypeOf } from '../media.js'
-import type { MediaKind } from '../media.js'
+import { WorkspaceMediaError, mediaTypeOf } from '../media.js'
 import { probeMedia } from '../media/probe.js'
 import { TimelinePlaceError, placeBoardMediaOnTimeline } from '../timeline/place.js'
 import { TimelineSoundError, listScriptNodes, listStoryScripts, placeSoundOnTimeline, readStories, storyScriptLines } from '../timeline/sound.js'
 import type { ScriptLine } from '../timeline/sound.js'
 import { TimelineVersionError, candidatesFor, findSlot, listSlots, publicSlot, swapSlotVersion } from '../timeline/versions.js'
 import type { Slot, Take } from '../timeline/versions.js'
-import { CANVAS_FILE_VERSION_PREFIX, TimelineCommandError, executeTimelineCommands, projectRawUrl } from '../timeline/commands.js'
+import { TimelineCommandError, executeTimelineCommands } from '../timeline/commands.js'
 import { TimelineConflictError, TimelineInvalidError, TimelineStore } from '../timeline/store.js'
 import { projectOf } from './canvas-routes.js'
 import type { ProjectEvents } from './events.js'
-import { PROJECT_DIR, freeProjectPath, projectPath } from './project-routes.js'
+import { importWorkspaceMedia, sha256File, timelineMaterial } from './material.js'
+import { PROJECT_DIR, projectPath } from './project-routes.js'
 import { StudioReply } from './router.js'
 import type { StudioRequest, StudioRouter } from './router.js'
-
-/** Media the editor can place: Studio's list for a board. */
-const EDITOR_MEDIA = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'wav', 'm4a', 'mp4', 'webm', 'mov'])
-/** Where imported and generated material is kept, relative to `film/`. */
-export const MATERIAL_DIR = 'canvas/media'
-/** How many files the material listing reads. */
-const MATERIAL_LIMIT = 2000
-
-/** An asset the editor may play and place (the bridge's `VideoEditorAuthorizedAsset`). */
-export interface AuthorizedAsset {
-  assetId: string
-  versionId: string
-  kind: MediaKind
-  name: string
-  url: string
-  mimeType: string
-  sizeBytes?: number
-}
-
-/** A workspace file the editor lists for import (the bridge's `VideoEditorProjectFile`). */
-export interface WorkspaceMediaFile {
-  id: string
-  path: string
-  name: string
-  kind: MediaKind
-  url: string
-  mimeType: string
-  sizeBytes?: number
-  mtime?: number
-}
-
-const editorMedia = (path: string): boolean => EDITOR_MEDIA.has(extname(path).slice(1).toLowerCase())
-
-function sha256File(path: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256')
-    createReadStream(path)
-      .on('data', chunk => hash.update(chunk))
-      .on('error', reject)
-      .on('end', () => { resolve(hash.digest('hex')) })
-  })
-}
-
-/**
- * An earlier import of the same bytes: the names `freeProjectPath` hands out
- * for `path` (x.png, x-2.png, ...) up to the first free one, the first whose
- * size and digest match the source.
- * @param cwd - the workspace.
- * @param path - the import's film-relative name.
- * @param source - the file being imported.
- * @param size - its size.
- * @returns the earlier copy's film-relative name, if there is one.
- */
-async function identicalCopy(cwd: string, path: string, source: string, size: number): Promise<string | undefined> {
-  const match = /^(.*?)(\.[A-Za-z0-9]+)?$/.exec(path)
-  const stem = match?.[1] ?? path
-  const extension = match?.[2] ?? ''
-  let sourceDigest: string | undefined
-  for (let index = 1; index < 10_000; index++) {
-    const candidate = index === 1 ? path : `${stem}-${index}${extension}`
-    const info = await lstat(projectPath(cwd, candidate)).catch(() => undefined)
-    if (info === undefined) return undefined
-    if (!info.isFile() || info.size !== size) continue
-    sourceDigest ??= await sha256File(source)
-    if (await sha256File(projectPath(cwd, candidate)).catch(() => undefined) === sourceDigest) return candidate
-  }
-  return undefined
-}
-
-/**
- * The film's media as the editor's authorization list, and the workspace's
- * `media/` folder as files it may import. A file under `film/` that is not in
- * the list is a clip the editor drops on its next save, so all of them are in.
- * @param cwd - the workspace directory.
- * @param projectId - the film project's id.
- * @returns the assets and the importable files, newest first.
- */
-export async function timelineMaterial(cwd: string, projectId: string): Promise<{ assets: AuthorizedAsset[]; projectFiles: WorkspaceMediaFile[] }> {
-  const { assets: files } = await listAssets(cwd, MATERIAL_LIMIT)
-  const assets: AuthorizedAsset[] = []
-  const projectFiles: WorkspaceMediaFile[] = []
-  for (const file of files) {
-    if (!editorMedia(file.path)) continue
-    const type = mediaTypeOf(file.path)
-    if (type === undefined) continue
-    if (file.path.startsWith(`${PROJECT_DIR}/`)) {
-      const path = file.path.slice(PROJECT_DIR.length + 1)
-      const identity = `${CANVAS_FILE_VERSION_PREFIX}${path}`
-      assets.push({ assetId: identity, versionId: identity, kind: file.kind, name: basename(path), url: projectRawUrl(projectId, path), mimeType: type.type, sizeBytes: file.bytes })
-    } else {
-      const url = new URL('http://host/api/dsh-film/media')
-      url.searchParams.set('path', join(cwd, ...file.path.split('/')))
-      projectFiles.push({
-        id: `workspace:${file.path}`,
-        path: file.path,
-        name: basename(file.path),
-        kind: file.kind,
-        url: url.pathname + url.search,
-        mimeType: type.type,
-        sizeBytes: file.bytes,
-        mtime: Date.parse(file.modifiedAt),
-      })
-    }
-  }
-  return { assets, projectFiles }
-}
 
 const baseRevisionOf = (body: Record<string, unknown>): number | undefined => {
   const value = body.baseRevision
@@ -385,21 +278,15 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
 
   router.add('POST', '/api/canvas/timelines/:boardId/import', async (request) => {
     const body = await request.json()
-    const from = typeof body.path === 'string' ? body.path.replaceAll('\\', '/').replace(/^\.\//, '') : ''
-    if (!from.startsWith('media/') || from.split('/').some(part => part === '..' || part === '') || !editorMedia(from)) {
-      throw new StudioReply(400, { error: 'only media files under the workspace media/ folder can be imported', code: 'CANVAS_TIMELINE_IMPORT_INVALID' })
+    let imported
+    try {
+      imported = await importWorkspaceMedia(request.cwd, typeof body.path === 'string' ? body.path : '')
+    } catch (error) {
+      if (!(error instanceof WorkspaceMediaError)) throw error
+      if (error.problem === 'not-found') throw new StudioReply(404, { error: error.message, code: 'CANVAS_TIMELINE_IMPORT_NOT_FOUND' })
+      throw new StudioReply(400, { error: `${error.message} Only the workspace's own image, video and audio files can be imported.`, code: 'CANVAS_TIMELINE_IMPORT_INVALID' })
     }
-    const source = join(request.cwd, ...from.split('/'))
-    const info = await lstat(source).catch(() => undefined)
-    if (info?.isFile() !== true) throw new StudioReply(404, { error: `no media file ${from}`, code: 'CANVAS_TIMELINE_IMPORT_NOT_FOUND' })
-    // Importing the same bytes again answers the earlier copy, so a retried bind or attach does not pile up x-2, x-3, ...
-    const earlier = await identicalCopy(request.cwd, `${MATERIAL_DIR}/${basename(from)}`, source, info.size)
-    if (earlier !== undefined) return { file: { name: earlier, size: info.size, mime: mediaTypeOf(earlier)?.type ?? 'application/octet-stream' }, reused: true }
-    const target = await freeProjectPath(request.cwd, `${MATERIAL_DIR}/${basename(from)}`)
-    const absolute = projectPath(request.cwd, target)
-    await mkdir(dirname(absolute), { recursive: true })
-    await copyFile(source, absolute)
-    events.emit(request.cwd, { type: 'file-changed', projectId: projectOf(request), path: target })
-    return { file: { name: target, size: info.size, mime: mediaTypeOf(target)?.type ?? 'application/octet-stream' } }
+    if (imported.created) events.emit(request.cwd, { type: 'file-changed', projectId: projectOf(request), path: imported.file.name })
+    return { file: imported.file, ...(imported.reused === true ? { reused: true } : {}) }
   })
 }

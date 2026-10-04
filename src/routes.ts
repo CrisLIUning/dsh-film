@@ -9,8 +9,9 @@
  *   `ensure: true` (what the workbench sends when a tab opens), 409 without.
  * - `POST /api/dsh-film/project/update` — `{ cwd, title?, aspectRatio? }`
  *   renames the film or changes its frame; announced as `project-changed`.
- * - `GET  /api/dsh-film/assets?cwd=` — media files under `media/` and `film/`.
- * - `GET|HEAD /api/dsh-film/media?path=` — one media file, with byte ranges.
+ * - `GET  /api/dsh-film/assets?cwd=` — the workspace's media files, the film's and its own.
+ * - `GET|HEAD /api/dsh-film/media?cwd=&path=` — one media file of the workspace
+ *   (`path` relative to it), with byte ranges.
  * - `/api/dsh-film/caption-runner/*` — the caption runner's windows (see captions/runner).
  * @module dsh-film/routes
  */
