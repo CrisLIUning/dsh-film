@@ -64,6 +64,7 @@ describe('the tool set', () => {
     expect([...tools.keys()]).toEqual([
       'film_project',
       'story_query', 'story_asset_bindings', 'story_create', 'story_apply_ops', 'story_history', 'story_checkpoint', 'story_restore', 'story_revert',
+      'story_source', 'story_handoff', 'story_adopt', 'story_impact', 'story_director_links',
       'canvas_list_clients', 'canvas_get_state', 'canvas_get_selection', 'canvas_read_node', 'canvas_get_generation_status', 'canvas_get_document',
       'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
       'canvas_apply_ops', 'canvas_attach_media',
@@ -173,6 +174,73 @@ describe('story_asset_bindings', () => {
     const removed = await run('story_asset_bindings', { action: 'unbind', documentId, expectedRevision: second.document.revision, bindingId })
     expect(removed.changed).toBe(true)
     await expect(run('story_asset_bindings', { action: 'bind', documentId })).rejects.toThrow(/expectedRevision is required/u)
+  })
+})
+
+describe('screenplay-to-production tools', () => {
+  it('read a source, hand it to the board, adopt into the node with its saved values, read the impact and link a director shot', async () => {
+    const project = await startFilm()
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'face.png'), 'face bytes')
+    const made = await run('story_create', { title: '第一集' })
+    const { documentId } = made.document as { documentId: string }
+    const withPerson = await run('story_apply_ops', {
+      documentId, expectedRevision: made.document.revision,
+      operations: [{ kind: 'upsertEntity', entity: { id: 'person_lin', kind: 'person', profileBlockId: 'block_lin', visualIdentity: '短发' }, profileMarkdown: '### 林\n\n守着灯。' }],
+    })
+    const face = (await run('story_asset_bindings', { action: 'list' })).assets[0] as { filePath: string; sha256: string }
+    const bound = await run('story_asset_bindings', {
+      action: 'bind', documentId, expectedRevision: withPerson.document.revision,
+      binding: { target: { kind: 'entity', id: 'person_lin' }, scope: { kind: 'document' }, purpose: 'identity', primary: true, filePath: face.filePath, expectedSha256: face.sha256 },
+    })
+    const revision = bound.document.revision as string
+
+    const source = await run('story_source', { documentId, objectId: 'person_lin' })
+    expect(source).toMatchObject({ objectKind: 'entity', revision, productionText: expect.stringContaining('短发'), references: [{ status: 'available', sha256: face.sha256 }] })
+    await expect(run('story_source', { documentId, objectId: 'person_lin', scope: { kind: 'scene' } })).rejects.toThrow(/sceneId/u)
+
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    const handed = await run('story_handoff', { documentId, expectedRevision: revision, objectId: 'person_lin', production: { purpose: 'character-sheet', requestId: 'sheet-lin' } })
+    expect(handed).toMatchObject({
+      created: true, boardId: project.id, node: { type: 'story-source' },
+      productionNode: { type: 'image', metadata: { status: 'idle', promptPurpose: 'character-sheet', count: 1 } },
+      preview: { objectId: 'person_lin', revision }, note: expect.stringContaining('Nothing was generated'),
+    })
+    expect(JSON.stringify(handed)).not.toContain('"markdown"')
+    expect(seen.map(event => event.type)).toEqual(['story-canvas-changed', 'story-changed'])
+    expect((await savedBoard()).nodes).toHaveLength(2)
+
+    // canvas_get_document gives the exact saved values story_adopt compares.
+    const target = (await run('canvas_get_document', { nodeId: handed.productionNode.id })).node
+    expect(target.adoptionTarget).toEqual({ prompt: expect.stringContaining('同一角色'), composerContent: expect.stringContaining('同一角色') })
+    expect(target.story).toMatchObject({ production: { objectId: 'person_lin', purpose: 'character-sheet', revision }, promptPurpose: 'character-sheet' })
+    expect((await run('canvas_get_document', { nodeId: handed.node.id })).node.story).toMatchObject({ source: { documentId, objectId: 'person_lin', revision } })
+    await expect(run('story_adopt', { documentId, expectedRevision: revision, objectId: 'person_lin', targetNodeId: handed.productionNode.id, fields: ['prompt'], expectedTarget: { prompt: 'stale' } }))
+      .rejects.toThrow(/STORY_TARGET_CONFLICT/u)
+    const adopted = await run('story_adopt', { documentId, expectedRevision: revision, objectId: 'person_lin', targetNodeId: handed.productionNode.id, fields: ['prompt', 'references'], expectedTarget: target.adoptionTarget })
+    expect(adopted).toMatchObject({
+      node: { id: handed.productionNode.id, metadata: { prompt: expect.stringContaining('守着灯'), references: [expect.stringMatching(/\/raw\/canvas\/story-references\/[a-f0-9]{64}\.png$/u)] } },
+      adoption: { fields: ['prompt', 'references'], prompt: { revision }, references: { revision } },
+    })
+    const after = (await run('canvas_get_document', { nodeId: handed.productionNode.id })).node
+    expect(after.adoptionTarget.references).toEqual(adopted.node.metadata.references)
+    expect(after.story.adoption).toMatchObject({ fields: ['prompt', 'references'], prompt: { revision } })
+
+    const changed = await run('story_apply_ops', { documentId, expectedRevision: revision, operations: [{ kind: 'replaceBlock', blockId: 'block_lin', markdown: '### 林\n\n熄了灯。' }] })
+    const impact = await run('story_impact', { documentId })
+    expect(impact).toMatchObject({ currentRevision: changed.document.revision, total: 2, truncated: false, counts: { changed: 1, unchanged: 1 } })
+
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'desk', nodeType: 'director', title: '导演台', metadata: { directorProject: { version: 15, scene: { backgroundColor: '#000' }, assets: [], objects: [], cameras: [{ id: 'cam', name: '近景' }] } } }] })
+    const listed = await run('story_director_links', { action: 'list' })
+    expect(listed).toMatchObject({ boardId: project.id, directors: [{ nodeId: 'desk', savedScene: true, shots: [{ directorShotId: 'cam', name: '近景' }], links: {} }] })
+    const director = listed.directors[0]
+    const link = { objectId: 'person_lin', directorNodeId: 'desk', directorShotId: 'cam', expectedDirectorFingerprint: director.directorFingerprint, expectedLinksFingerprint: director.linksFingerprint }
+    await expect(run('story_director_links', { action: 'link', documentId, expectedRevision: changed.document.revision })).rejects.toThrow(/director link object/u)
+    const linked = await run('story_director_links', { action: 'link', documentId, expectedRevision: changed.document.revision, link })
+    expect(linked).toMatchObject({ changed: true, directorNodeId: 'desk', links: { cam: [{ objectId: 'person_lin', revision: changed.document.revision }] } })
+    const unlinked = await run('story_director_links', { action: 'unlink', documentId, expectedRevision: changed.document.revision, link: { ...link, expectedLinksFingerprint: linked.linksFingerprint } })
+    expect(unlinked).toMatchObject({ changed: true, links: {} })
   })
 })
 
@@ -422,7 +490,7 @@ describe('installing the tools into film conversations', () => {
     host.live.push(early)
     const refresh = installFilmAgentTools(host.ctx as never, { tools: () => filmAgentTools(services), guidance: 'film guidance' })
     await settle()
-    expect(early.tools.size).toBe(23)
+    expect(early.tools.size).toBe(28)
     expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
 
     const other = host.agent('other', plainFolder)
@@ -439,7 +507,7 @@ describe('installing the tools into film conversations', () => {
     // Refreshing again installs nothing twice.
     refresh(plainFolder)
     await settle()
-    expect(other.tools.size).toBe(23)
+    expect(other.tools.size).toBe(28)
 
     await host.emit('agent/disposed', early)
     expect(early.tools.size).toBe(0)

@@ -14,6 +14,7 @@ import { FILM_GUIDANCE } from './guidance.js'
 import { installFilmAgentTools } from './install.js'
 import { filmProjectTool } from './project-tool.js'
 import { storyTools } from './story-tools.js'
+import { storyProductionTools } from './story-production-tools.js'
 import { timelineTools } from './timeline-tools.js'
 
 export type { FilmToolServices, FilmWorkspace } from './context.js'
@@ -25,7 +26,11 @@ export { FilmToolError } from './studio-client.js'
  * @returns the tool definitions.
  */
 export function filmAgentTools(services: FilmToolServices): ToolDefinition[] {
-  return [...storyTools(services), ...canvasTools(services), ...timelineTools(services)]
+  return [
+    ...storyTools(services),
+    ...storyProductionTools(services),
+    ...canvasTools(services), ...timelineTools(services),
+  ]
 }
 
 /**

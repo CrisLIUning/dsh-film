@@ -7,6 +7,12 @@
  *
  * Tasks are kept in `film/.tasks/<id>.json`, so a board reopened after a
  * restart can still pick up a running video.
+ *
+ * A reference may also be a Studio URL of the film's own files: a bound
+ * screenplay reference version (`/api/projects/<id>/story/documents/<doc>/
+ * references/<asset>/<version>`, what a wired screenplay source card hands
+ * the canvas) is resolved to the file holding exactly those bytes, and a raw
+ * file URL (`/api/projects/<id>/raw/<path>`) to that file.
  * @module dsh-film/media/tasks
  */
 
@@ -14,6 +20,9 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { HostMediaModel } from './catalogue.js'
+import { readProject } from '../project.js'
+import { StoryAssets } from '../screenwriter/assets.js'
+import { StoryError, StoryService } from '../screenwriter/service.js'
 
 /** What dsh-media's host service offers (its `MediaHostService`), typed here by shape. */
 export interface MediaServiceLike {
@@ -157,6 +166,37 @@ function projectName(cwd: string, absolute: string): string {
   return relative(join(cwd, PROJECT_DIR), absolute).split(sep).join('/')
 }
 
+/** Where a Studio URL of the film's own files points: a bound screenplay reference version, or a raw file. */
+type FilmUrl = { kind: 'story'; documentId: string; assetId: string; versionId: string } | { kind: 'raw'; path: string }
+
+/**
+ * Read a reference that is a Studio URL of the film's files: relative, or
+ * wrapped in the workbench's `/api/dsh-film/studio?path=` route the way a
+ * page's fetch wrapper sends it.
+ * @param source - a reference as the canvas sent it.
+ * @returns what it names, or `undefined` for anything else.
+ */
+export function filmUrlOf(source: string): FilmUrl | undefined {
+  let path: string
+  try {
+    if (source.startsWith('/api/projects/')) path = new URL(source, 'http://film.invalid').pathname
+    else {
+      const url = new URL(source, 'http://film.invalid')
+      const wrapped = url.pathname.endsWith('/api/dsh-film/studio') ? url.searchParams.get('path') : null
+      if (wrapped === null || !wrapped.startsWith('/api/projects/')) return undefined
+      path = new URL(wrapped, 'http://film.invalid').pathname
+    }
+    const parts = path.split('/').filter(part => part !== '').map(part => decodeURIComponent(part))
+    if (parts.length === 9 && parts[3] === 'story' && parts[4] === 'documents' && parts[6] === 'references') {
+      return { kind: 'story', documentId: parts[5]!, assetId: parts[7]!, versionId: parts[8]! }
+    }
+    if (parts.length > 4 && parts[3] === 'raw') return { kind: 'raw', path: parts.slice(4).join('/') }
+  } catch {
+    // A malformed URL is not one of the film's.
+  }
+  return undefined
+}
+
 /** Order `[links..., files...]` by a declared permutation, when it is one. */
 function ordered(links: string[], files: string[], order: unknown): string[] {
   const combined = [...links, ...files]
@@ -198,6 +238,12 @@ function errorOf(error: unknown): FilmTaskError {
   }
 }
 
+/** The screenplay services a task resolves bound references with, when none are given. */
+function defaultReferences(): { stories: StoryService; assets: StoryAssets } {
+  const stories = new StoryService()
+  return { stories, assets: new StoryAssets(stories) }
+}
+
 export class FilmMediaTasks {
   private readonly tasks = new Map<string, FilmTask>()
   private readonly listeners = new Map<string, Set<() => void>>()
@@ -205,8 +251,43 @@ export class FilmMediaTasks {
   private readonly following = new Map<string, () => void>()
   private readonly saves = new Map<string, Promise<void>>()
 
-  /** @param media - dsh-media's service, when the plugin is installed and running. */
-  constructor(private readonly media: () => MediaServiceLike | undefined) {}
+  /**
+   * @param media - dsh-media's service, when the plugin is installed and running.
+   * @param references - the screenplays and their reference images, for references given as bound-version URLs.
+   */
+  constructor(private readonly media: () => MediaServiceLike | undefined, private readonly references: { stories: StoryService; assets: StoryAssets } = defaultReferences()) {}
+
+  /**
+   * The project files that the film URLs among a request's references name,
+   * as absolute paths: a bound reference version only while a file holds
+   * exactly its recorded bytes.
+   * @param cwd - the workspace.
+   * @param body - Studio's generate body.
+   * @returns each such reference and its file.
+   */
+  private async filmReferences(cwd: string, body: Body): Promise<Map<string, string>> {
+    const sources = new Set(['images', 'image', 'referenceImages', 'firstFrame', 'lastFrame', 'referenceVideo', 'referenceVideos', 'referenceAudio', 'referenceAudios']
+      .flatMap(key => texts(Array.isArray(body[key]) ? body[key] : [body[key]])))
+    const resolved = new Map<string, string>()
+    for (const source of sources) {
+      const target = filmUrlOf(source)
+      if (target === undefined) continue
+      if (target.kind === 'raw') {
+        resolved.set(source, projectFile(cwd, target.path))
+        continue
+      }
+      try {
+        const boardId = (await readProject(cwd))?.id ?? 'film'
+        const document = await this.references.stories.get(cwd, target.documentId)
+        const file = await this.references.assets.readReference(cwd, document, target.assetId, target.versionId, boardId)
+        resolved.set(source, projectFile(cwd, file.resolvedPath))
+      } catch (error) {
+        if (error instanceof StoryError) throw new FilmMediaError(error.status, error.code, `参考图不可用：${error.message}`)
+        throw error
+      }
+    }
+    return resolved
+  }
 
   private service(): MediaServiceLike {
     const media = this.media()
@@ -271,6 +352,8 @@ export class FilmMediaTasks {
     if (surface === 'audio') throw new FilmMediaError(400, 'MEDIA_SURFACE_UNSUPPORTED', '影视工作台暂不支持在画布里生成配音。')
     const prompt = text(body.prompt) ?? ''
     const model = text(body.model)
+    // Resolved before the task exists: an unavailable reference refuses the request rather than failing a started run.
+    const films = await this.filmReferences(cwd, body)
     const taskId = randomUUID()
     const output = text(body.output) ?? `canvas/media/${surface}-${taskId.slice(0, 10)}${surface === 'image' ? '.png' : '.mp4'}`
     const outputPath = projectFile(cwd, output)
@@ -280,35 +363,37 @@ export class FilmMediaTasks {
     await this.save(cwd, task)
     const controller = new AbortController()
     this.running.set(this.key(cwd, taskId), controller)
-    const inputs = (value: unknown): string[] => texts(value).map(source => isLink(source) ? source : projectFile(cwd, source))
+    const inputs = (value: unknown): string[] => texts(value).map(source => films.get(source) ?? (isLink(source) ? source : projectFile(cwd, source)))
+    const links = (value: unknown): string[] => texts(value).map(source => films.get(source) ?? source)
     const run = surface === 'image'
       ? this.runImage(cwd, task, media, {
         prompt,
         ...model === undefined ? {} : { model },
         ...sizeFor(text(body.aspect)) === undefined ? {} : { size: sizeFor(text(body.aspect))! },
         ...['low', 'medium', 'high', 'auto'].includes(String(body.quality)) ? { quality: String(body.quality) } : {},
-        references: ordered(texts(body.referenceImages), inputs([...texts(body.images), ...texts(body.image === undefined ? [] : [body.image])]), (body.referenceOrder as Body | undefined)?.images),
+        references: ordered(links(body.referenceImages), inputs([...texts(body.images), ...texts(body.image === undefined ? [] : [body.image])]), (body.referenceOrder as Body | undefined)?.images),
       }, target, controller.signal)
-      : this.runVideo(cwd, task, media, this.videoRequest(cwd, body, prompt, model), target, controller.signal)
+      : this.runVideo(cwd, task, media, this.videoRequest(cwd, body, prompt, model, films), target, controller.signal)
     void run.finally(() => { this.running.delete(this.key(cwd, taskId)) })
     return { taskId, status: task.status }
   }
 
-  private videoRequest(cwd: string, body: Body, prompt: string, model: string | undefined): VideoServiceRequest {
+  private videoRequest(cwd: string, body: Body, prompt: string, model: string | undefined, films: ReadonlyMap<string, string>): VideoServiceRequest {
     const resolveOne = (value: unknown): string | undefined => {
       const source = text(value)
-      return source === undefined ? undefined : isLink(source) ? source : projectFile(cwd, source)
+      return source === undefined ? undefined : films.get(source) ?? (isLink(source) ? source : projectFile(cwd, source))
     }
-    const localFiles = (value: unknown): string[] => texts(value).map(source => isLink(source) ? source : projectFile(cwd, source))
+    const localFiles = (value: unknown): string[] => texts(value).map(source => films.get(source) ?? (isLink(source) ? source : projectFile(cwd, source)))
+    const links = (value: unknown): string[] => texts(value).map(source => films.get(source) ?? source)
     const order = body.referenceOrder as Body | undefined
     const canvasMode = text(body.videoMode)
     if (canvasMode === 'video-edit') throw new FilmMediaError(400, 'VIDEO_MODE_UNSUPPORTED', '影视工作台暂不支持视频编辑模式。')
     const mode = canvasMode === undefined ? undefined : GATEWAY_MODES[canvasMode]
-    const images = ordered(texts(body.referenceImages), localFiles(body.images), order?.images)
+    const images = ordered(links(body.referenceImages), localFiles(body.images), order?.images)
     const firstFrame = resolveOne(body.firstFrame) ?? (mode === 'first_frame' || mode === 'first_last_frame' ? images.shift() : undefined)
     const lastFrame = resolveOne(body.lastFrame) ?? (mode === 'first_last_frame' ? images.shift() : undefined)
-    const videos = ordered(texts(body.referenceVideos), localFiles(body.referenceVideo), order?.videos)
-    const audios = ordered(texts(body.referenceAudios), localFiles(body.referenceAudio === undefined ? [] : [body.referenceAudio]), order?.audios)
+    const videos = ordered(links(body.referenceVideos), localFiles(body.referenceVideo), order?.videos)
+    const audios = ordered(links(body.referenceAudios), localFiles(body.referenceAudio === undefined ? [] : [body.referenceAudio]), order?.audios)
     const duration = typeof body.length === 'number' ? body.length : typeof body.duration === 'number' ? body.duration : undefined
     const aspect = text(body.aspect)
     return {

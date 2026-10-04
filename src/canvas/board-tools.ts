@@ -402,7 +402,52 @@ const savedText = (value: unknown, maximum: number): string | undefined => typeo
   ? value.startsWith('data:') ? '[inline data omitted]' : value.slice(0, maximum)
   : undefined
 
-function summarizeSavedNode(value: unknown, projectId: string): Record<string, unknown> {
+/** The production fields story_adopt compares with its expectedTarget, byte for byte. */
+const ADOPTION_FIELDS = ['prompt', 'composerContent', 'references'] as const
+
+const holdsInlineData = (value: unknown): boolean => typeof value === 'string' ? value.startsWith('data:') : Array.isArray(value) && value.some(holdsInlineData)
+
+/**
+ * One saved node's screenplay links and the exact values story_adopt
+ * compares: untruncated, and only the fields the node has (an absent field is
+ * omitted from expectedTarget too). Inline data is never returned; a field
+ * holding it is named instead and cannot be quoted.
+ * @param metadata - the node's metadata.
+ * @returns the extra members of the single-node view.
+ */
+function storyFields(metadata: Record<string, unknown>): Record<string, unknown> {
+  const adoptionTarget: Record<string, unknown> = {}
+  const omitted: string[] = []
+  for (const key of ADOPTION_FIELDS) {
+    if (metadata[key] === undefined) continue
+    if (holdsInlineData(metadata[key])) omitted.push(key)
+    else adoptionTarget[key] = metadata[key]
+  }
+  const source = record(metadata.storySource)
+  const adoption = record(metadata.storyAdoption)
+  const byField = record(adoption.fieldAdoptions)
+  const adopted = (value: unknown): Record<string, unknown> | undefined => {
+    const field = record(value)
+    return field.revision === undefined ? undefined : { documentId: field.documentId, objectId: field.objectId, revision: field.revision, scope: field.scope, adoptedAt: field.adoptedAt }
+  }
+  const story = {
+    ...(source.documentId !== undefined
+      ? { source: { documentId: source.documentId, objectId: source.objectId, objectKind: source.objectKind, scope: source.scope, revision: record(source.snapshot).revision } }
+      : {}),
+    ...(metadata.storyProduction !== undefined ? { production: metadata.storyProduction } : {}),
+    ...(adoption.fields !== undefined || adoption.fieldAdoptions !== undefined
+      ? { adoption: { fields: adoption.fields, prompt: adopted(byField.prompt ?? (Array.isArray(adoption.fields) && adoption.fields.includes('prompt') ? adoption : undefined)), references: adopted(byField.references ?? (Array.isArray(adoption.fields) && adoption.fields.includes('references') ? adoption : undefined)) } }
+      : {}),
+    ...(typeof metadata.promptPurpose === 'string' ? { promptPurpose: metadata.promptPurpose } : {}),
+  }
+  return {
+    adoptionTarget,
+    ...(omitted.length > 0 ? { adoptionTargetOmitted: omitted } : {}),
+    ...(Object.keys(story).length > 0 ? { story } : {}),
+  }
+}
+
+function summarizeSavedNode(value: unknown, projectId: string, exact = false): Record<string, unknown> {
   const node = record(value)
   const metadata = record(node.metadata)
   const content = metadata.content ?? node.content ?? ''
@@ -420,6 +465,7 @@ function summarizeSavedNode(value: unknown, projectId: string): Record<string, u
     contentTruncated: typeof content === 'string' && (content.length > 1600 || content.startsWith('data:')),
     metadata: saved,
     generation: generationNodeStatus({ ...node, metadata } as BoardNode, projectId),
+    ...(exact ? storyFields(metadata) : {}),
   }
 }
 
@@ -435,7 +481,7 @@ export function savedCanvasPage(document: Record<string, unknown>, input: { proj
   if (input.nodeId !== undefined) {
     const node = nodes.find(item => record(item).id === input.nodeId)
     if (node === undefined) throw new CanvasToolError('CANVAS_NODE_NOT_FOUND', 'The saved board has no such node.')
-    return { ...base, node: summarizeSavedNode(node, input.projectId) }
+    return { ...base, node: summarizeSavedNode(node, input.projectId, true) }
   }
   const offset = Math.max(0, Math.floor(Number.isFinite(input.offset) ? input.offset! : 0))
   const limit = Math.min(50, Math.max(1, Math.floor(Number.isFinite(input.limit) ? input.limit! : 25)))

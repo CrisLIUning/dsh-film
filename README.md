@@ -36,6 +36,7 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 每个会话都有 `film_project`：查看工作区的影片项目，或在用户要做片时新建一个。工作区有影片项目的会话还会多出 22 个工具和一段说明（没有影片的会话不带它们，不额外占用 token；新建项目后从下一步起就有）：
 
 - **剧本** `story_query` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。
+- **剧本到分镜** `story_source` `story_handoff` `story_adopt` `story_impact` `story_director_links`：把保存的人物、场景、道具、场次或镜头读成制作素材，送到画布成为独立的剧本来源卡（可同时准备一个连好线、只待确认提示词的图片节点，不会自动生成）；按节点保存的字段显式采用描述或参考图（参考图另存一份字节快照）；剧本改动后查看影响了哪些采用、产物、导演镜头和剪辑片段；给导演台已保存的机位记下剧本来源。分镜标签不开也能用。
 - **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片）放进指定节点，不重复生成。
 - **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）和画布可用的素材、剧本；按版本号放素材、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
 
