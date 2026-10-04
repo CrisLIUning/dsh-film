@@ -5,11 +5,13 @@
  */
 
 import { StoryOperationError } from '../screenwriter/contracts/index.js'
-import type { StoryApplyRequest, StoryObjectTarget, StoryQueryRequest, StoryWriteRequest } from '../screenwriter/contracts/index.js'
+import type { StoryApplyRequest, StoryBindRequest, StoryObjectTarget, StoryQueryRequest, StoryWriteRequest } from '../screenwriter/contracts/index.js'
+import { readProject } from '../project.js'
+import { StoryAssets } from '../screenwriter/assets.js'
 import { queryStoryDocument } from '../screenwriter/query.js'
 import { StoryError, StoryService } from '../screenwriter/service.js'
 import { StudioApiError, studioError } from './router.js'
-import type { StudioRouter } from './router.js'
+import type { StudioRequest, StudioRouter } from './router.js'
 
 const DOCUMENTS = '/api/projects/:projectId/story/documents'
 const DOCUMENT = `${DOCUMENTS}/:documentId`
@@ -32,17 +34,44 @@ export function translateStoryError(error: unknown): Response | undefined {
   return undefined
 }
 
+/** The screenplay services the screenwriter routes (and the story routes added beside them) share. */
+export interface ScreenwriterServices {
+  /** The screenplay store. */
+  stories: StoryService
+  /** Reference images. */
+  assets: StoryAssets
+  /** Told about every committed change (for live views). */
+  onChange: (cwd: string, documentId: string, revision: string) => void
+}
+
+/**
+ * The screenplay services with their defaults filled in.
+ * @param services - what the caller supplies.
+ * @returns the services.
+ */
+export function screenwriterServices(services: Partial<ScreenwriterServices> = {}): ScreenwriterServices {
+  const stories = services.stories ?? new StoryService()
+  return { stories, assets: services.assets ?? new StoryAssets(stories), onChange: services.onChange ?? (() => {}) }
+}
+
+/**
+ * The film's board id: its project's id. A screenplay route's `:projectId` is
+ * ignored like every other Studio project id here, so it cannot point the
+ * library at a board the 分镜 tab never opens.
+ * @param request - the request.
+ * @returns the board id.
+ */
+export async function filmBoardOf(request: StudioRequest): Promise<string> {
+  return (await readProject(request.cwd))?.id ?? request.params.projectId ?? 'film'
+}
+
 /**
  * Add the screenwriter routes to a router.
  * @param router - the Studio-compatible router.
- * @param service - the screenplay store.
- * @param onChange - told about every committed change (for live views).
+ * @param services - the screenplay services.
  */
-export function addScreenwriterRoutes(
-  router: StudioRouter,
-  service: StoryService,
-  onChange: (cwd: string, documentId: string, revision: string) => void = () => {},
-): void {
+export function addScreenwriterRoutes(router: StudioRouter, services: ScreenwriterServices): void {
+  const { stories: service, assets, onChange } = services
   const changed = <T extends { changed?: boolean; document?: { documentId: string; revision: string } }>(cwd: string, result: T): T => {
     if (result.changed === true && result.document !== undefined) onChange(cwd, result.document.documentId, result.document.revision)
     return result
@@ -81,4 +110,18 @@ export function addScreenwriterRoutes(
     changed(cwd, await service.restore(cwd, params.documentId!, await json() as { expectedRevision: string; versionId: string; operationId?: string })))
   router.add('POST', `${DOCUMENT}/revert`, async ({ cwd, params, json }) =>
     changed(cwd, await service.revert(cwd, params.documentId!, await json() as { expectedRevision: string; operationId: string })))
+
+  // Reference images: the film's image library, what each bound version resolves to, binding and its removal, and the bound bytes.
+  router.add('GET', '/api/projects/:projectId/story/assets', async request => assets.candidates(request.cwd, await filmBoardOf(request)))
+  router.add('GET', `${DOCUMENT}/references`, async request =>
+    assets.resolve(request.cwd, await service.get(request.cwd, request.params.documentId!), await filmBoardOf(request)))
+  router.add('POST', `${DOCUMENT}/bindings`, async request =>
+    changed(request.cwd, await assets.bind(request.cwd, request.params.documentId!, await request.json() as unknown as StoryBindRequest, await filmBoardOf(request))))
+  router.add('DELETE', `${DOCUMENT}/bindings/:bindingId`, async request =>
+    changed(request.cwd, await assets.unbind(request.cwd, request.params.documentId!, request.params.bindingId!, String((await request.json()).expectedRevision ?? ''))))
+  router.add('GET', `${DOCUMENT}/references/:assetId/:versionId`, async (request) => {
+    const document = await service.get(request.cwd, request.params.documentId!)
+    const file = await assets.readReference(request.cwd, document, request.params.assetId!, request.params.versionId!, await filmBoardOf(request))
+    return new Response(new Uint8Array(file.buffer), { headers: { 'Content-Type': file.mime, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } })
+  })
 }

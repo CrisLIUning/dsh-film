@@ -8,18 +8,24 @@
  * @module dsh-film/agent/story-tools
  */
 
+import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { callStudio } from './studio-client.js'
+import { digestFile } from '../film-files.js'
+import { listAssets } from '../media.js'
+import { FilmToolError, callStudio } from './studio-client.js'
 import type { StudioCall } from './studio-client.js'
 import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
-import type { FilmToolServices } from './context.js'
+import type { FilmToolServices, FilmWorkspace } from './context.js'
 
 const documentId = { type: 'string', description: 'Stable screenplay document id from story_query.' } as const
 const expectedRevision = { type: 'string', description: 'The saved revision last read. A different current revision is answered with a conflict and nothing is overwritten.' } as const
 
 /** The longest stretch of a historic version's Markdown returned in one answer. */
 const VERSION_CONTENT_LIMIT = 48_000
+/** How many library images and workspace images one listing returns. */
+const LIBRARY_LIMIT = 200
+const WORKSPACE_IMAGE_LIMIT = 100
 
 const OPERATION_SHAPES = [
   '{kind:"appendBlock",block:{id,kind,markdown},afterBlockId?} — block kinds: scene-heading, action, speech (dialogue: a "**名字**" line, a blank line, then the line), outline, beat, brief, structure, shot-plan; unfamiliar kinds are kept',
@@ -81,6 +87,26 @@ function mutationSummary(result: Record<string, unknown>, dryRun: boolean): Reco
   return summary
 }
 
+/** The binding and asset records a bind or unbind touched, found in the saved screenplay. */
+function touchedRecords(result: Record<string, unknown>): Record<string, unknown> {
+  const document = isRecord(result.document) ? result.document : {}
+  const metadata = isRecord(document.parsed) && isRecord(document.parsed.metadata) ? document.parsed.metadata : {}
+  const changed = new Set(Array.isArray(result.changedIds) ? result.changedIds.map(String) : [])
+  const bindings = (Array.isArray(metadata.bindings) ? metadata.bindings : []).filter((binding): binding is Record<string, unknown> => isRecord(binding) && changed.has(String(binding.id)))
+  const assetIds = new Set(bindings.map(binding => String(binding.assetId)))
+  const assets = (Array.isArray(metadata.assets) ? metadata.assets : []).filter((asset): asset is Record<string, unknown> => isRecord(asset) && assetIds.has(String(asset.id)))
+  return { bindings, assets }
+}
+
+/** The images under the workspace's media/ folder (where the media tools save), with their digests. */
+async function workspaceImages(film: FilmWorkspace): Promise<Array<Record<string, unknown>>> {
+  const { assets } = await listAssets(film.cwd)
+  const images = assets.filter(asset => asset.kind === 'image' && asset.path.startsWith('media/')).slice(0, WORKSPACE_IMAGE_LIMIT)
+  return Promise.all(images.map(async asset => ({
+    path: asset.path, sizeBytes: asset.bytes, modifiedAt: asset.modifiedAt, sha256: await digestFile(join(film.cwd, ...asset.path.split('/'))),
+  })))
+}
+
 /**
  * Build the story tools.
  * @param services - the film services.
@@ -113,6 +139,75 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
         if (args.documentId === undefined || args.documentId === '') return plain(await call(exec, documents => ({ method: 'GET', path: documents })))
         const { documentId: id, ...query } = args
         return plain(await call(exec, documents => ({ method: 'POST', path: `${documents}/${segment(id)}/query`, body: plain({ ...query, kind: query.kind ?? 'index' }) })))
+      },
+    }),
+    defineTool({
+      name: 'story_asset_bindings',
+      description: 'Reference images of screenplay cards. action "list": the film\'s image library (filePath relative to film/, sha256, the board nodes '
+        + 'showing each) plus images the media tools saved under the workspace media/ folder. "references": what each recorded reference version of '
+        + 'documentId resolves to — available, relocated, ambiguous, version-mismatch or missing are different outcomes; never treat a same-named file as '
+        + 'the reference. "bind": bind one image version to a card: binding {target:{kind:"entity"|"shot",id}, scope:{kind:"document"}|{kind:"scene",'
+        + 'sceneId}, purpose (e.g. appearance, identity, costume), primary (one main reference per card, scope and purpose), filePath and expectedSha256 '
+        + 'exactly as list returned them, replaceBindingId?, operationId?}; a media/ image is first copied into the film. "unbind": remove bindingId only. '
+        + 'Binding changes the screenplay only: it never moves or deletes a file, starts a generation or changes production inputs. Do not write assets or '
+        + 'bindings records with story_apply_ops.',
+      parameters: {
+        action: { type: 'string', required: true, enum: ['list', 'references', 'bind', 'unbind'] },
+        documentId: { ...documentId, description: 'For references, bind and unbind.' },
+        expectedRevision: { ...expectedRevision, description: 'For bind and unbind.' },
+        bindingId: { type: 'string', description: 'For unbind.' },
+        binding: { type: 'object', additionalProperties: true, description: 'For bind (see the description).' },
+      },
+      output: jsonOutput,
+      async execute(args, exec) {
+        const film = await filmWorkspace(exec)
+        const documents = `/api/projects/${segment(film.projectId)}/story/documents`
+        const need = (value: string | undefined, name: string): string => {
+          if (value === undefined || value === '') throw new FilmToolError('STORY_TOOL_INPUT', `${name} is required for ${args.action}.`)
+          return value
+        }
+        switch (args.action) {
+          case 'list': {
+            const listed = await callStudio(services.studio, film.cwd, { method: 'GET', path: `/api/projects/${segment(film.projectId)}/story/assets` }, exec.signal)
+            const library = Array.isArray(listed.assets) ? listed.assets as Array<Record<string, unknown>> : []
+            return plain({
+              assets: library.slice(0, LIBRARY_LIMIT).map(asset => ({ ...asset, canvasNodeIds: Array.isArray(asset.canvasNodeIds) ? asset.canvasNodeIds.slice(0, 10) : [] })),
+              total: library.length,
+              truncated: library.length > LIBRARY_LIMIT,
+              workspaceImages: await workspaceImages(film),
+            })
+          }
+          case 'references':
+            return plain(await callStudio(services.studio, film.cwd, { method: 'GET', path: `${documents}/${segment(need(args.documentId, 'documentId'))}/references` }, exec.signal))
+          case 'bind': {
+            const id = need(args.documentId, 'documentId')
+            const revision = need(args.expectedRevision, 'expectedRevision')
+            if (args.binding === undefined) throw new FilmToolError('STORY_TOOL_INPUT', 'binding is required for bind.')
+            const binding = { ...args.binding }
+            let filePath = typeof binding.filePath === 'string' ? binding.filePath.trim().replaceAll('\\', '/').replace(/^\.\//u, '') : ''
+            if (filePath.startsWith('film/')) filePath = filePath.slice('film/'.length)
+            else if (filePath.startsWith('media/')) {
+              // The library is the film's own files: a workspace image is copied in, as the editing desk's import does.
+              const imported = await callStudio(services.studio, film.cwd, {
+                method: 'POST', path: `/api/canvas/timelines/${segment(film.boardId)}/import?project=${segment(film.projectId)}`, body: { path: filePath },
+              }, exec.signal)
+              const file = isRecord(imported.file) ? imported.file : {}
+              if (typeof file.name !== 'string') throw new FilmToolError('STORY_ASSET_IMPORT_FAILED', `Could not copy ${filePath} into the film.`)
+              filePath = file.name
+            }
+            const result = await callStudio(services.studio, film.cwd, {
+              method: 'POST', path: `${documents}/${segment(id)}/bindings`, body: { ...binding, filePath, expectedRevision: revision },
+            }, exec.signal)
+            return plain({ ...mutationSummary(result, false), ...touchedRecords(result) })
+          }
+          case 'unbind': {
+            const id = need(args.documentId, 'documentId')
+            const result = await callStudio(services.studio, film.cwd, {
+              method: 'DELETE', path: `${documents}/${segment(id)}/bindings/${segment(need(args.bindingId, 'bindingId'))}`, body: { expectedRevision: need(args.expectedRevision, 'expectedRevision') },
+            }, exec.signal)
+            return plain({ ...mutationSummary(result, false), ...touchedRecords(result) })
+          }
+        }
       },
     }),
     defineTool({
