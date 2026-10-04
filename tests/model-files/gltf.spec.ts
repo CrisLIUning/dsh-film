@@ -117,6 +117,29 @@ describe('readGlbFacts', () => {
     expect(facts.approximate).toBe(false)
   })
 
+  it('scans interleaved positions without min/max across many reads, and defers a scan over its limit when asked', async () => {
+    // 100 000 vertices, 24 bytes apart (position + normal): 2.4 MB, more than one scan chunk.
+    const count = 100_000
+    const data = Buffer.alloc(count * 24)
+    for (let at = 0; at < count; at++) {
+      data.writeFloatLE(at === 77_777 ? -3 : (at % 10) / 10, at * 24)
+      data.writeFloatLE(at === count - 1 ? 9 : 1, at * 24 + 4)
+      data.writeFloatLE(at === 12_345 ? 4 : 0, at * 24 + 8)
+      data.writeFloatLE(100, at * 24 + 12) // the normal, never part of the box
+    }
+    const gltf = new Gltf()
+    const position = gltf.json.accessors.push({ bufferView: gltf.view(data, 24), componentType: 5126, count, type: 'VEC3' }) - 1
+    gltf.scene(gltf.node({ mesh: gltf.mesh({ attributes: { POSITION: position } }) }))
+    const bytes = gltf.glb()
+    const facts = await measure(bytes)
+    expectBox(facts.bounds, [-3, 1, 0], [0.9, 9, 4])
+    expect(facts.approximate).toBe(false)
+    // Over the scan limit: left out of an approximate box, or (a listing) deferred.
+    const small = { ...LIMIT, maxScanBytes: 1024 }
+    expect(await measure(bytes, small)).toMatchObject({ approximate: true })
+    await expect(measure(bytes, { ...small, deferLargeScans: true })).rejects.toBeInstanceOf(ModelTooLargeError)
+  })
+
   it('marks the box approximate when compressed positions have no min/max', async () => {
     const gltf = new Gltf()
     gltf.json.extensionsUsed = ['EXT_meshopt_compression']

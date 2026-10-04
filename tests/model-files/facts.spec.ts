@@ -109,6 +109,18 @@ describe('modelFacts', () => {
     const big = await file('props/big.obj', `v 0 0 0\nv 1 2 3\n${'# padding line for a large OBJ file\n'.repeat(260_000)}`)
     expect(await modelFacts(big, 'props/big.obj', { listing: listingBudget() })).toMatchObject({ pending: true })
     expect(await modelFacts(big, 'props/big.obj')).toMatchObject({ bounds: { min: [0, 0, 0], max: [1, 2, 3] } })
+
+    // A GLB whose positions lack min/max and are over the listing's 8 MiB scan: pending, then measured in full.
+    const count = 750_000
+    const data = Buffer.alloc(count * 12)
+    data.writeFloatLE(-1, 0)
+    data.writeFloatLE(2, (count - 1) * 12 + 4)
+    const gltf = new Gltf()
+    const position = gltf.json.accessors.push({ bufferView: gltf.view(data), componentType: 5126, count, type: 'VEC3' }) - 1
+    const scanned = await file('props/scanned.glb', gltf.scene(gltf.node({ mesh: gltf.mesh({ attributes: { POSITION: position } }) })).glb())
+    expect(await modelFacts(scanned, 'props/scanned.glb', { listing: listingBudget() })).toMatchObject({ pending: true })
+    expect(modelFactsCacheSize()).toBe(2)
+    expect(await modelFacts(scanned, 'props/scanned.glb')).toMatchObject({ bounds: { min: [-1, 0, 0], max: [0, 2, 0] } })
   })
 })
 

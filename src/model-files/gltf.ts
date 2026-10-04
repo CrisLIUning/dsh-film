@@ -43,8 +43,14 @@ export interface GltfMeasure {
 export interface GltfReadOptions {
   /** The largest JSON chunk (or `.gltf` file) read; a larger one is a {@link ModelTooLargeError}. */
   maxJsonBytes: number
-  /** The most accessor bytes scanned for a POSITION accessor without min/max. */
+  /** The most accessor bytes scanned for a POSITION accessor without min/max (and for a skin's or an instancing's float data). */
   maxScanBytes?: number
+  /**
+   * Data over `maxScanBytes` throws {@link ModelTooLargeError} (a listing
+   * measures the file later, in full) instead of being left out of an
+   * approximate box.
+   */
+  deferLargeScans?: boolean
 }
 
 /** A file over a reading limit: the caller decides whether that is a problem or a later measurement. */
@@ -56,6 +62,8 @@ const GLB_MAGIC = 0x46546c67
 const CHUNK_JSON = 0x4e4f534a
 const CHUNK_BIN = 0x004e4942
 const DEFAULT_SCAN_BYTES = 64 * 1024 * 1024
+/** How many bytes of positions one read of a min/max scan takes: the scan never holds more, and waits for the disk between reads. */
+const SCAN_CHUNK_BYTES = 1024 * 1024
 
 const COMPRESSION_EXTENSIONS: Readonly<Record<string, ModelCompression>> = {
   KHR_draco_mesh_compression: 'draco',
@@ -173,7 +181,7 @@ const COMPONENTS: Readonly<Record<string, number>> = { SCALAR: 1, VEC2: 2, VEC3:
  * @param options - the scan limit.
  * @returns the measurement.
  */
-export async function measureGltf(document: unknown, read: BufferReader, options: Pick<GltfReadOptions, 'maxScanBytes'> = {}): Promise<GltfMeasure> {
+export async function measureGltf(document: unknown, read: BufferReader, options: Pick<GltfReadOptions, 'maxScanBytes' | 'deferLargeScans'> = {}): Promise<GltfMeasure> {
   if (!isRecord(document) || !isRecord(document.asset)) throw new ModelReadError('不是 glTF 2.0 文档（没有 asset）')
   const nodes = records(document.nodes)
   const meshes = records(document.meshes)
@@ -226,8 +234,8 @@ export async function measureGltf(document: unknown, read: BufferReader, options
     return worlds.get(start) ?? world
   }
 
-  /** The bytes of an accessor's elements, as floats, when they can be read plainly. */
-  const readFloats = async (accessorIndex: number, type: string): Promise<{ values: Float32Array[]; count: number } | undefined> => {
+  /** Where a float accessor's elements are, when they can be read plainly. */
+  const floatLayout = (accessorIndex: number, type: string): { buffer: number; start: number; stride: number; elementSize: number; count: number; length: number } | undefined => {
     const accessor = accessors[accessorIndex]
     const components = COMPONENTS[type]
     if (accessor === undefined || components === undefined || accessor.type !== type || accessor.componentType !== FLOAT || accessor.sparse !== undefined) return undefined
@@ -242,7 +250,20 @@ export async function measureGltf(document: unknown, read: BufferReader, options
     const start = (index(view.byteOffset) ?? 0) + (index(accessor.byteOffset) ?? 0)
     const length = stride * (count - 1) + elementSize
     const viewLength = index(view.byteLength) ?? 0
-    if (stride < elementSize || (index(accessor.byteOffset) ?? 0) + length > viewLength || length > maxScanBytes) return undefined
+    if (stride < elementSize || (index(accessor.byteOffset) ?? 0) + length > viewLength) return undefined
+    if (length > maxScanBytes) {
+      if (options.deferLargeScans === true) throw new ModelTooLargeError(`glTF 的访问器有 ${length} 字节要扫描，超过 ${maxScanBytes} 字节的读取上限`)
+      return undefined
+    }
+    return { buffer, start, stride, elementSize, count, length }
+  }
+
+  /** The bytes of an accessor's elements, as floats, when they can be read plainly (a skin's matrices, instance transforms: small). */
+  const readFloats = async (accessorIndex: number, type: string): Promise<{ values: Float32Array[]; count: number } | undefined> => {
+    const layout = floatLayout(accessorIndex, type)
+    if (layout === undefined) return undefined
+    const { buffer, start, stride, count, length } = layout
+    const components = layout.elementSize / 4
     const bytes = await read(buffer, start, length)
     if (bytes === undefined || bytes.byteLength < length) return undefined
     const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -253,6 +274,35 @@ export async function measureGltf(document: unknown, read: BufferReader, options
       values.push(element)
     }
     return { values, count }
+  }
+
+  /**
+   * The min/max of a float VEC3 accessor, folded straight from the bytes a
+   * chunk at a time: nothing is allocated per vertex, and a large scan waits
+   * for the disk between chunks instead of holding the event loop.
+   */
+  const scanBox = async (accessorIndex: number): Promise<ModelBox | undefined> => {
+    const layout = floatLayout(accessorIndex, 'VEC3')
+    if (layout === undefined) return undefined
+    const { buffer, start, stride, elementSize, count } = layout
+    const box = emptyBox()
+    const perChunk = Math.max(1, Math.floor(SCAN_CHUNK_BYTES / stride))
+    for (let first = 0; first < count; first += perChunk) {
+      const items = Math.min(perChunk, count - first)
+      const length = stride * (items - 1) + elementSize
+      const bytes = await read(buffer, start + first * stride, length)
+      if (bytes === undefined || bytes.byteLength < length) return undefined
+      const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      for (let item = 0; item < items; item++) {
+        const at = item * stride
+        for (let axis = 0; axis < 3; axis++) {
+          const value = data.getFloat32(at + axis * 4, true)
+          box.min[axis] = Math.min(box.min[axis]!, value)
+          box.max[axis] = Math.max(box.max[axis]!, value)
+        }
+      }
+    }
+    return box
   }
 
   /** One primitive's box in its mesh's space, as GLTFLoader computes it. */
@@ -275,13 +325,12 @@ export async function measureGltf(document: unknown, read: BufferReader, options
         box = { min: box.min.map(value => value * scale) as Vec3, max: box.max.map(value => value * scale) as Vec3 }
       }
     } else {
-      const scanned = await readFloats(position, 'VEC3')
+      const scanned = await scanBox(position)
       if (scanned === undefined) {
         rough('有网格的 POSITION 缺少 min/max 且数据无法直接读取（压缩、稀疏或外部缓冲），尺寸是估计值')
         return undefined
       }
-      box = emptyBox()
-      for (const value of scanned.values) expandByPoint(box, [value[0]!, value[1]!, value[2]!])
+      box = scanned
     }
     const targets = records(primitive.targets)
     if (targets.length > 0) {

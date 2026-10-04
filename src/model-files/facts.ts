@@ -20,9 +20,14 @@ import type { ModelBox, ModelCompression, ModelFacts, ModelFormat, Vec3 } from '
 
 const MiB = 1024 * 1024
 
-/** Reading limits of a listing and of a full measurement. */
-export const LISTING_LIMITS = { glbJson: 16 * MiB, obj: 8 * MiB } as const
-export const FULL_LIMITS = { glbJson: 64 * MiB, obj: Number.POSITIVE_INFINITY } as const
+/**
+ * Reading limits of a listing and of a full measurement: a GLB's JSON, an OBJ,
+ * and the glTF float data scanned where an accessor has no min/max (a listing
+ * leaves a file over its scan limit pending, to be measured in full on import
+ * or placement).
+ */
+export const LISTING_LIMITS = { glbJson: 16 * MiB, obj: 8 * MiB, scan: 8 * MiB } as const
+export const FULL_LIMITS = { glbJson: 64 * MiB, obj: Number.POSITIVE_INFINITY, scan: 64 * MiB } as const
 
 /** How long one listing may spend measuring files it has not seen, in milliseconds. */
 export const LISTING_BUDGET_MS = 1000
@@ -83,13 +88,14 @@ export function modelFactsCacheSize(): number {
 
 const problemOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
-async function measure(format: ModelFormat, absolute: string, size: number, limits: { glbJson: number; obj: number }): Promise<Measured> {
+async function measure(format: ModelFormat, absolute: string, size: number, limits: { glbJson: number; obj: number; scan: number }): Promise<Measured> {
   switch (format) {
     case 'glb':
     case 'gltf': {
       try {
         const read = format === 'glb' ? readGlbFacts : readGltfFacts
-        const found = await read(absolute, { maxJsonBytes: limits.glbJson })
+        const listing = limits.glbJson < FULL_LIMITS.glbJson
+        const found = await read(absolute, { maxJsonBytes: limits.glbJson, maxScanBytes: limits.scan, deferLargeScans: listing })
         return {
           ...(found.bounds !== undefined ? { bounds: found.bounds } : {}),
           metresPerUnit: 1,
