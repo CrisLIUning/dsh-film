@@ -21,13 +21,14 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
+import { rm, writeFile } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 import JSZip from 'jszip'
 import { applyStoryOperations, parseStoryMarkdown, projectStoryBody, StoryIdSchema } from './contracts/index.js'
 import type {
   StoryExportRequest, StoryExportResult, StoryImportPreview, StoryImportRequest, StoryMutationResult, StoryOperation, StoryReferencePackageManifest,
 } from './contracts/index.js'
+import { filmWriteTarget } from '../film-files.js'
 import { FILM_DIR } from '../project.js'
 import type { StoryAssets } from './assets.js'
 import { StoryError } from './service.js'
@@ -351,16 +352,10 @@ function decodeUtf8(bytes: Buffer): string {
  * @param bytes - the content.
  */
 async function writeNewFilmFile(cwd: string, path: string, bytes: Uint8Array): Promise<void> {
-  const root = join(cwd, FILM_DIR)
-  const target = join(root, ...path.split('/'))
-  await mkdir(dirname(target), { recursive: true })
-  const realRoot = await realpath(root)
-  const realParent = await realpath(dirname(target))
-  const offset = relative(realRoot, realParent)
-  if (offset === '..' || offset.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(offset)) {
-    throw new StoryError(400, 'STORY_PATH_ESCAPE', `${path} leaves the film.`)
-  }
-  await writeFile(join(realParent, basename(target)), bytes, { flag: 'wx' })
+  const target = await filmWriteTarget(cwd, path).catch((error: NodeJS.ErrnoException) => {
+    throw error.code === 'EPATHESCAPE' ? new StoryError(400, 'STORY_PATH_ESCAPE', `${path} leaves the film.`) : error
+  })
+  await writeFile(target, bytes, { flag: 'wx' })
 }
 
 async function readZipEntry(entry: JSZip.JSZipObject, limit: number): Promise<Buffer> {

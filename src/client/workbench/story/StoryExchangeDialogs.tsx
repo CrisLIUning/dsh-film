@@ -20,7 +20,7 @@ import { projectStoryBody } from '../../../screenwriter/contracts/tokens.ts'
 import type { StoryDocument } from '../../../screenwriter/contracts/types.ts'
 import type { Translate } from '../../types.ts'
 import { GrowingTextarea } from './BodyView.tsx'
-import { IMPORT_ACCEPT, ImportFileError, downloadStoryExport, exportRequest, exportSummary, importApplyRequest, importPreviewSummary, importRequestFromFile } from './exchange.ts'
+import { IMPORT_ACCEPT, ImportFileError, MAX_IMPORT_BYTES, downloadStoryExport, exportRequest, exportSummary, importApplyRequest, importPreviewSummary, importRequestFromFile } from './exchange.ts'
 import { StoryApiError, StoryConflictError } from './story-api.ts'
 import type { StoryApi } from './story-api.ts'
 import type { StoryStore } from './story-store.ts'
@@ -56,6 +56,8 @@ export function ImportDialog({ api, store, labels, t, onClose, onImported }: {
     setPreview(null)
     setError(undefined)
     try {
+      // An oversized file is refused before it is read into memory.
+      if (picked.size > MAX_IMPORT_BYTES) throw new ImportFileError('too-large')
       setInput(importRequestFromFile(picked.name, new Uint8Array(await picked.arrayBuffer())))
       setFile({ name: picked.name, size: picked.size })
     } catch (reason) {

@@ -13,8 +13,9 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
+import { filmWriteTarget } from '../film-files.js'
 import { FILM_DIR } from '../project.js'
 import {
   canonicalModelInputs, diffModelInputs, isModelId, isProjectRelativePath, modelArtifactFreshness, modelRecordPath,
@@ -86,10 +87,11 @@ export async function readFilmFile(cwd: string, name: string): Promise<FilmFile>
  * @param data - the content.
  */
 export async function writeFilmFile(cwd: string, name: string, data: string | Uint8Array): Promise<void> {
-  const target = filmFilePath(cwd, name)
-  await mkdir(dirname(target), { recursive: true })
-  const [root, parent] = await Promise.all([realpath(filmRoot(cwd)), realpath(dirname(target))])
-  if (!within(root, parent, true)) throw Object.assign(new Error(`${name} 在项目之外`), { code: 'EACCES' })
+  filmFilePath(cwd, name)
+  // The parent is proven inside the film before any folder is made, and again after.
+  const target = await filmWriteTarget(cwd, name).catch((error: NodeJS.ErrnoException) => {
+    throw error.code === 'EPATHESCAPE' ? Object.assign(new Error(`${name} 在项目之外`), { code: 'EACCES' }) : error
+  })
   const existing = await lstat(target).catch(() => undefined)
   if (existing !== undefined && !existing.isFile()) throw Object.assign(new Error(`${name} 不是普通文件`), { code: 'EEXIST' })
   const temporary = join(dirname(target), `.${randomUUID()}.tmp`)
@@ -185,7 +187,9 @@ export async function readModelRecord(cwd: string, modelId: string): Promise<Mod
   if (!isModelId(modelId)) return null
   try {
     const file = await readFilmFile(cwd, modelRecordPath(modelId))
-    return normalizeModelProjectRecord(JSON.parse(file.buffer.toString('utf8')))
+    const record = normalizeModelProjectRecord(JSON.parse(file.buffer.toString('utf8')))
+    // A record naming another model is not this folder's record: writing it back would land in the other model's folder.
+    return record?.id === modelId ? record : null
   } catch {
     return null
   }
@@ -221,6 +225,7 @@ export async function updateModelRecord<T>(
   const previous = updates.get(key) ?? Promise.resolve()
   const task = previous.catch(() => {}).then(async () => {
     const { record, value } = await mutate(await readModelRecord(cwd, modelId))
+    if (record !== null && record.id !== modelId) throw new Error(`模型记录 ${record.id} 不属于 ${modelId}，拒绝写入`)
     if (record !== null) await writeModelRecord(cwd, record)
     return value
   })

@@ -90,6 +90,32 @@ function sha256File(path: string): Promise<string> {
 }
 
 /**
+ * An earlier import of the same bytes: the names `freeProjectPath` hands out
+ * for `path` (x.png, x-2.png, ...) up to the first free one, the first whose
+ * size and digest match the source.
+ * @param cwd - the workspace.
+ * @param path - the import's film-relative name.
+ * @param source - the file being imported.
+ * @param size - its size.
+ * @returns the earlier copy's film-relative name, if there is one.
+ */
+async function identicalCopy(cwd: string, path: string, source: string, size: number): Promise<string | undefined> {
+  const match = /^(.*?)(\.[A-Za-z0-9]+)?$/.exec(path)
+  const stem = match?.[1] ?? path
+  const extension = match?.[2] ?? ''
+  let sourceDigest: string | undefined
+  for (let index = 1; index < 10_000; index++) {
+    const candidate = index === 1 ? path : `${stem}-${index}${extension}`
+    const info = await lstat(projectPath(cwd, candidate)).catch(() => undefined)
+    if (info === undefined) return undefined
+    if (!info.isFile() || info.size !== size) continue
+    sourceDigest ??= await sha256File(source)
+    if (await sha256File(projectPath(cwd, candidate)).catch(() => undefined) === sourceDigest) return candidate
+  }
+  return undefined
+}
+
+/**
  * The film's media as the editor's authorization list, and the workspace's
  * `media/` folder as files it may import. A file under `film/` that is not in
  * the list is a clip the editor drops on its next save, so all of them are in.
@@ -376,6 +402,9 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
     const source = join(request.cwd, ...from.split('/'))
     const info = await lstat(source).catch(() => undefined)
     if (info?.isFile() !== true) throw new StudioReply(404, { error: `no media file ${from}`, code: 'CANVAS_TIMELINE_IMPORT_NOT_FOUND' })
+    // Importing the same bytes again answers the earlier copy, so a retried bind or attach does not pile up x-2, x-3, ...
+    const earlier = await identicalCopy(request.cwd, `${MATERIAL_DIR}/${basename(from)}`, source, info.size)
+    if (earlier !== undefined) return { file: { name: earlier, size: info.size, mime: mediaTypeOf(earlier)?.type ?? 'application/octet-stream' }, reused: true }
     const target = await freeProjectPath(request.cwd, `${MATERIAL_DIR}/${basename(from)}`)
     const absolute = projectPath(request.cwd, target)
     await mkdir(dirname(absolute), { recursive: true })

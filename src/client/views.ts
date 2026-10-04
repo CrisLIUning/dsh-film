@@ -17,10 +17,16 @@ export interface FilmPart {
   /** Position among the guide page's entry boxes. */
   order: number
   artwork: ComponentType<ArtworkProps>
+  /**
+   * Keep the body mounted while another tab is shown: the screenplay holds
+   * unsaved text and the document, view and filter being worked on, which a
+   * hand-off to the storyboard or the editing desk must not throw away.
+   */
+  keepMounted?: boolean
 }
 
 export const PARTS: readonly FilmPart[] = [
-  { view: 'story', id: 'dsh-film/story', kind: 'film-story', order: 100, artwork: ArtworkStory },
+  { view: 'story', id: 'dsh-film/story', kind: 'film-story', order: 100, artwork: ArtworkStory, keepMounted: true },
   { view: 'board', id: 'dsh-film/board', kind: 'film-board', order: 101, artwork: ArtworkBoard },
   { view: 'timeline', id: 'dsh-film/timeline', kind: 'film-timeline', order: 102, artwork: ArtworkTimeline },
   { view: 'director', id: 'dsh-film/director', kind: 'film-director', order: 103, artwork: ArtworkDirector },

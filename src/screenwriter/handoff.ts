@@ -20,14 +20,15 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { resolveStoryReferences, storyEntityProductionText, storyProductionInstruction, STORY_PRODUCTION_PURPOSES } from './contracts/index.js'
 import type { StoryAdoption, StoryAdoptRequest, StoryBindingScope, StoryFieldAdoption, StoryHandoffRequest, StorySourcePreview } from './contracts/index.js'
 import { CanvasDocumentStore } from '../canvas/documents.js'
 import type { CanvasDocument } from '../canvas/documents.js'
-import { FILM_DIR, readProject } from '../project.js'
+import { filmWriteTarget } from '../film-files.js'
+import { readProject } from '../project.js'
 import type { FilmProject } from '../project.js'
 import type { StoryAssets } from './assets.js'
 import { StoryError } from './service.js'
@@ -284,7 +285,7 @@ export class StoryHandoff {
           const filePath = `canvas/story-references/${reference.sha256}.${extension}`
           // Adoption is explicit. Its immutable byte snapshot keeps future
           // original-file edits from silently changing production inputs.
-          await writeAtomically(join(cwd, FILM_DIR, ...filePath.split('/')), file.buffer)
+          await writeAtomically(cwd, filePath, file.buffer)
           this.fileChanged(cwd, filePath, projectId)
           urls.push(`/api/projects/${encodeURIComponent(projectId)}/raw/${filePath}`)
         }
@@ -342,9 +343,12 @@ function emptyBoard(id: string, title: string): CanvasDocument {
   return { id, title, createdAt: now, updatedAt: now, nodes: [], connections: [], chatSessions: [], activeChatId: null, backgroundMode: 'lines', showImageInfo: false, viewport: { x: 0, y: 0, k: 1 } }
 }
 
-async function writeAtomically(path: string, bytes: Buffer): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temporary = `${path}.${randomUUID()}.tmp`
+/** Write a film file through a temporary file in the same, proven-inside, folder. */
+async function writeAtomically(cwd: string, filePath: string, bytes: Buffer): Promise<void> {
+  const path = await filmWriteTarget(cwd, filePath).catch((error: NodeJS.ErrnoException) => {
+    throw error.code === 'EPATHESCAPE' ? new StoryError(400, 'STORY_PATH_ESCAPE', `${filePath} leaves the film.`) : error
+  })
+  const temporary = join(dirname(path), `.${randomUUID()}.tmp`)
   try {
     await writeFile(temporary, bytes)
     await rename(temporary, path)

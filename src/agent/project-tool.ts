@@ -33,17 +33,19 @@ export function filmProjectTool(services: FilmToolServices): ToolDefinition {
       const cwd = workspaceFolder(exec)
       if (args.action === 'status') {
         const project = await readProject(cwd)
+        // A conversation that started before the film existed takes its film tools on here (installing again changes nothing).
+        if (project !== null) services.projectCreated(cwd)
         return plain(project === null ? { project: null, note: 'This workspace has no film project.' } : { project, file: PROJECT_FILE })
       }
       const title = args.title !== undefined && args.title.trim() !== '' ? args.title : basename(cwd)
       const result = await createProject(cwd, parseNewProject({ title, ...(args.aspectRatio !== undefined ? { aspectRatio: args.aspectRatio } : {}) }))
-      if (result.created) services.projectCreated(cwd)
+      services.projectCreated(cwd)
       return plain({
         project: result.project,
         created: result.created,
         note: result.created
           ? 'Created. The film tools (story_*, canvas_*, timeline_*) are available from your next step, and the 影视 sidebar shows the film.'
-          : 'This workspace already has this film project.',
+          : 'This workspace already has this film project. The film tools are available from your next step.',
       })
     },
   })

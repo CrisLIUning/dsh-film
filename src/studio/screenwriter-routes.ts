@@ -17,6 +17,8 @@ const DOCUMENTS = '/api/projects/:projectId/story/documents'
 const DOCUMENT = `${DOCUMENTS}/:documentId`
 
 const OBJECT_KINDS = new Set(['entity', 'scene', 'shot'])
+/** Reference bytes shown inline; any other type is sent as a download. */
+const RASTER_IMAGES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/bmp'])
 
 /**
  * Answer the screenwriter's own error types in Studio's shapes.
@@ -122,6 +124,16 @@ export function addScreenwriterRoutes(router: StudioRouter, services: Screenwrit
   router.add('GET', `${DOCUMENT}/references/:assetId/:versionId`, async (request) => {
     const document = await service.get(request.cwd, request.params.documentId!)
     const file = await assets.readReference(request.cwd, document, request.params.assetId!, request.params.versionId!, await filmBoardOf(request))
-    return new Response(new Uint8Array(file.buffer), { headers: { 'Content-Type': file.mime, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } })
+    // Only raster images are shown inline; anything else a package delivered (HTML, SVG, XML) is a download, never a page on this origin.
+    const inline = RASTER_IMAGES.has(file.mime)
+    return new Response(new Uint8Array(file.buffer), {
+      headers: {
+        'Content-Type': inline ? file.mime : 'application/octet-stream',
+        ...(inline ? {} : { 'Content-Disposition': 'attachment' }),
+        'Content-Security-Policy': "sandbox; default-src 'none'",
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
   })
 }

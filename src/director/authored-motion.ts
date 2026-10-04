@@ -129,17 +129,20 @@ async function compile(filmRoot: string, projectId: string, taskId: string, spec
   }
   const temporary = await mkdtemp(path.join(owned, '.compile-'))
   try {
-    await Promise.all([
+    // Every write settles before the folder is renamed or removed, so cleanup never races an open handle.
+    const writes = await Promise.allSettled([
       writeFile(path.join(temporary, 'motion.glb'), compiled.bytes, { flag: 'wx' }),
       writeFile(path.join(temporary, 'spec.json'), JSON.stringify(input.spec, null, 2), { flag: 'wx' }),
       writeFile(path.join(temporary, 'report.json'), JSON.stringify(result, null, 2), { flag: 'wx' }),
     ])
+    const failed = writes.find((write): write is PromiseRejectedResult => write.status === 'rejected')
+    if (failed !== undefined) throw failed.reason
     // Published whole or not at all: a reader never sees a GLB without its receipt.
     await rename(temporary, folder)
   } catch (error) {
     throw new MotionCompileError(500, 'MOTION_RECEIPT_SAVE_FAILED', error instanceof Error ? error.message : String(error))
   } finally {
-    await rm(temporary, { recursive: true, force: true })
+    await rm(temporary, { recursive: true, force: true, maxRetries: 3 }).catch(() => {})
   }
   return { taskId, projectId, status: 'done', progress: ['compiling', 'saved; preview required'], file: result, reused: false }
 }

@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { BoardAgentError } from '../canvas/board-agent.js'
 import type { CanvasBoardAgent } from '../canvas/board-agent.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
+import { FilmError } from '../errors.js'
 import { FILM_DIR } from '../project.js'
 import { MotionCompileError, compileMotionIntoFilm } from '../director/authored-motion.js'
 import { verifyDirectorAssetSource } from '../director/asset-source.js'
@@ -74,6 +75,8 @@ function reply(error: unknown): never {
   if (error instanceof DirectorQueryError) throw new StudioReply(400, { error: error.message, code: error.code })
   if (error instanceof BoardAgentError || error instanceof MotionCompileError) throw new StudioReply(error.status, { error: error.message, code: error.code })
   if (error instanceof CanvasDocumentUpdateError) throw new StudioReply(409, { error: error.message, code: error.code })
+  // A damaged or unsupported film.json is the film's problem, answered as the other routes answer it.
+  if (error instanceof FilmError) throw new StudioReply(error.status, { error: error.message, code: error.code })
   throw new StudioReply(500, { error: error instanceof Error ? error.message : String(error), code: 'DIRECTOR_FAILED' })
 }
 
@@ -277,16 +280,17 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
     // A node never opened as a desk starts as an empty scene — the same one
     // the desk itself would start, so nothing about it says "the agent's".
     const staged = stageDirectorScene(current.project ?? createEmptyDirectorProject(), plan)
-    const diagnostics = await directorDiagnostics(staged.project, { kind: 'diagnostics' }, located.echo)
     const dryRun = body.dryRun === true
     const inline = address === null
     let fingerprint = getDirectorProjectFingerprint(staged.project)
     let desk = current.desk
+    // Nothing may wait between reading the live scene and writing it (a desk opened in the gap would be written around), so diagnostics come after.
     if (!dryRun && !inline) {
       const outcome = await desks.writeScene(film.documents, located, address, current.live, staged.project, () => film.announce(address.boardId))
       fingerprint = outcome.fingerprint
       desk = outcome.desk
     }
+    const diagnostics = await directorDiagnostics(staged.project, { kind: 'diagnostics' }, located.echo)
     const answer: DirectorStageResponse = {
       written: !dryRun && !inline,
       source: located.echo,

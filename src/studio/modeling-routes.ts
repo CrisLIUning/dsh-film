@@ -33,13 +33,13 @@ import type { ModelEnvironment, ModelProjectRecord, ModelReviewNote } from '../m
 import { buildModelingBrief } from '../modeling/contracts/modeling-brief.js'
 import { modelEnvironment } from '../modeling/environment.js'
 import {
-  addModelReview, adoptModelVersion, collectModelInputs, createModelRecord, describeStaleness, listFilmFolder,
+  addModelReview, adoptModelVersion, collectModelInputs, createModelRecord, describeStaleness, filmFilePath, listFilmFolder,
   modelRunView, readFilmFile, readModelRecord, resolveModelReview, sha256, stalenessReason, updateModelRecord, writeFilmFile,
 } from '../modeling/store.js'
 import { readModelWorkflow } from '../modeling/workflow.js'
 import type { ProjectEvents } from './events.js'
 import { StudioReply } from './router.js'
-import type { StudioRequest, StudioRouter } from './router.js'
+import type { StudioHandler, StudioRequest, StudioRouter } from './router.js'
 import { filmBoardOf } from './screenwriter-routes.js'
 
 /** Where compiled buildings go, inside the project. */
@@ -59,6 +59,33 @@ export interface ModelingRouteDeps {
 
 const fail = (status: number, code: string, error: string): never => {
   throw new StudioReply(status, { error, code })
+}
+
+/**
+ * A file or record failure as the flat `{ error, code }` the 程序化模型 panel
+ * reads, rather than the router's generic nested answer.
+ * @param error - what a handler threw.
+ * @returns the error to throw on.
+ */
+function modelingFailure(error: unknown): unknown {
+  if (error instanceof StudioReply || !(error instanceof Error)) return error
+  const code = (error as NodeJS.ErrnoException).code
+  if (code === 'EACCES' || code === 'EPERM') return new StudioReply(403, { error: error.message, code: 'MODEL_WRITE_FORBIDDEN' })
+  if (code === 'ENOENT') return new StudioReply(404, { error: error.message, code: 'MODEL_FILE_NOT_FOUND' })
+  return new StudioReply(500, { error: error.message, code: 'MODEL_WRITE_FAILED' })
+}
+
+const sourceWrites = new Map<string, Promise<unknown>>()
+
+/** Run one source write at a time per file, so a hash check and its write cannot interleave with another save. */
+async function oneWriteAtATime<T>(key: string, write: () => Promise<T>): Promise<T> {
+  const task = (sourceWrites.get(key) ?? Promise.resolve()).catch(() => {}).then(write)
+  sourceWrites.set(key, task)
+  try {
+    return await task
+  } finally {
+    if (sourceWrites.get(key) === task) sourceWrites.delete(key)
+  }
 }
 
 /**
@@ -139,6 +166,15 @@ async function recordOrWorkflow(cwd: string, modelId: string): Promise<{ record:
  */
 export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps): void {
   const environment = deps.environment ?? modelEnvironment
+  const add = (method: Parameters<StudioRouter['add']>[0], pattern: string, handler: StudioHandler): void => {
+    router.add(method, pattern, async (request) => {
+      try {
+        return await handler(request)
+      } catch (error) {
+        throw modelingFailure(error)
+      }
+    })
+  }
   const MODEL = '/api/projects/:projectId/models/:modelId'
 
   const modelOf = (request: StudioRequest): string => {
@@ -150,7 +186,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     deps.events.emit(request.cwd, { type: 'file-changed', projectId: await filmBoardOf(request), path })
   }
 
-  router.add('POST', '/api/projects/:projectId/space-plans', async (request) => {
+  add('POST', '/api/projects/:projectId/space-plans', async (request) => {
     const body = await request.json()
     if (!isPlan(body.plan)) fail(400, 'SPACE_PLAN_INVALID', '需要一份平面:至少有 name、footprint 和一层 levels')
     const plan = body.plan as SpacePlan
@@ -177,7 +213,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     }
   })
 
-  router.add('POST', '/api/projects/:projectId/modeling-brief', async (request) => {
+  add('POST', '/api/projects/:projectId/modeling-brief', async (request) => {
     const body = await request.json()
     const projectId = await filmBoardOf(request)
     try {
@@ -187,7 +223,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     }
   })
 
-  router.add('GET', '/api/projects/:projectId/models', async (request) => {
+  add('GET', '/api/projects/:projectId/models', async (request) => {
     const children = await listFilmFolder(request.cwd, MODELS_DIR)
     const models = []
     for (const id of children?.dirs ?? []) {
@@ -205,7 +241,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
   })
 
   // The record, plus how it stands against what is on disk right now.
-  router.add('GET', MODEL, async (request) => {
+  add('GET', MODEL, async (request) => {
     const modelId = modelOf(request)
     const { record, workflow } = await recordOrWorkflow(request.cwd, modelId)
     if (record === null) return fail(404, 'MODEL_NOT_FOUND', '没有这个模型记录')
@@ -249,7 +285,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     return raw.startsWith(`${MODELS_DIR}/${modelId}/`) ? raw : null
   }
 
-  router.add('GET', `${MODEL}/source`, async (request) => {
+  add('GET', `${MODEL}/source`, async (request) => {
     const modelId = modelOf(request)
     const name = sourcePathOf(modelId, request.query.get('path') ?? undefined)
     if (name === null) return fail(400, 'MODEL_SOURCE_PATH_INVALID', `只能读取 ${MODELS_DIR}/${modelId}/ 下的文件`)
@@ -258,28 +294,31 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     return { path: file.path, text: file.buffer.toString('utf8'), sha256: sha256(file.buffer), bytes: file.size }
   })
 
-  router.add('PUT', `${MODEL}/source`, async (request) => {
+  add('PUT', `${MODEL}/source`, async (request) => {
     const modelId = modelOf(request)
     const body = await request.json()
     const name = sourcePathOf(modelId, body.path)
     if (name === null) return fail(400, 'MODEL_SOURCE_PATH_INVALID', `只能写入 ${MODELS_DIR}/${modelId}/ 下的文件`)
     if (typeof body.text !== 'string' || body.text.length > 4_000_000) return fail(400, 'MODEL_SOURCE_INVALID', '源码内容不合法')
-    if (typeof body.expectedSha256 === 'string') {
-      // Someone else's edit is not something to overwrite silently.
-      const current = await readFilmFile(request.cwd, name).catch(() => null)
-      if ((current !== null ? sha256(current.buffer) : '') !== body.expectedSha256) {
-        return fail(409, 'MODEL_SOURCE_CONFLICT', '这个文件在你编辑期间已经变化，请先重新读取')
+    const text = body.text
+    await oneWriteAtATime(filmFilePath(request.cwd, name), async () => {
+      if (typeof body.expectedSha256 === 'string') {
+        // Someone else's edit is not something to overwrite silently.
+        const current = await readFilmFile(request.cwd, name).catch(() => null)
+        if ((current !== null ? sha256(current.buffer) : '') !== body.expectedSha256) {
+          return fail(409, 'MODEL_SOURCE_CONFLICT', '这个文件在你编辑期间已经变化，请先重新读取')
+        }
       }
-    }
-    await writeFilmFile(request.cwd, name, body.text)
+      await writeFilmFile(request.cwd, name, text)
+    })
     await announce(request, name)
-    return { path: name, sha256: sha256(body.text), bytes: Buffer.byteLength(body.text) }
+    return { path: name, sha256: sha256(text), bytes: Buffer.byteLength(text) }
   })
 
   // Visual review: what a person or the agent saw, against one version — kept
   // apart from the gate verdict, because a model with every gate green and
   // three open notes is not done.
-  router.add('POST', `${MODEL}/reviews`, async (request) => {
+  add('POST', `${MODEL}/reviews`, async (request) => {
     const modelId = modelOf(request)
     const body = await request.json()
     const answer = await updateModelRecord(request.cwd, modelId, (record) => {
@@ -307,7 +346,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     return new Response(JSON.stringify(answer), { status: 201, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } })
   })
 
-  router.add('POST', `${MODEL}/reviews/:noteId`, async (request) => {
+  add('POST', `${MODEL}/reviews/:noteId`, async (request) => {
     const modelId = modelOf(request)
     const body = await request.json()
     const status = String(body.status ?? '')
@@ -330,7 +369,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
   })
 
   // The user confirming a version for use. Older ones stay adoptable.
-  router.add('POST', `${MODEL}/adopt`, async (request) => {
+  add('POST', `${MODEL}/adopt`, async (request) => {
     const modelId = modelOf(request)
     const versionId = String((await request.json()).versionId ?? '')
     const answer = await updateModelRecord(request.cwd, modelId, (record) => {
@@ -347,7 +386,7 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     return answer
   })
 
-  router.add('GET', `${MODEL}/runs`, async (request) => {
+  add('GET', `${MODEL}/runs`, async (request) => {
     const modelId = modelOf(request)
     const projectId = await filmBoardOf(request)
     const record = await readModelRecord(request.cwd, modelId)
@@ -361,11 +400,11 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     if (run === undefined) return fail(404, 'MODEL_RUN_NOT_FOUND', '没有这个任务')
     return { run: modelRunView(await filmBoardOf(request), modelId, run) }
   }
-  router.add('GET', `${MODEL}/runs/:runId`, recordedRun)
+  add('GET', `${MODEL}/runs/:runId`, recordedRun)
   // Nothing runs here, so there is nothing to abort: the answer is the run as recorded, as Studio answers a run it is not running.
-  router.add('POST', `${MODEL}/runs/:runId/cancel`, recordedRun)
+  add('POST', `${MODEL}/runs/:runId/cancel`, recordedRun)
 
-  router.add('POST', `${MODEL}/runs`, async (request) => {
+  add('POST', `${MODEL}/runs`, async (request) => {
     modelOf(request)
     const body = await request.json()
     const kind = String(body.kind ?? 'mesh-dump')
@@ -373,11 +412,11 @@ export function addModelingRoutes(router: StudioRouter, deps: ModelingRouteDeps)
     if (typeof body.entry !== 'string' || !body.entry) return fail(400, 'MODEL_ENTRY_REQUIRED', '需要模型入口文件 entry')
     return fail(400, 'MODEL_RUN_REJECTED', MODEL_RUNTIME_MISSING)
   })
-  router.add('POST', `${MODEL}/runs/:runId/retry`, async (request) => {
+  add('POST', `${MODEL}/runs/:runId/retry`, async (request) => {
     modelOf(request)
     return fail(400, 'MODEL_RUN_REJECTED', MODEL_RUNTIME_MISSING)
   })
-  router.add('POST', `${MODEL}/preview`, async (request) => {
+  add('POST', `${MODEL}/preview`, async (request) => {
     modelOf(request)
     const body = await request.json()
     if (typeof body.entry !== 'string' || !body.entry) return fail(400, 'MODEL_ENTRY_REQUIRED', '需要模型入口文件 entry')

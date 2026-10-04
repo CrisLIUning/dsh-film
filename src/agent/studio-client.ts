@@ -50,6 +50,15 @@ export function refusal(status: number, payload: unknown): FilmToolError {
   if (Array.isArray(body.directorNodes)) notes.push(`directorNodes: ${JSON.stringify(body.directorNodes.slice(0, 20))}`)
   if (typeof body.op === 'number') notes.push(`op index: ${body.op}`)
   if (typeof body.fingerprint === 'string') notes.push(`current fingerprint: ${body.fingerprint}`)
+  // A strict space plan says why it is not clean: its warnings and the stairs that do not connect.
+  if (Array.isArray(body.warnings) && body.warnings.length > 0) notes.push(`warnings: ${JSON.stringify(body.warnings.slice(0, 20))}`)
+  const access = isRecord(body.access) ? body.access : undefined
+  if (Array.isArray(access?.issues) && access.issues.length > 0) {
+    const issues = access.issues.slice(0, 10).map(issue => isRecord(issue)
+      ? { code: issue.code, stairId: issue.stairId, levelId: issue.levelId, message: issue.message, ...(Array.isArray(issue.partNames) ? { partNames: issue.partNames.slice(0, 5) } : {}) }
+      : issue)
+    notes.push(`access issues: ${JSON.stringify(issues)}`)
+  }
   return new FilmToolError(code, `${code}: ${message}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`)
 }
 

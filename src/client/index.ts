@@ -32,6 +32,8 @@ interface SlotsService {
 interface TabDefinition {
   id: string
   kind: string
+  /** Keep a visited body mounted through hiding (the DSH sidebar's `keepMounted`). */
+  keepMounted?: boolean
   title: (address: string) => string
   guide: readonly {
     id: string
@@ -63,6 +65,7 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(() => ctx.sidebarRightTabs.register({
       id: part.id,
       kind: part.kind,
+      ...(part.keepMounted === true ? { keepMounted: true } : {}),
       title: () => t(`${part.view}.title`),
       guide: [{
         id: part.view,

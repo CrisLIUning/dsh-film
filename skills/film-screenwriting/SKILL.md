@@ -14,7 +14,7 @@ A screenplay here is a saved document, not chat text. One short film or one epis
 
 - No story_* tools in this conversation: call `film_project` with `action: "status"`; use `action: "create"` only when the person wants a film made here. The film tools arrive on your next step.
 - `story_query` without `documentId` lists the documents. None, and the person asked for a draft: `story_create {title, kind: "short" | "episode"}`, then use the returned `documentId` and `revision`. Never invent either.
-- Existing script: `story_query` (kind `index`, the default) for stable ids, then `kind: "content"` with the `ids` you need. `coverage` says what you actually read; a verdict on the whole script needs every page until `coverage.complete`.
+- Existing script: `story_query` (kind `index`, the default) for stable ids, then `kind: "content"` with the `ids` you need. `coverage` says what you actually read; a verdict on the whole script needs every page in order from offset 0 until `coverage.truncated` is false (or one read returns `coverage.complete`).
 
 Target order: what the person named (“只改第三场的结尾”) > what they quoted > the scene under discussion. Scene numbers and names are labels; resolve them to ids from the index before writing.
 

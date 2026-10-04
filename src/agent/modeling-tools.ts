@@ -16,10 +16,9 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { FILM_DIR } from '../project.js'
 import { MODEL_KINDS, MODEL_REVIEW_STATUSES } from '../modeling/contracts/model-project.js'
 import { FilmToolError, callStudio } from './studio-client.js'
-import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
+import { filmRelative, filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices, FilmWorkspace } from './context.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -115,12 +114,6 @@ export function summariseModelReport(report: Record<string, unknown>): Record<st
   }
 }
 
-/** A film-relative path from what the agent wrote: `film/…`, `./…` and backslashes are folded. */
-function filmRelative(path: string): string {
-  const clean = path.trim().replaceAll('\\', '/').replace(/^\.\//u, '')
-  return clean.startsWith(`${FILM_DIR}/`) ? clean.slice(FILM_DIR.length + 1) : clean
-}
-
 const KIND = { type: 'string', enum: MODEL_KINDS } as const
 const MODEL_ID = { type: 'string', required: true, description: 'Stable model id, e.g. knight (its record is film/models/<id>/model.json).' } as const
 
@@ -176,12 +169,25 @@ export function modelingTools(services: FilmToolServices): ToolDefinition[] {
         description: { type: 'string', required: true },
         heightMetres: { type: 'number' },
         references: { type: 'array', items: { type: 'string' }, description: 'Up to three reference images, relative to film/.' },
-        context: { type: 'object', additionalProperties: true, description: 'Optional explicit director target in this project; projectId and boardId default to the film\'s.' },
+        context: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'Optional director target in this film: the desk\'s node and the selected objects, as director_query names them.',
+          properties: {
+            nodeId: { type: 'string', required: true },
+            objectIds: { type: 'array', items: { type: 'string' } },
+            cameraId: { type: 'string' },
+            shotId: { type: 'string' },
+            seconds: { type: 'number' },
+          },
+        },
       },
       output: jsonOutput,
       async execute(args, exec) {
         const film = await filmWorkspace(exec)
-        const context = args.context !== undefined ? { projectId: film.projectId, boardId: film.boardId, ...args.context } : undefined
+        const context = args.context !== undefined
+          ? { projectId: film.projectId, boardId: film.boardId, view: 'director', director: { objectIds: [], ...args.context } }
+          : undefined
         return plain(await call(film, 'POST', '/modeling-brief', {
           kind: args.kind,
           description: args.description,

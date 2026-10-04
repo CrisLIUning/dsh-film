@@ -19,7 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { FILM_DIR } from '../project.js'
 import { callStudio } from './studio-client.js'
-import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
+import { filmRelative, filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices, FilmWorkspace } from './context.js'
 
 /** Findings kept in an answer; the summary still counts all of them. */
@@ -80,7 +80,11 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     const answer = await callStudio(services.studio, film.cwd, {
       method: 'POST',
       path: `/api/projects/${segment(film.projectId)}/modeling-brief`,
-      body: { ...defined(args, ['kind', 'description', 'heightMetres', 'references']), ...(context ? { context } : {}) },
+      body: {
+        ...defined(args, ['kind', 'description', 'heightMetres']),
+        ...(Array.isArray(args.references) ? { references: args.references.map(reference => filmRelative(String(reference))) } : {}),
+        ...(context ? { context } : {}),
+      },
     }, exec.signal)
     return plain({ ...answer, note: `Project paths in the brief are relative to ${FILM_DIR}/ (models/ is ${FILM_DIR}/models/). References are film-relative paths.` })
   }
@@ -140,8 +144,9 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         + 'edit_look_clip, set_action_clip/edit_action_clip/extract_hold_actions, light/lighting/lighting_preset, set_character_height, calibrate_asset, '
         + 'set_spatial_profile, import_asset/import_animation/relink_asset (source.url must be the film\'s /api/projects/<id>/raw/<path>, bytes are verified). '
         + 'dryRun:true compiles and checks without writing. Every answer carries the result\'s diagnostics: read them before calling it done. Pass the '
-        + 'fingerprint you last read (director_query events/actions or a previous stage) as expectedFingerprint, for dryRun and apply alike, so a scene edited '
-        + 'in between is refused, not overwritten. The staged project comes back only with includeProject:true (or for an inline directorProject).',
+        + 'fingerprint from your last read (director_query events/actions) or last applied stage as expectedFingerprint, for dryRun and apply alike, so a '
+        + 'scene edited in between is refused, not overwritten. A dryRun answer\'s fingerprint describes the proposed result, not the saved scene: apply with '
+        + 'the same fingerprint you dry-ran with. The staged project comes back only with includeProject:true (or for an inline directorProject).',
       parameters: {
         plan: { type: 'object', required: true, additionalProperties: true, description: '{ ops: [...] } as described.' },
         nodeId,

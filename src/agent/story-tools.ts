@@ -8,11 +8,14 @@
  * @module dsh-film/agent/story-tools
  */
 
+import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { mediaKindFor } from '../canvas/assets.js'
 import { digestFile } from '../film-files.js'
 import { listAssets } from '../media.js'
+import { FILM_DIR } from '../project.js'
 import { FilmToolError, callStudio } from './studio-client.js'
 import type { StudioCall } from './studio-client.js'
 import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
@@ -98,13 +101,21 @@ function touchedRecords(result: Record<string, unknown>): Record<string, unknown
   return { bindings, assets }
 }
 
-/** The images under the workspace's media/ folder (where the media tools save), with their digests. */
+const isFile = (path: string): Promise<boolean> => stat(path).then(info => info.isFile(), () => false)
+
+/**
+ * The images under the workspace's media/ folder (where the media tools save)
+ * that the film can take in, with their digests. A file that goes away while
+ * it is hashed is left out.
+ */
 async function workspaceImages(film: FilmWorkspace): Promise<Array<Record<string, unknown>>> {
   const { assets } = await listAssets(film.cwd)
-  const images = assets.filter(asset => asset.kind === 'image' && asset.path.startsWith('media/')).slice(0, WORKSPACE_IMAGE_LIMIT)
-  return Promise.all(images.map(async asset => ({
-    path: asset.path, sizeBytes: asset.bytes, modifiedAt: asset.modifiedAt, sha256: await digestFile(join(film.cwd, ...asset.path.split('/'))),
-  })))
+  const images = assets.filter(asset => asset.path.startsWith('media/') && mediaKindFor(asset.path) === 'image').slice(0, WORKSPACE_IMAGE_LIMIT)
+  const listed = await Promise.all(images.map(async (asset) => {
+    const sha256 = await digestFile(join(film.cwd, ...asset.path.split('/'))).catch(() => undefined)
+    return sha256 === undefined ? undefined : { path: asset.path, sizeBytes: asset.bytes, modifiedAt: asset.modifiedAt, sha256 }
+  }))
+  return listed.filter((image): image is NonNullable<typeof image> => image !== undefined)
 }
 
 /**
@@ -186,8 +197,13 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
             const binding = { ...args.binding }
             let filePath = typeof binding.filePath === 'string' ? binding.filePath.trim().replaceAll('\\', '/').replace(/^\.\//u, '') : ''
             if (filePath.startsWith('film/')) filePath = filePath.slice('film/'.length)
-            else if (filePath.startsWith('media/')) {
+            else if (filePath.startsWith('media/') && !await isFile(join(film.cwd, FILM_DIR, ...filePath.split('/'))) && await isFile(join(film.cwd, ...filePath.split('/')))) {
               // The library is the film's own files: a workspace image is copied in, as the editing desk's import does.
+              // Only the bytes the agent chose are copied, so a mismatch is refused before anything lands in the film.
+              const expected = typeof binding.expectedSha256 === 'string' ? binding.expectedSha256.trim().toLowerCase() : ''
+              if (!/^[0-9a-f]{64}$/u.test(expected)) throw new FilmToolError('STORY_TOOL_INPUT', 'binding.expectedSha256 must be the 64-hex sha256 list returned for the image.')
+              const actual = await digestFile(join(film.cwd, ...filePath.split('/')))
+              if (actual !== expected) throw new FilmToolError('STORY_ASSET_VERSION_MISMATCH', `${filePath} has changed since it was listed (sha256 ${actual}); list again and bind the version you mean.`)
               const imported = await callStudio(services.studio, film.cwd, {
                 method: 'POST', path: `/api/canvas/timelines/${segment(film.boardId)}/import?project=${segment(film.projectId)}`, body: { path: filePath },
               }, exec.signal)

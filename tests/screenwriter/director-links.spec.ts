@@ -16,6 +16,7 @@ import { StoryHandoff } from '../../src/screenwriter/handoff.js'
 import { StoryService } from '../../src/screenwriter/service.js'
 import type { EventStream } from '../../src/studio/sse.js'
 import { liveDirectorReader } from '../../src/studio/story-production-routes.js'
+import { openDeskPage } from '../director/pages.js'
 
 /** A minimal version-15 desk project with one camera (Studio's director-fixtures `project([], [lockedCamera('camera', …)])` shape). */
 const scene = {
@@ -148,5 +149,20 @@ describe('director links in the film', () => {
     const second = sent.filter(item => item.event === 'tool_call').at(-1)!.data
     agent.resolve(lease, { requestId: second.requestId, result: { scene: {} } })
     await expect(unconfirmed).rejects.toMatchObject({ code: 'STORY_DIRECTOR_STATE_UNKNOWN' })
+  })
+
+  it('asks every page showing the board, so a desk open in the older 导演 tab is found, and refuses two open desks', async () => {
+    const agent = new CanvasBoardAgent()
+    const read = liveDirectorReader(agent)
+    const edited = { ...scene, cameras: [{ ...scene.cameras[0]!, name: '未保存的近景' }] }
+    const director = openDeskPage(agent, board, { deskOpen: true, scene: { project: edited } })
+    const storyboard = openDeskPage(agent, board, { deskOpen: false, scene: { project: scene } })
+    expect(await read(board, 'director', board)).toEqual({ deskOpen: true, scene: { project: edited } })
+    expect(director.calls.map(call => call.name)).toEqual(['director_read_scene'])
+    expect(storyboard.calls.map(call => call.name)).toEqual(['director_read_scene'])
+    storyboard.deskOpen = true
+    await expect(read(board, 'director', board)).rejects.toMatchObject({ code: 'STORY_DIRECTOR_STATE_UNKNOWN' })
+    director.release()
+    storyboard.release()
   })
 })

@@ -19,6 +19,9 @@
 import { BoardAgentError } from '../canvas/board-agent.js'
 import type { CanvasBoardAgent } from '../canvas/board-agent.js'
 import { CanvasDocumentUpdateError } from '../canvas/documents.js'
+import { DirectorDesks } from '../director/live.js'
+import { DirectorRefusal } from '../director/locate.js'
+import type { LocatedScene } from '../director/locate.js'
 import type { StoryAdoptRequest, StoryHandoffRequest } from '../screenwriter/contracts/index.js'
 import { StoryDirectorLinksService } from '../screenwriter/director-links.js'
 import type { ReadLiveDirector, StoryDirectorLinkRequest } from '../screenwriter/director-links.js'
@@ -30,9 +33,6 @@ import { StudioApiError } from './router.js'
 import type { StudioRouter } from './router.js'
 import { filmBoardOf } from './screenwriter-routes.js'
 import type { ScreenwriterServices } from './screenwriter-routes.js'
-
-/** The open page's call that reports a director desk's live scene (Studio's DIRECTOR_READ_SCENE_TOOL). */
-export const DIRECTOR_READ_SCENE_TOOL = 'director_read_scene'
 
 export interface StoryProductionDeps {
   /** The screenplay services the screenwriter routes use. */
@@ -46,32 +46,26 @@ export interface StoryProductionDeps {
 const DOCUMENT = '/api/projects/:projectId/story/documents/:documentId'
 
 /**
- * Ask the page showing the film's board whether a director node's desk holds
- * a scene, as Studio's screenwriter routes do. No page: the desk is closed.
+ * Ask the pages showing the film's board whether a director node's desk holds
+ * a scene, as Studio's screenwriter routes do. Every page is asked (the 分镜
+ * and 导演 tabs are two pages on one board) and the open desk is used wherever
+ * it is; no page means the desk is closed.
  * @param agent - the open canvas pages.
  * @returns the reader.
  */
 export function liveDirectorReader(agent: CanvasBoardAgent): ReadLiveDirector {
+  const desks = new DirectorDesks(agent)
   return async (boardId, nodeId, projectId) => {
-    let page
+    const unknown = (): StoryError => new StoryError(409, 'STORY_DIRECTOR_STATE_UNKNOWN', 'The connected director desk did not respond. Reopen the target board before linking.')
+    let live
     try {
-      page = agent.choose({ projectId, boardId })
+      live = await desks.readLive({ echo: { boardId, nodeId }, boardId, nodeId, stored: undefined } as LocatedScene, { boardId, nodeId, project: projectId })
     } catch (error) {
-      // A page still loading may hold a newer scene than the saved one.
-      if (error instanceof BoardAgentError) throw new StoryError(409, 'STORY_DIRECTOR_STATE_UNKNOWN', 'The connected director desk did not respond. Reopen the target board before linking.')
+      // A page still loading, refusing or showing two open desks may hold a newer scene than the saved one.
+      if (error instanceof BoardAgentError || error instanceof DirectorRefusal) throw unknown()
       throw error
     }
-    if (page === undefined) return { deskOpen: false }
-    let answer: unknown
-    try {
-      answer = await agent.call(page.target, DIRECTOR_READ_SCENE_TOOL, { project: projectId, boardId, nodeId })
-    } catch {
-      throw new StoryError(409, 'STORY_DIRECTOR_STATE_UNKNOWN', 'The connected director desk did not respond. Reopen the target board before linking.')
-    }
-    if (!answer || typeof answer !== 'object' || !('deskOpen' in answer) || typeof answer.deskOpen !== 'boolean') {
-      throw new StoryError(409, 'STORY_DIRECTOR_STATE_UNKNOWN', 'The open director desk did not confirm its saved state. Reopen the target board before linking.')
-    }
-    return { deskOpen: answer.deskOpen, ...('scene' in answer ? { scene: answer.scene } : {}) }
+    return { deskOpen: live.desk === 'open', ...(live.desk !== 'none' ? { scene: live.scene } : {}) }
   }
 }
 

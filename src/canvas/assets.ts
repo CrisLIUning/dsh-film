@@ -67,6 +67,12 @@ const MODEL_VERSIONS = /^models\/[^/]+\/versions$/
 
 const extensionOf = (path: string): string => path.split('.').pop()?.toLowerCase() ?? ''
 
+/** A file under a model's `versions/` folder, which the scan leaves out. */
+const isModelVersionOutput = (filePath: string | undefined): boolean => {
+  const parts = filePath?.split('/') ?? []
+  return parts.length > 3 && MODEL_VERSIONS.test(parts.slice(0, 3).join('/'))
+}
+
 /**
  * The asset kind of a media file.
  * @param filePath - a file path.
@@ -237,7 +243,8 @@ export class CanvasAssetStore {
     await updateLibrary(this.file, (state) => {
       const known = new Map(state.assets.map(asset => [asset.filePath, asset]))
       const incoming = new Set(overlay.map(asset => asset.filePath))
-      const published = state.assets.filter(asset => asset.gatewayReference !== undefined && !incoming.has(asset.filePath))
+      // Kept though the canvas never sees them: published references, and model version outputs the scan hides (their titles, tags and notes stay).
+      const published = state.assets.filter(asset => !incoming.has(asset.filePath) && (asset.gatewayReference !== undefined || isModelVersionOutput(asset.filePath)))
       state.assets = [...overlay.map((asset) => {
         const { gatewayReference: _reference, referenceSha256: _hash, ...editable } = asset
         const prior = known.get(asset.filePath)

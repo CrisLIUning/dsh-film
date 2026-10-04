@@ -85,8 +85,10 @@ describe('model_brief', () => {
     const brief = await run('model_brief', { kind: 'prop', description: '一只铜壶', references: ['film/models/pot/ref.png'] })
     expect(brief.skillIds).toEqual(['img2threejs'])
     expect(brief.prompt).toContain('"models/pot/ref.png"')
-    const staged = await run('model_brief', { kind: 'scene', description: '地下酒窖', context: { view: 'director', director: { nodeId: 'desk-1', objectIds: ['o1'] } } })
+    const staged = await run('model_brief', { kind: 'scene', description: '地下酒窖', context: { nodeId: 'desk-1', objectIds: ['o1'] } })
     expect(staged.context).toMatchObject({ projectId, boardId: projectId, view: 'director', director: { nodeId: 'desk-1', objectIds: ['o1'] } })
+    // A target without objects still names the desk's node: the brief is not refused.
+    expect((await run('model_brief', { kind: 'prop', description: '铜壶', context: { nodeId: 'desk-1' } })).context).toMatchObject({ view: 'director', director: { nodeId: 'desk-1', objectIds: [] } })
     await expect(run('model_brief', { kind: 'prop', description: '' })).rejects.toThrow(/^MODELING_BRIEF_INVALID: 建模描述需要 1–8000 字/)
   })
 })

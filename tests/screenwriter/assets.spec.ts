@@ -228,6 +228,8 @@ describe('reference routes', () => {
     expect(references.references).toEqual([expect.objectContaining({ status: 'available', resolvedPath: 'images/a.png' })])
     const bytes = await call(router, `${documents}/references/${asset.id}/${asset.versionId}`)
     expect(bytes.headers.get('content-type')).toBe('image/png')
+    expect(bytes.headers.get('content-security-policy')).toContain('sandbox')
+    expect(bytes.headers.get('content-disposition')).toBeNull()
     expect(await bytes.text()).toBe('selected A bytes')
     await writeFile(film('images/a.png'), 'changed')
     const refused = await call(router, `${documents}/references/${asset.id}/${asset.versionId}`)

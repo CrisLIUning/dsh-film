@@ -27,9 +27,12 @@
  * @module dsh-film/space-plan/compile
  */
 
-import { assertSpacePlanInput } from './input.js';
+import { SpacePlanInputError, assertSpacePlanInput } from './input.js';
 import type { SpacePlan, SpacePlanAccessReport, SpacePlanDefaults } from './types.js';
 import { inspectSpacePlanAccess, resolveSpacePlanStairs, stairOpeningsAt, subtractPlanRects, planRectsOverlap, type PlanRect } from './access.js';
+
+/** The most parts one plan may compile to. */
+export const MAX_SPACE_PARTS = 100_000;
 
 export type { SpacePlan, SpacePlanDefaults, SpacePlanLevel, SpacePlanStair, SpacePlanTower, SpacePlanWing } from './types.js';
 
@@ -249,6 +252,11 @@ export function compileSpacePlan(plan: SpacePlan): CompiledSpacePlan {
   assertSpacePlanInput(plan);
   const d: SpacePlanDefaults = { ...DEFAULTS, ...plan.defaults };
   const parts: SpacePart[] = [];
+  // dsh-film: a hard ceiling on parts, so no plan can make the Host allocate without limit.
+  const pushPart = (part: SpacePart) => {
+    if (parts.length >= MAX_SPACE_PARTS) throw new SpacePlanInputError(`平面生成的部件超过 ${MAX_SPACE_PARTS} 个，请简化平面`);
+    parts.push(part);
+  };
   const counts = { walls: 0, slabs: 0, towers: 0, steps: 0, openings: 0 };
   const warnings = validatePlanDimensions(plan);
   const stairs = resolveSpacePlanStairs(plan,d);
@@ -264,7 +272,7 @@ export function compileSpacePlan(plan: SpacePlan): CompiledSpacePlan {
     y: number,
     z: number,
   ) => {
-    parts.push({
+    pushPart({
       name,
       group,
       kind: 'box',
@@ -298,6 +306,7 @@ export function compileSpacePlan(plan: SpacePlan): CompiledSpacePlan {
     const midZ = (seg.z1 + seg.z2) / 2;
 
     const openings = pitch > 0 ? Math.max(0, Math.floor(length / pitch) - 1) : 0;
+    if (parts.length + openings > MAX_SPACE_PARTS) throw new SpacePlanInputError(`平面生成的部件超过 ${MAX_SPACE_PARTS} 个，请简化平面`);
     const cuts: Array<[number, number]> = [];
     for (let i = 1; i <= openings; i += 1) {
       const centre = (length * i) / (openings + 1);
@@ -400,7 +409,7 @@ export function compileSpacePlan(plan: SpacePlan): CompiledSpacePlan {
   /* ── towers ─────────────────────────────────────────────────────────────── */
   for (const tower of plan.towers ?? []) {
     const r = tower.diameter / 2;
-    parts.push({
+    pushPart({
       name: `${tower.id}-shaft`,
       group: tower.id,
       kind: 'cylinder',
@@ -410,7 +419,7 @@ export function compileSpacePlan(plan: SpacePlan): CompiledSpacePlan {
     });
     const roofHeight = tower.roofHeight ?? 0;
     if (roofHeight > 0) {
-      parts.push({
+      pushPart({
         name: `${tower.id}-roof`,
         group: tower.id,
         kind: 'cone',

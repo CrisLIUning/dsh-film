@@ -7,7 +7,7 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { InferValue, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { CanvasBoardAgent } from '../canvas/board-agent.js'
-import { readProject } from '../project.js'
+import { FILM_DIR, readProject } from '../project.js'
 import type { FilmProject } from '../project.js'
 import type { ProjectEvents } from '../studio/events.js'
 import type { StudioRouter } from '../studio/router.js'
@@ -73,3 +73,14 @@ export const jsonOutput = {
 
 /** Path segment encoding for Studio paths. */
 export const segment = encodeURIComponent
+
+/**
+ * A film-relative path from what the agent wrote: `film/…`, `./…` and
+ * backslashes are folded.
+ * @param path - the path as written.
+ * @returns the path relative to `film/`.
+ */
+export function filmRelative(path: string): string {
+  const clean = path.trim().replaceAll('\\', '/').replace(/^\.\//u, '')
+  return clean.startsWith(`${FILM_DIR}/`) ? clean.slice(FILM_DIR.length + 1) : clean
+}
