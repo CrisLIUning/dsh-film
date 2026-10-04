@@ -28,6 +28,7 @@ const PROBLEMS: Readonly<Record<string, string>> = {
   PROJECT_INVALID: 'project.invalid',
   PROJECT_UNSUPPORTED: 'project.unsupported',
   WORKSPACE_NOT_FOUND: 'project.workspaceMissing',
+  WORKSPACE_REFUSED: 'project.workspaceRefused',
 }
 
 /**

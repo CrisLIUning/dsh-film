@@ -107,7 +107,7 @@ export interface FilmPathOptions {
  * workspace file into the film first. Accepted: `film/…`; a path relative to
  * `film/` (a film file of that name wins); any media file of the workspace,
  * relative to it (`media/…` where the media tools save, or anywhere else
- * outside `film/`), which the editing desk's import links or copies into
+ * outside `film/`), which the editing desk's import copies into
  * `film/canvas/media/` — once: the same bytes again answer the earlier copy;
  * and an absolute path inside the workspace. A path that names no file is
  * returned as written, for the route to refuse in its own words.

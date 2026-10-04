@@ -5,6 +5,11 @@
  * atomically under a per-file lock, and a tombstone when the board is deleted
  * so a browser cache cannot push a deleted board back.
  *
+ * A tombstone stands for the one board it names. A film started after its
+ * folder's film was deleted has a new id, and so a new board: the old board's
+ * tombstone neither stops that board being made nor refuses its saves; it is
+ * cleared when the new board is first written.
+ *
  * The plugin stores and serves the document and does not interpret nodes:
  * the canvas owns that shape, and parsing it here is how an unknown field
  * would get dropped on a round trip.
@@ -163,40 +168,68 @@ export class CanvasDocumentStore {
     return document?.id === id ? document : null
   }
 
+  /**
+   * The board the tombstone names.
+   * @returns `null` without a tombstone; its id, or `''` when it names no board (it cannot be read).
+   */
+  private async tombstoneId(): Promise<string | null> {
+    let text: string
+    try {
+      text = await readFile(this.tombstone, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      return ''
+    }
+    try {
+      const id = (JSON.parse(text) as { id?: unknown } | null)?.id
+      return typeof id === 'string' ? id : ''
+    } catch {
+      return ''
+    }
+  }
+
   async write(id: string, document: CanvasDocument): Promise<CanvasDocumentSummary> {
     return withFileLock(this.file, () => this.writeFile({ ...document, id }))
   }
 
   /**
    * Save a board only where there is none, under the board's lock. A board
-   * already saved — even one that cannot be read — and a deleted board (its
-   * tombstone) are left exactly as they are.
+   * already saved — even one that cannot be read — and this board's own
+   * tombstone are left exactly as they are. A tombstone of another board (the
+   * folder's earlier film, deleted) does not stand for this one: it is cleared
+   * once this board is saved.
    * @param document - the new board.
    * @returns `created`, or what was there instead: `exists` or `deleted`.
    */
   async create(document: CanvasDocument): Promise<CanvasCreateResult> {
     return withFileLock(this.file, async () => {
       if (await present(this.file)) return 'exists'
-      if (await present(this.tombstone)) return 'deleted'
+      const deleted = await this.tombstoneId()
+      if (deleted === document.id) return 'deleted'
       await mkdir(dirname(this.file), { recursive: true })
       // Exclusive even under the lock: another process may be writing the same workspace.
-      return await createExclusive(this.file, `${JSON.stringify(document, null, 2)}\n`) ? 'created' : 'exists'
+      if (!await createExclusive(this.file, `${JSON.stringify(document, null, 2)}\n`)) return 'exists'
+      if (deleted !== null) await rm(this.tombstone, { force: true })
+      return 'created'
     })
   }
 
   /**
    * Change the board from its latest saved state, under the board's lock —
    * the path both browser saves (three-way merge) and host-side edits take.
+   * With no saved board, a board whose tombstone is there is refused (a cache
+   * must not bring it back); a tombstone of another board does not refuse it.
    * @param change - computes the new board from the current one.
    * @returns the saved board and its summary.
    */
   async update(change: (current: CanvasDocument | null) => CanvasDocument | Promise<CanvasDocument>): Promise<{ document: CanvasDocument; summary: CanvasDocumentSummary }> {
     return withFileLock(this.file, async () => {
       const current = await this.readFile(true)
-      if (current === null && await stat(this.tombstone).then(() => true, () => false)) {
+      const deleted = current === null ? await this.tombstoneId() : null
+      const document = await change(current)
+      if (deleted !== null && deleted === document.id) {
         throw new CanvasDocumentUpdateError('CANVAS_DOCUMENT_DELETED', 'This canvas was deleted. Reopen the current project canvas before sending or saving changes.')
       }
-      const document = await change(current)
       return { document, summary: await this.writeFile(document) }
     })
   }

@@ -8,11 +8,12 @@
  * @module dsh-film/agent/story-tools
  */
 
+import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { mediaKindFor } from '../canvas/assets.js'
-import { digestFile } from '../film-files.js'
+import { DigestCache, digestFile } from '../film-files.js'
 import { listWorkspaceMedia } from '../media.js'
 import { FilmToolError, callStudio } from './studio-client.js'
 import type { StudioCall } from './studio-client.js'
@@ -100,6 +101,13 @@ function touchedRecords(result: Record<string, unknown>): Record<string, unknown
 }
 
 /**
+ * Digests of workspace images by path, size and modification time, so a list
+ * call hashes only the images that are new or changed since the last one.
+ * A bind still checks the exact bytes it takes (expectedSha256).
+ */
+const workspaceDigests = new DigestCache()
+
+/**
  * The workspace's own images outside film/ (media/ is where the media tools
  * save) that the film can take in, with their digests. A file that goes away
  * while it is hashed is left out.
@@ -108,8 +116,11 @@ async function workspaceImages(film: FilmWorkspace): Promise<Array<Record<string
   const { files } = await listWorkspaceMedia(film.cwd)
   const images = files.filter(file => mediaKindFor(file.path) === 'image').slice(0, WORKSPACE_IMAGE_LIMIT)
   const listed = await Promise.all(images.map(async (image) => {
-    const sha256 = await digestFile(join(film.cwd, ...image.path.split('/'))).catch(() => undefined)
-    return sha256 === undefined ? undefined : { path: image.path, sizeBytes: image.bytes, modifiedAt: image.modifiedAt, sha256 }
+    const absolute = join(film.cwd, ...image.path.split('/'))
+    const info = await lstat(absolute).catch(() => undefined)
+    if (info?.isFile() !== true) return undefined
+    const sha256 = await workspaceDigests.digest({ absolute, size: info.size, mtimeMs: info.mtimeMs }).catch(() => undefined)
+    return sha256 === undefined ? undefined : { path: image.path, sizeBytes: info.size, modifiedAt: info.mtime.toISOString(), sha256 }
   }))
   return listed.filter((image): image is NonNullable<typeof image> => image !== undefined)
 }
@@ -156,7 +167,7 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
         + 'documentId resolves to — available, relocated, ambiguous, version-mismatch or missing are different outcomes; never treat a same-named file as '
         + 'the reference. "bind": bind one image version to a card: binding {target:{kind:"entity"|"shot",id}, scope:{kind:"document"}|{kind:"scene",'
         + 'sceneId}, purpose (e.g. appearance, identity, costume), primary (one main reference per card, scope and purpose), filePath and expectedSha256 '
-        + 'exactly as list returned them, replaceBindingId?, operationId?}; a workspace image is first brought into the film (once). "unbind": remove '
+        + 'exactly as list returned them, replaceBindingId?, operationId?}; a workspace image is first copied into the film (once). "unbind": remove '
         + 'bindingId only. '
         + 'Binding changes the screenplay only: it never moves or deletes a file, starts a generation or changes production inputs. Do not write assets or '
         + 'bindings records with story_apply_ops.',

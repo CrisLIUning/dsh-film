@@ -10,7 +10,8 @@
  * - `GET /api/canvas/timelines/:boardId/material` — the film's media as the
  *   editor's authorized assets, and the workspace's own media (outside
  *   `film/`) as files it may import (see `material.ts`).
- * - `POST /api/canvas/timelines/:boardId/import` — bring a workspace media file into the film.
+ * - `POST /api/canvas/timelines/:boardId/import` — copy a workspace media file into the film
+ *   (a film workspace only, outside hidden and credential folders).
  * - `GET /api/canvas/timelines/:boardId/media` — the board's media nodes;
  *   `POST .../media` lands a film file on the board (an exported cut);
  *   `POST .../place` puts a board node (or a film file) on the cut.
@@ -29,6 +30,7 @@ import { join } from 'node:path'
 import { BoardAttachError, attachFileToNode, landFileOnBoard, listBoardMedia, mediaKindOfPath } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
 import { WorkspaceMediaError, mediaTypeOf } from '../media.js'
+import { requireFilmWorkspace } from '../project.js'
 import { probeMedia } from '../media/probe.js'
 import { TimelinePlaceError, placeBoardMediaOnTimeline } from '../timeline/place.js'
 import { TimelineSoundError, listScriptNodes, listStoryScripts, placeSoundOnTimeline, readStories, storyScriptLines } from '../timeline/sound.js'
@@ -277,6 +279,8 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
   router.add('GET', '/api/community/media', async () => ({ items: [] }))
 
   router.add('POST', '/api/canvas/timelines/:boardId/import', async (request) => {
+    // It reads outside film/: only a film workspace, outside hidden and credential folders, is read from.
+    await requireFilmWorkspace(request.cwd)
     const body = await request.json()
     let imported
     try {

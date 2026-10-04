@@ -84,11 +84,11 @@ Then open the right sidebar of a session that has a workspace and pick a part on
   media/                     dsh-media 生成的素材；和工作区里其他素材一样，用到时放进 film/
 ```
 
-一个工作区放一部片。已有的 `film/film.json` 不会被覆盖；建影片时已有的画布（哪怕读不出来）和删除画布留下的记录也不会被覆盖，工作区里原有的画布会沿用它的 id。
+一个工作区放一部片。已有的 `film/film.json` 不会被覆盖；建影片时已有的画布（哪怕读不出来）不会被覆盖，工作区里原有的画布会沿用它的 id。删除画布留下的记录只挡住被删的那块画布：删掉影片后再建的新片有新 id，照常带上自己的空白画布。工作区在隐藏文件夹（名字以 `.` 开头）或 `.ssh`、`.aws` 等凭据文件夹里时不建片，也不播放、不导入那里的素材。
 
-工作区里 `film/` 以外的图片、视频和音频都算素材：剪辑台和分镜画布的素材库、工作台的素材列表都会列出它们。隐藏的文件和文件夹、`node_modules`、构建输出和缓存之类的生成目录、`.ssh` 等凭据目录和链接不列；文件太多时只读一部分（最多 2000 个素材、12 层目录），并标明列表不完整。用到时插件把文件硬链接进 `film/canvas/media/`（不能链接时复制），同样的字节只放一份；导入过、之后没改过的文件不再出现在剪辑台的可导入列表里。
+工作区里 `film/` 以外的图片、视频和音频都算素材：剪辑台和分镜画布的素材库、工作台的素材列表都会列出它们。隐藏的文件和文件夹、`node_modules`、构建输出和缓存之类的生成目录、`.ssh` 等凭据目录和链接不列；文件太多时只读一部分（最多 2000 个素材、12 层目录），并标明列表不完整。用到时插件把文件复制进 `film/canvas/media/`（文件系统支持时用写时复制的克隆，不占额外空间；从不硬链接，所以之后在别处改了原文件，片里的那份不跟着变），同样的字节只放一份；导入过、之后没改过的文件不再出现在剪辑台和分镜画布的可导入列表里。
 
-Media anywhere in the workspace outside `film/` is material: the editing desk's and the storyboard's libraries and the workbench's media list show it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is hard-linked into `film/canvas/media/` when used (copied where linking is not possible), the same bytes only once; an imported file that has not changed since is no longer offered for import.
+Media anywhere in the workspace outside `film/` is material: the editing desk's and the storyboard's libraries and the workbench's media list show it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is copied into `film/canvas/media/` when used (as a copy-on-write clone where the file system supports it; never a hard link, so editing the original elsewhere later leaves the film's copy as it was), the same bytes only once; an imported file that has not changed since is no longer offered for import by the editing desk or the storyboard. A workspace inside a hidden folder (a name starting with `.`) or a credential folder such as `.ssh` gets no film, and its media is neither played nor imported.
 
 ## Agent 的影视工具 · Agent tools
 

@@ -100,8 +100,8 @@ export async function digestFile(path: string): Promise<string> {
 
 /**
  * Digests remembered by path, size and modification time, for listings that
- * would otherwise hash every image of the film on every call. A check of the
- * exact bytes being bound or read never goes through it.
+ * would otherwise hash every image of the film (or of the workspace) on every
+ * call. A check of the exact bytes being bound or read never goes through it.
  */
 export class DigestCache {
   private readonly entries = new Map<string, { size: number; mtimeMs: number; sha256: string }>()

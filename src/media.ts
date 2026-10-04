@@ -7,7 +7,9 @@
  * Every path that crosses a route here is workspace-relative and checked the
  * same way ({@link resolveWorkspaceMedia}): no absolute paths, no `.`/`..`, no
  * hidden, ignored or credential folders, media only, and the real path must be
- * the path asked for inside the workspace (no links out).
+ * the path asked for inside the workspace (no links out). The workspace itself
+ * must be a film workspace outside hidden and credential folders
+ * ({@link requireFilmWorkspace}), so the caller-chosen `cwd` cannot widen that.
  * @module dsh-film/media
  */
 
@@ -17,7 +19,8 @@ import { extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 
 import { performance } from 'node:perf_hooks'
 import { FilmError } from './errors.js'
 import { serveFile } from './files.js'
-import { FILM_DIR, workspaceDirectory } from './project.js'
+import { foldedName as folded, isCredentialDirName } from './path-rules.js'
+import { FILM_DIR, requireFilmWorkspace, workspaceDirectory } from './project.js'
 
 export type MediaKind = 'image' | 'video' | 'audio'
 
@@ -73,13 +76,8 @@ const IGNORED_DIR_NAMES = new Set([
 ])
 /** Families of the same (each prefix ends in a separator, so `pack-` never swallows `packages`). */
 const IGNORED_DIR_NAME_PREFIXES = ['pack-', '.tmp-', 'wt-', 'deriveddata-'] as const
-/** Credential stores: never listed or served, whatever else allows it. */
-const CREDENTIAL_DIR_NAMES = new Set(['.ssh', '.aws', '.gnupg', '.azure', '.kube'])
 /** Ignored wherever they appear in a path. */
 const IGNORED_PATH_PREFIXES = [['.claude', 'worktrees'], ['.claude', 'projects'], ['.claude', 'cache'], ['.vibedev']] as const
-
-/** A name as the file system compares it: Windows drops trailing dots and spaces, and case never matters to these lists. */
-const folded = (name: string): string => name.replace(/[. ]+$/u, '').toLowerCase()
 
 /**
  * Whether a folder of this name is never entered: hidden, generated or
@@ -89,9 +87,19 @@ const folded = (name: string): string => name.replace(/[. ]+$/u, '').toLowerCase
  */
 export function isSkippedDirName(name: string): boolean {
   const key = folded(name)
-  return name.startsWith('.') || IGNORED_DIR_NAMES.has(key) || CREDENTIAL_DIR_NAMES.has(key)
+  return name.startsWith('.') || IGNORED_DIR_NAMES.has(key) || isCredentialDirName(name)
     || IGNORED_DIR_NAME_PREFIXES.some(prefix => key.startsWith(prefix))
 }
+
+/**
+ * Folders the film's own listing does not enter below `film/`, besides hidden
+ * ones. The film's folders are the film's: a capture under `film/…/build/` or
+ * `film/…/out/` is its material, unlike a build tree elsewhere in the workspace.
+ */
+const FILM_SKIPPED = new Set(['node_modules'])
+
+/** Whether the film's own listing skips a folder of this name below `film/`. */
+const isFilmSkippedDirName = (name: string): boolean => name.startsWith('.') || FILM_SKIPPED.has(folded(name))
 
 /** Whether a run of folder names contains one of the ignored path prefixes. */
 function hasIgnoredPrefix(folders: readonly string[]): boolean {
@@ -120,7 +128,8 @@ export class WorkspaceMediaError extends Error {
 
 /**
  * Check a workspace-relative media path without touching the disk: what the
- * scanner could list, and nothing else.
+ * scanners could list, and nothing else — the workspace scan outside `film/`,
+ * the film's own listing ({@link listFilmMedia}) below it.
  * @param raw - the path as sent, with `/` or `\` separators.
  * @returns the path with `/` separators and no leading `./`.
  */
@@ -134,7 +143,10 @@ export function checkWorkspaceMediaPath(raw: string): string {
   if (segments.some(part => part.startsWith('.'))) invalid('is in a hidden folder or is a hidden file.')
   if (process.platform === 'win32' && segments.some(part => part.includes(':'))) invalid('names an alternate data stream.')
   const folders = segments.slice(0, -1)
-  if (folders.some(isSkippedDirName) || hasIgnoredPrefix(folders)) invalid('is in a folder that is never listed (generated, installed or credential files).')
+  const skipped = folders.length > 0 && isFilmFolder(folders[0]!)
+    ? folders.slice(1).some(isFilmSkippedDirName)
+    : folders.some(isSkippedDirName) || hasIgnoredPrefix(folders)
+  if (skipped) invalid('is in a folder that is never listed (generated, installed or credential files).')
   if (mediaTypeOf(path) === undefined) throw new WorkspaceMediaError('not-media', `"${raw}" is not an image, video or audio file.`)
   return path
 }
@@ -205,7 +217,7 @@ export const WORKSPACE_MEDIA_LIMIT = 2000
 export const WORKSPACE_ENTRY_LIMIT = 50_000
 /** How long one listing may read, in milliseconds. */
 export const WORKSPACE_SCAN_BUDGET_MS = 1500
-/** How long a listing is reused, unless a plugin event says the workspace changed. */
+/** How long a listing is reused: a file put in the workspace from outside is listed within this long. */
 export const WORKSPACE_CACHE_MS = 3000
 /** Folders read at once. */
 const READ_BATCH = 16
@@ -348,6 +360,8 @@ export async function scanWorkspaceMedia(cwd: string, limits: WorkspaceScanLimit
  * {@link WORKSPACE_MEDIA_LIMIT} files, {@link WORKSPACE_ENTRY_LIMIT} entries or
  * {@link WORKSPACE_SCAN_BUDGET_MS}, and says so. A listing is reused for
  * {@link WORKSPACE_CACHE_MS} unless {@link invalidateWorkspaceMedia} is called.
+ * The plugin's own writes do not call it: they all land under `film/`, which
+ * this scan never reads, so a canvas autosave keeps the listing.
  * @param cwd - the workspace directory.
  * @returns the listing (a fresh array each call).
  */
@@ -378,13 +392,12 @@ export function invalidateWorkspaceMedia(cwd?: string): void {
   else cache.delete(resolve(cwd))
 }
 
-/** Folders the film's own listing does not enter (besides hidden ones). */
-const FILM_SKIPPED = new Set(['node_modules'])
-
 /**
  * Every media file of the film (under `film/`), newest first, with paths
  * relative to `film/`. No count limit: a film file left out of the editing
- * desk's list is a clip it drops on its next save.
+ * desk's list is a clip it drops on its next save. Only hidden entries and
+ * `node_modules` are skipped, the same rule {@link checkWorkspaceMediaPath}
+ * applies below `film/`, so every file listed here can be played.
  * @param cwd - the workspace directory.
  * @returns the files.
  */
@@ -394,7 +407,7 @@ export async function listFilmMedia(cwd: string): Promise<MediaAsset[]> {
     files: Number.POSITIVE_INFINITY,
     entries: Number.POSITIVE_INFINITY,
     deadline: Number.POSITIVE_INFINITY,
-    skip: name => FILM_SKIPPED.has(name.toLowerCase()),
+    skip: isFilmSkippedDirName,
   })
   return files.sort(newestFirst)
 }
@@ -437,13 +450,14 @@ const FILM_ERRORS = { 'invalid': 'BAD_REQUEST', 'not-media': 'NOT_MEDIA', 'not-f
 
 /**
  * Answer a GET or HEAD for one media file of a workspace, honouring a single byte range.
- * @param request - the request; its query names the workspace (`cwd`) and the
- *   file relative to it (`path`).
+ * @param request - the request; its query names the workspace (`cwd`, a film
+ *   workspace outside hidden and credential folders) and the file relative to it (`path`).
  * @returns the response.
  */
 export async function serveMedia(request: Request): Promise<Response> {
   const query = new URL(request.url).searchParams
   const cwd = await workspaceDirectory(query.get('cwd'))
+  await requireFilmWorkspace(cwd)
   let media: ResolvedWorkspaceMedia
   try {
     media = await resolveWorkspaceMedia(cwd, query.get('path') ?? '')

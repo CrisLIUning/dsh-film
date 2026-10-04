@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { performance } from 'node:perf_hooks'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilmError } from '../src/errors.js'
 import { RANGE_CHUNK, parseRange } from '../src/files.js'
 import {
-  WORKSPACE_MEDIA_DEPTH, WorkspaceMediaError, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia, isSkippedDirName, listAssets, listFilmMedia,
-  listWorkspaceMedia, mediaTypeOf, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia, workspaceMediaUrl,
+  WORKSPACE_CACHE_MS, WORKSPACE_MEDIA_DEPTH, WorkspaceMediaError, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia, isSkippedDirName, listAssets,
+  listFilmMedia, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia, workspaceMediaUrl,
 } from '../src/media.js'
 import { ProjectEvents } from '../src/studio/events.js'
 
@@ -111,6 +112,15 @@ describe('checkWorkspaceMediaPath', () => {
     expect(problem('notes.txt')).toBe('not-media')
     expect(problem('film/film.json')).toBe('not-media')
   })
+
+  it('takes below film/ what the film\'s own listing takes: generated-looking folders yes, hidden ones and node_modules no', () => {
+    expect(checkWorkspaceMediaPath('film/out/x.png')).toBe('film/out/x.png')
+    expect(checkWorkspaceMediaPath('film/build/x.png')).toBe('film/build/x.png')
+    expect(checkWorkspaceMediaPath('film/models/m/dist/capture.png')).toBe('film/models/m/dist/capture.png')
+    for (const path of ['film/models/node_modules/x.png', 'film/.versions/x.png', 'film/.tasks/a.wav', 'out/x.png', 'media/build/x.png']) {
+      expect(problem(path), path).toBe('invalid')
+    }
+  })
 })
 
 describe('resolveWorkspaceMedia', () => {
@@ -135,7 +145,18 @@ describe('resolveWorkspaceMedia', () => {
   })
 })
 
+/** Make a folder a film workspace (its project file). */
+async function filmIn(workspace: string): Promise<void> {
+  await mkdir(join(workspace, 'film'), { recursive: true })
+  const project = { format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }
+  await writeFile(join(workspace, 'film', 'film.json'), JSON.stringify(project))
+}
+
 describe('serveMedia', () => {
+  beforeEach(async () => {
+    await filmIn(cwd)
+  })
+
   it('serves the whole file with its type and range support', async () => {
     const content = bytes(1000)
     const response = await serveMedia(request(await file('media/a.mp4', content)))
@@ -202,6 +223,36 @@ describe('serveMedia', () => {
     expect(await code(new Request(`http://host/api/dsh-film/media?path=media%2Fa.mp4`))).toBe('BAD_REQUEST')
     expect(await code(request('media/a.mp4', {}, join(cwd, 'nope')))).toBe('WORKSPACE_NOT_FOUND')
     expect((await serveMedia(request(await file('film/canvas/media/b.png')))).status).toBe(200)
+  })
+
+  it('serves only a film workspace, and none inside a hidden or credential folder, whatever cwd the caller picks', async () => {
+    const code = async (input: Request): Promise<string | undefined> => serveMedia(input).then(() => undefined, (error: unknown) => (error as FilmError).code)
+    // Any folder that exists used to do: a cwd naming the folder holding the file widened the containment to it.
+    await writeFile(join(outside, 'photo.png'), 'private')
+    expect(await code(request('photo.png', {}, outside))).toBe('PROJECT_NOT_FOUND')
+    const keys = join(outside, 'home', '.ssh')
+    await mkdir(keys, { recursive: true })
+    await writeFile(join(keys, 'id.png'), 'secret')
+    await filmIn(keys)
+    expect(await code(request('id.png', {}, keys))).toBe('WORKSPACE_REFUSED')
+    const dotted = join(outside, '.config', 'app')
+    await mkdir(dotted, { recursive: true })
+    await writeFile(join(dotted, 'a.png'), 'x')
+    await filmIn(dotted)
+    expect(await code(request('a.png', {}, dotted))).toBe('WORKSPACE_REFUSED')
+    // A junction that looks harmless but leads into one is refused by its real path.
+    await symlink(keys, join(outside, 'harmless'), 'junction')
+    expect(await code(request('id.png', {}, join(outside, 'harmless')))).toBe('WORKSPACE_REFUSED')
+  })
+
+  it('plays every file the film\'s own listing lists, build- and out-named folders under film/ too', async () => {
+    for (const path of ['film/out/x.png', 'film/build/y.png', 'film/models/m/dist/z.png', 'film/canvas/media/a.png']) await file(path)
+    await file('film/models/m/node_modules/hidden.png')
+    for (const listed of await listFilmMedia(cwd)) {
+      const response = await serveMedia(request(`film/${listed.path}`))
+      expect(response.status, listed.path).toBe(200)
+    }
+    expect((await listFilmMedia(cwd)).map(entry => entry.path).sort()).toEqual(['canvas/media/a.png', 'build/y.png', 'models/m/dist/z.png', 'out/x.png'].sort())
   })
 
   it('builds the URL pages play a workspace file from', () => {
@@ -277,16 +328,27 @@ describe('the workspace scanner', () => {
     expect((await scanWorkspaceMedia(cwd, { files: 6 })).truncated).toBe(false)
   })
 
-  it('keeps a listing for a moment and reads again after a plugin event', async () => {
-    await file('media/a.png')
-    expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/a.png'])
-    await file('media/b.png', 'b', new Date(Date.now() + 60_000))
-    expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/a.png'])
-    new ProjectEvents().emit(cwd, { type: 'file-changed', projectId: 'film', path: 'canvas/media/x.png' })
-    expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/b.png', 'media/a.png'])
-    const first = await listWorkspaceMedia(cwd)
-    first.files.length = 0
-    expect((await listWorkspaceMedia(cwd)).files).toHaveLength(2)
+  it('keeps a listing for a few seconds, through the plugin\'s own events, and reads the disk again after', async () => {
+    let now = performance.now()
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      await file('media/a.png')
+      expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/a.png'])
+      await file('media/b.png', 'b', new Date(Date.now() + 60_000))
+      expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/a.png'])
+      // Every plugin event is about film/, which the scan never reads; a canvas autosave sends one each time.
+      const events = new ProjectEvents()
+      events.emit(cwd, { type: 'story-canvas-changed', projectId: 'film', boardId: 'film' })
+      events.emit(cwd, { type: 'file-changed', projectId: 'film', path: 'canvas/media/x.png' })
+      expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/a.png'])
+      now += WORKSPACE_CACHE_MS + 1
+      expect(paths((await listWorkspaceMedia(cwd)).files)).toEqual(['media/b.png', 'media/a.png'])
+      const first = await listWorkspaceMedia(cwd)
+      first.files.length = 0
+      expect((await listWorkspaceMedia(cwd)).files).toHaveLength(2)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('names folders it never enters', () => {

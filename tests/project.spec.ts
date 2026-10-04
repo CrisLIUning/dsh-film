@@ -1,12 +1,12 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CANVAS_DOCUMENT_FILE, CANVAS_TOMBSTONE_FILE, emptyFilmBoard } from '../src/canvas/documents.js'
 import { FilmError } from '../src/errors.js'
 import {
-  ASPECT_RATIOS, PROJECT_FILE, TITLE_MAX, UNTITLED, cleanTitle, createExclusive, createProject, defaultTitle, parseNewProject, parseProject,
-  parseProjectChange, readProject, updateProject, workspaceDirectory,
+  ASPECT_RATIOS, PROJECT_FILE, TITLE_MAX, UNTITLED, checkWorkspaceLocation, cleanTitle, createExclusive, createProject, defaultTitle, parseNewProject,
+  parseProject, parseProjectChange, readProject, requireFilmWorkspace, updateProject, workspaceDirectory,
 } from '../src/project.js'
 
 let cwd: string
@@ -126,6 +126,21 @@ describe('workspaceDirectory', () => {
   })
 })
 
+describe('requireFilmWorkspace', () => {
+  it('takes a film workspace and refuses a folder without a film or inside a hidden or credential folder', async () => {
+    expect(await codeOf(requireFilmWorkspace(cwd))).toBe('PROJECT_NOT_FOUND')
+    const { project } = await createProject(cwd, { title: 'A', aspectRatio: '16:9' })
+    await expect(requireFilmWorkspace(cwd)).resolves.toEqual(project)
+    // A film file written into a credential folder by other means is still refused.
+    const keys = join(cwd, 'home', '.ssh')
+    await mkdir(join(keys, 'film'), { recursive: true })
+    await writeFile(join(keys, PROJECT_FILE), JSON.stringify(project))
+    expect(await codeOf(requireFilmWorkspace(keys))).toBe('WORKSPACE_REFUSED')
+    expect(await codeOf(checkWorkspaceLocation(join(cwd, '.hidden')))).toBe('WORKSPACE_REFUSED')
+    await expect(checkWorkspaceLocation(cwd)).resolves.toBeUndefined()
+  })
+})
+
 describe('createProject', () => {
   it('writes film/film.json and reads it back', async () => {
     expect(await readProject(cwd)).toBeNull()
@@ -172,18 +187,52 @@ describe('createProject', () => {
     expect(JSON.parse(await readFile(join(cwd, CANVAS_DOCUMENT_FILE), 'utf8'))).toEqual(board)
   })
 
-  it('never replaces a damaged board or a deleted board\'s tombstone', async () => {
+  it('never replaces a damaged board', async () => {
     await mkdir(join(cwd, 'film', 'canvas'), { recursive: true })
     await writeFile(join(cwd, CANVAS_DOCUMENT_FILE), '{ not json')
     const damaged = await createProject(cwd, { title: 'A', aspectRatio: '16:9' })
     expect(damaged.project.id).toMatch(/^[0-9a-f-]{36}$/u)
     expect(await readFile(join(cwd, CANVAS_DOCUMENT_FILE), 'utf8')).toBe('{ not json')
+  })
 
-    await rm(join(cwd, 'film'), { recursive: true })
+  it('gives a new film its board past the tombstone an older, deleted board left, and clears that tombstone', async () => {
+    // The folder's earlier film and its board were deleted: the tombstone names the old board, not the new film's.
     await mkdir(join(cwd, 'film', 'canvas'), { recursive: true })
     await writeFile(join(cwd, CANVAS_TOMBSTONE_FILE), JSON.stringify({ id: 'old', deletedAt: 'x' }))
-    expect((await createProject(cwd, { title: 'B', aspectRatio: '16:9' })).created).toBe(true)
-    await expect(readFile(join(cwd, CANVAS_DOCUMENT_FILE))).rejects.toThrow()
+    const { project, created } = await createProject(cwd, { title: 'B', aspectRatio: '16:9' })
+    expect(created).toBe(true)
+    expect(JSON.parse(await readFile(join(cwd, CANVAS_DOCUMENT_FILE), 'utf8'))).toMatchObject({ id: project.id, title: 'B', nodes: [] })
+    await expect(readFile(join(cwd, CANVAS_TOMBSTONE_FILE))).rejects.toThrow()
+  })
+
+  it('refuses a workspace inside a hidden or credential folder, by its path and by its real path', async () => {
+    for (const folder of ['.ssh', '.config', '.AWS']) {
+      const inside = join(cwd, folder, 'film-work')
+      await mkdir(inside, { recursive: true })
+      expect(await codeOf(createProject(inside, { title: 'A', aspectRatio: '16:9' })), folder).toBe('WORKSPACE_REFUSED')
+      await expect(readFile(join(inside, PROJECT_FILE))).rejects.toThrow()
+    }
+    // A link elsewhere into one is the same place.
+    await symlink(join(cwd, '.ssh'), join(cwd, 'innocent'), 'junction')
+    expect(await codeOf(createProject(join(cwd, 'innocent'), { title: 'A', aspectRatio: '16:9' }))).toBe('WORKSPACE_REFUSED')
+    await expect(readFile(join(cwd, '.ssh', PROJECT_FILE))).rejects.toThrow()
+    // `..` in the path given does not count as a hidden folder.
+    await mkdir(join(cwd, 'plain'), { recursive: true })
+    expect((await createProject(join(cwd, 'plain', '..', 'plain'), { title: 'A', aspectRatio: '16:9' })).created).toBe(true)
+  })
+
+  it('reads the film a concurrent creation is still writing instead of calling it broken', async () => {
+    // Without hard links the winner creates film.json, then writes it: the loser may first read a partial file.
+    await mkdir(join(cwd, 'film'), { recursive: true })
+    const winner = { format: 'vibedev.film', version: 1, id: 'film-winner', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }
+    await writeFile(join(cwd, PROJECT_FILE), '{"format":"vibedev.fi')
+    const finishing = (async () => {
+      await new Promise(resolve => setTimeout(resolve, 60))
+      await writeFile(join(cwd, PROJECT_FILE), JSON.stringify(winner))
+    })()
+    const result = await createProject(cwd, { title: 'B', aspectRatio: '16:9' })
+    await finishing
+    expect(result).toEqual({ project: winner, created: false })
   })
 
   it('does not touch the board of an existing film', async () => {

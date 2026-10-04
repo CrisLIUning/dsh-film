@@ -75,6 +75,15 @@ describe('/api/dsh-film/project', () => {
     expect(await readFile(join(cwd, 'film', 'film.json'), 'utf8')).toBe('not json')
   })
 
+  it('never ensures a film in a workspace inside a hidden or credential folder', async () => {
+    for (const folder of [join(cwd, '.ssh', 'work'), join(cwd, '.local', 'share', 'work')]) {
+      await mkdir(folder, { recursive: true })
+      const refused = await call('/api/dsh-film/project', {}, post({ cwd: folder, ensure: true }))
+      expect(refused).toMatchObject({ status: 403, body: { error: { code: 'WORKSPACE_REFUSED' } } })
+      await expect(readFile(join(folder, 'film', 'film.json'))).rejects.toThrow()
+    }
+  })
+
   it('refuses an ensure flag that is not a boolean', async () => {
     expect((await call('/api/dsh-film/project', {}, post({ cwd, ensure: 'yes' }))).body.error).toEqual({ code: 'BAD_REQUEST', message: 'ensure must be a boolean.' })
   })
@@ -131,6 +140,11 @@ describe('/api/dsh-film/project', () => {
 })
 
 describe('/api/dsh-film/assets and /media', () => {
+  beforeEach(async () => {
+    await mkdir(join(cwd, 'film'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'film.json'), JSON.stringify({ format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }))
+  })
+
   it('lists the workspace\'s media and plays a file by its workspace-relative path', async () => {
     await mkdir(join(cwd, 'media', 'videos'), { recursive: true })
     await writeFile(join(cwd, 'media', 'videos', 'shot.mp4'), 'abcdefghij')
@@ -149,7 +163,9 @@ describe('/api/dsh-film/assets and /media', () => {
     await writeFile(join(cwd, 'media', 'shot.mp4'), 'abc')
     expect(await call('/api/dsh-film/media', { path: join(cwd, 'media', 'shot.mp4') })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
     expect(await call('/api/dsh-film/media', { cwd, path: join(cwd, 'media', 'shot.mp4') })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
-    expect(await call('/api/dsh-film/media', { cwd: join(cwd, 'media'), path: '../media/shot.mp4' })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
+    expect(await call('/api/dsh-film/media', { cwd, path: '../media/shot.mp4' })).toMatchObject({ status: 400, body: { error: { code: 'BAD_REQUEST' } } })
+    // A folder of the workspace is not a film workspace: a caller cannot move the containment by picking cwd.
+    expect(await call('/api/dsh-film/media', { cwd: join(cwd, 'media'), path: 'shot.mp4' })).toMatchObject({ status: 404, body: { error: { code: 'PROJECT_NOT_FOUND' } } })
   })
 
   it('answers failures with the code and no body for HEAD', async () => {

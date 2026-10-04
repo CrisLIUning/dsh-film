@@ -1,8 +1,9 @@
 /**
- * Three-way merge of a board save, ported unchanged from Studio
+ * Three-way merge of a board save, ported from Studio
  * (apps/daemon/src/screenwriter/canvas-merge.ts): nodes and connections merge
  * per id, plain objects per key, anything else changed on both sides is a
- * conflict and nothing is written.
+ * conflict and nothing is written. One change: a save with no base onto an
+ * empty server board takes that board as its base (see below).
  * @module dsh-film/canvas/merge
  */
 import { isDeepStrictEqual } from 'node:util';
@@ -66,7 +67,12 @@ export function mergeStoryCanvas(base: CanvasDocument | null, draft: CanvasDocum
   };
   if ((base && base.id !== draft.id) || (current && current.id !== draft.id)) throw new Error('Canvas identity does not match the merge baseline.');
   const empty = { id: draft.id, nodes: [], connections: [] };
-  const merged = merge(base ?? empty, draft, current ?? empty, '') as CanvasDocument;
+  // dsh-film: a page that started its own board before the server made the
+  // film's empty one sends base null. An empty server board (no nodes, no
+  // connections) holds nothing to keep, so it is the base: its createdAt,
+  // title and viewport do not conflict with the page's.
+  const blank = current !== null && current.nodes.length === 0 && current.connections.length === 0;
+  const merged = merge(base ?? (blank ? current : empty), draft, current ?? empty, '') as CanvasDocument;
   if (conflicts.length) throw new CanvasStoryMergeConflict(conflicts, current);
   return { ...merged, id: draft.id, updatedAt: new Date().toISOString() };
 }

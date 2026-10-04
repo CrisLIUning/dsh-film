@@ -339,7 +339,7 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
       name: 'canvas_attach_media',
       description: 'Put an already generated file into an existing image/video/audio node — the node a staged flow or a screenplay handoff made — keeping its '
         + 'place, links and source. No generation is submitted. path is the file in the film (relative to film/) or any media file of the workspace, relative '
-        + 'to it (media/… where the media tools save, or elsewhere outside film/; it is brought into the film first, once). expectedContent is the node\'s '
+        + 'to it (media/… where the media tools save, or elsewhere outside film/; it is copied into the film first, once). expectedContent is the node\'s '
         + 'current content as just read (empty for an empty node); a node that changed or is generating is refused. Attaching the same file again changes '
         + 'nothing. Works whether or not the storyboard is open.',
       parameters: {

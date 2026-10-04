@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CanvasDocumentStore, emptyFilmBoard } from '../src/canvas/documents.js'
+import { createProject } from '../src/project.js'
 import { createStudioRouter } from '../src/routes.js'
 
 let cwd: string
@@ -125,6 +126,51 @@ describe('canvas documents', () => {
     const result = await call('/api/canvas/documents/film-1/merge', { method: 'POST', json: { base: null, document: { ...BOARD, id: 'other' } } })
     expect(result).toMatchObject({ status: 400, body: { code: 'STORY_BOARD_INVALID' } })
   })
+
+  it('gives the film started after a deleted one its own board, which saves, whatever the old board\'s tombstone says', async () => {
+    const old = await createProject(cwd, { title: '旧片', aspectRatio: '16:9' })
+    expect((await call(`/api/canvas/documents/${old.project.id}`, { method: 'DELETE' })).body).toEqual({ ok: true })
+    await rm(join(cwd, 'film', 'film.json'))
+    // The workbench ensures a new film: a new id, so a new board.
+    const { project } = await createProject(cwd, { title: '新片', aspectRatio: '16:9' })
+    expect(project.id).not.toBe(old.project.id)
+    const listed = await call(`/api/canvas/documents?project=${project.id}`)
+    expect(listed.body).toMatchObject({ documents: [{ id: project.id, title: '新片' }], deleted: [] })
+    const board = (await call(`/api/canvas/documents/${project.id}?project=${project.id}`)).body
+    const draft = { ...board, nodes: [{ id: 'n1', type: 'text', text: '开场' }] }
+    const saved = await call(`/api/canvas/documents/${project.id}/merge?project=${project.id}`, { method: 'POST', json: { base: board, document: draft } })
+    expect(saved.status).toBe(200)
+    expect(saved.body.document.nodes).toEqual(draft.nodes)
+    // A cached save of the old board does not bring it back over the new one.
+    const stale = await call(`/api/canvas/documents/${old.project.id}/merge`, { method: 'POST', json: { base: null, document: { ...BOARD, id: old.project.id } } })
+    expect(stale).toMatchObject({ status: 400, body: { code: 'STORY_BOARD_INVALID' } })
+    expect(JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8'))).toMatchObject({ id: project.id, nodes: draft.nodes })
+  })
+
+  it('saves a board with no base past a tombstone of another board, and refuses the deleted board itself', async () => {
+    await mkdir(join(cwd, 'film', 'canvas'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'document.deleted.json'), JSON.stringify({ id: 'film-0', deletedAt: 'z' }))
+    const refused = await call('/api/canvas/documents/film-0/merge', { method: 'POST', json: { base: null, document: { ...BOARD, id: 'film-0' } } })
+    expect(refused).toMatchObject({ status: 409, body: { code: 'CANVAS_DOCUMENT_DELETED' } })
+    const saved = await call('/api/canvas/documents/film-1/merge?project=film-1', { method: 'POST', json: { base: null, document: BOARD } })
+    expect(saved.status).toBe(200)
+    expect((await call('/api/canvas/documents?project=film-1')).body).toMatchObject({ documents: [{ id: 'film-1' }], deleted: [] })
+  })
+
+  it('merges a page\'s own first board, saved with no base, onto the empty board the server made', async () => {
+    const film = { format: 'vibedev.film', version: 1, id: 'film-1', title: '雨夜来客', aspectRatio: '16:9', createdAt: 'a', updatedAt: 'a' }
+    await mkdir(join(cwd, 'film'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'film.json'), JSON.stringify(film))
+    await call('/api/canvas/documents?project=film-1')
+    // The page started its board before the list made the empty one: another createdAt, title and viewport.
+    const pageBoard = { id: 'film-1', title: '未命名画布', createdAt: '2026-10-04T09:00:00.000Z', viewport: { x: 40, y: 10, k: 0.8 }, nodes: [{ id: 'n1', type: 'text' }], connections: [] }
+    const saved = await call('/api/canvas/documents/film-1/merge?project=film-1', { method: 'POST', json: { base: null, document: pageBoard } })
+    expect(saved.status).toBe(200)
+    expect(saved.body.document).toMatchObject({ title: '未命名画布', createdAt: '2026-10-04T09:00:00.000Z', viewport: { x: 40, y: 10, k: 0.8 }, nodes: [{ id: 'n1' }] })
+    // Once the board has content, a save with no base is a real three-way merge again.
+    const other = { ...pageBoard, title: '另一个', nodes: [] }
+    expect((await call('/api/canvas/documents/film-1/merge?project=film-1', { method: 'POST', json: { base: null, document: other } })).status).toBe(409)
+  })
 })
 
 describe('CanvasDocumentStore.create', () => {
@@ -139,6 +185,22 @@ describe('CanvasDocumentStore.create', () => {
     expect(await store.read('film-1')).toBeNull()
     const { readdir } = await import('node:fs/promises')
     expect((await readdir(join(cwd, 'film', 'canvas'))).filter(name => name.includes('.tmp'))).toEqual([])
+  })
+
+  it('makes a board past another board\'s tombstone (or one naming none) and clears it', async () => {
+    const tombstone = join(cwd, 'film', 'canvas', 'document.deleted.json')
+    await mkdir(join(cwd, 'film', 'canvas'), { recursive: true })
+    await writeFile(tombstone, JSON.stringify({ id: 'film-0', deletedAt: 'z' }))
+    const store = new CanvasDocumentStore(cwd, 'film-1')
+    expect(await store.create(emptyFilmBoard('film-1', 'A'))).toBe('created')
+    expect(await store.read('film-1')).toMatchObject({ id: 'film-1', title: 'A' })
+    await expect(readFile(tombstone)).rejects.toThrow()
+    expect(await store.tombstones()).toEqual([])
+
+    await rm(join(cwd, 'film', 'canvas', 'document.json'))
+    await writeFile(tombstone, '{ damaged')
+    expect(await new CanvasDocumentStore(cwd, 'film-2').create(emptyFilmBoard('film-2', 'B'))).toBe('created')
+    await expect(readFile(tombstone)).rejects.toThrow()
   })
 })
 

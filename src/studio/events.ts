@@ -2,11 +2,15 @@
  * Project events the hosted apps listen for on `/api/projects/:id/events`
  * (`file-changed`, `story-changed`, `story-canvas-changed`, and
  * `project-changed` with the film's new title or frame), per workspace.
+ *
+ * Events do not touch the workspace media listing (media.ts): every write
+ * they announce lands under `film/`, which that scan never reads, and
+ * `story-canvas-changed` comes with every canvas autosave. Files put in the
+ * workspace from outside show up once the listing's few seconds are up.
  * @module dsh-film/studio/events
  */
 
 import { resolve } from 'node:path'
-import { invalidateWorkspaceMedia } from '../media.js'
 
 export interface ProjectEvent {
   type: 'file-changed' | 'story-changed' | 'story-canvas-changed' | 'project-changed'
@@ -36,7 +40,6 @@ export class ProjectEvents {
   }
 
   emit(cwd: string, event: ProjectEvent): void {
-    invalidateWorkspaceMedia(cwd)
     for (const listener of this.listeners.get(resolve(cwd)) ?? []) {
       try {
         listener(event)

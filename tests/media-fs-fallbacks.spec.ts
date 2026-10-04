@@ -1,16 +1,23 @@
 /**
  * What the file system does on some machines and not on the test machine:
- * a hard link refused (another volume), and OneDrive's cloud placeholders,
- * which a Windows directory listing reports as links.
+ * a copy that fails half way (a full disk), how an import asks for its copy
+ * (a clone where the file system has them), and OneDrive's cloud
+ * placeholders, which a Windows directory listing reports as links.
  */
 
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fs = vi.hoisted(() => ({ linkFailure: undefined as string | undefined, linkCalls: 0, placeholders: new Set<string>() }))
+const fs = vi.hoisted(() => ({
+  linkCalls: 0,
+  copyModes: [] as number[],
+  copyFailure: undefined as string | undefined,
+  placeholders: new Set<string>(),
+}))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -24,8 +31,16 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...actual,
     link: async (...args: Parameters<typeof actual.link>) => {
       fs.linkCalls++
-      if (fs.linkFailure !== undefined) throw Object.assign(new Error(`${fs.linkFailure}: cannot link`), { code: fs.linkFailure })
       return actual.link(...args)
+    },
+    copyFile: async (source: Parameters<typeof actual.copyFile>[0], target: Parameters<typeof actual.copyFile>[1], mode?: number) => {
+      fs.copyModes.push(mode ?? 0)
+      if (fs.copyFailure !== undefined) {
+        // Half the file landed before the disk filled up.
+        await actual.writeFile(target, 'par', { flag: 'wx' })
+        throw Object.assign(new Error(`${fs.copyFailure}: no space left`), { code: fs.copyFailure })
+      }
+      return actual.copyFile(source, target, mode)
     },
     readdir: (async (path: Parameters<typeof actual.readdir>[0], options?: { withFileTypes?: boolean }) => {
       const entries = await actual.readdir(path, options as never) as unknown[]
@@ -43,8 +58,9 @@ let cwd: string
 
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-fs-'))
-  fs.linkFailure = undefined
   fs.linkCalls = 0
+  fs.copyModes = []
+  fs.copyFailure = undefined
   fs.placeholders.clear()
   invalidateWorkspaceMedia()
 })
@@ -59,24 +75,29 @@ async function file(relative: string, content = 'x'): Promise<void> {
   await writeFile(path, content)
 }
 
-describe('importing where a hard link is refused', () => {
-  it('copies the file instead (another volume)', async () => {
-    fs.linkFailure = 'EXDEV'
+describe('importing', () => {
+  it('copies the file — a clone where the file system has them, never a hard link — and answers the copy for the same bytes again', async () => {
     await file('footage/take.mp4', 'take')
     const imported = await importWorkspaceMedia(cwd, 'footage/take.mp4')
     expect(imported).toEqual({ file: { name: 'canvas/media/take.mp4', size: 4, mime: 'video/mp4' }, created: true })
-    expect(fs.linkCalls).toBe(1)
+    expect(fs.linkCalls).toBe(0)
+    expect(fs.copyModes).toEqual([constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE])
     const [source, copy] = await Promise.all([stat(join(cwd, 'footage', 'take.mp4'), { bigint: true }), stat(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), { bigint: true })])
     expect(copy.ino).not.toBe(source.ino)
+    expect(source.nlink).toBe(1n)
     expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'utf8')).toBe('take')
     // The copy has the same bytes, so importing again answers it.
     expect(await importWorkspaceMedia(cwd, 'footage/take.mp4')).toMatchObject({ reused: true, file: { name: 'canvas/media/take.mp4' } })
+    expect(fs.copyModes).toHaveLength(1)
   })
 
-  it('links when it can', async () => {
-    await file('still.png', 'png')
-    expect((await importWorkspaceMedia(cwd, 'still.png')).file.name).toBe('canvas/media/still.png')
-    expect((await stat(join(cwd, 'still.png'))).nlink).toBe(2)
+  it('leaves no half-copied file under the name when the copy fails', async () => {
+    await file('footage/take.mp4', 'take')
+    fs.copyFailure = 'ENOSPC'
+    await expect(importWorkspaceMedia(cwd, 'footage/take.mp4')).rejects.toMatchObject({ code: 'ENOSPC' })
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual([])
+    fs.copyFailure = undefined
+    expect((await importWorkspaceMedia(cwd, 'footage/take.mp4')).file.name).toBe('canvas/media/take.mp4')
   })
 })
 

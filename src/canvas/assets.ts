@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { entryKind, listWorkspaceMedia, workspaceMediaUrl } from '../media.js'
+import { withoutImported } from '../media-imports.js'
 
 export interface CanvasAsset {
   id: string
@@ -232,13 +233,15 @@ export interface CanvasWorkspaceFile {
 
 /**
  * The workspace's own media the board can show (the canvas's image, video
- * and audio types), newest first, from the shared workspace scan.
+ * and audio types), newest first, from the shared workspace scan. A file the
+ * film already imported and that has not changed since is left out, as the
+ * editing desk's material leaves it out: the library shows the film's copy.
  * @param cwd - the workspace directory.
  * @returns the files.
  */
 export async function workspaceAssetFiles(cwd: string): Promise<CanvasWorkspaceFile[]> {
   const { files } = await listWorkspaceMedia(cwd)
-  return files.flatMap((file) => {
+  return (await withoutImported(cwd, files)).flatMap((file) => {
     const kind = mediaKindFor(file.path)
     if (kind !== 'image' && kind !== 'video' && kind !== 'audio') return []
     return [{

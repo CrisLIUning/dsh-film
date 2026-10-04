@@ -10,11 +10,13 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { CanvasDocumentStore, emptyFilmBoard, savedBoardId } from './canvas/documents.js'
 import { FilmError } from './errors.js'
 import { createExclusive, withFileLock } from './file-writes.js'
+import { refusedFolderOf } from './path-rules.js'
 
 export { createExclusive } from './file-writes.js'
 
@@ -189,6 +191,38 @@ export async function workspaceDirectory(cwd: string | null | undefined): Promis
 }
 
 /**
+ * Refuse a workspace inside a hidden folder or a credential store (`.ssh`,
+ * `.aws`, `.gnupg`, `.azure`, `.kube`), by the path given and by its real
+ * path, so a link cannot carry a film into one. A film is never started
+ * there, and nothing there is served or imported.
+ * @param cwd - the workspace directory.
+ */
+export async function checkWorkspaceLocation(cwd: string): Promise<void> {
+  const real = await realpath(cwd).catch(() => cwd)
+  for (const path of new Set([cwd, real])) {
+    const folder = refusedFolderOf(path)
+    if (folder !== undefined) {
+      throw new FilmError('WORKSPACE_REFUSED', `The workspace ${cwd} is inside the hidden or credential folder "${folder}"; the film workbench does not keep or read a film there.`)
+    }
+  }
+}
+
+/**
+ * Check that a workspace is a film workspace: in a place a film may be (see
+ * {@link checkWorkspaceLocation}) and with its project file. Routes that read
+ * the workspace outside `film/` (playing and importing its media) require it,
+ * so a caller cannot point them at any folder it likes.
+ * @param cwd - the workspace directory, already checked by {@link workspaceDirectory}.
+ * @returns the film project.
+ */
+export async function requireFilmWorkspace(cwd: string): Promise<FilmProject> {
+  await checkWorkspaceLocation(cwd)
+  const project = await readProject(cwd)
+  if (project === null) throw new FilmError('PROJECT_NOT_FOUND', `The workspace ${cwd} has no film project (${PROJECT_FILE}).`)
+  return project
+}
+
+/**
  * Read the workspace's project.
  * @param cwd - the workspace directory.
  * @returns the project, or `null` when the workspace has none yet.
@@ -204,11 +238,41 @@ export async function readProject(cwd: string): Promise<FilmProject | null> {
   return parseProject(text)
 }
 
+/** How often, and how far apart, a project file another writer is still writing is read again. */
+const LOSER_READS = 10
+const LOSER_READ_DELAY_MS = 20
+
+/**
+ * Read the project another writer has just created. Where hard links are
+ * missing, {@link createExclusive} creates the file and then writes it, so the
+ * first read may meet an empty or half-written file: it is read again for a
+ * moment before a broken file is reported.
+ * @param cwd - the workspace directory.
+ * @returns the project.
+ */
+async function readCreatedProject(cwd: string): Promise<FilmProject> {
+  for (let attempt = 1; ; attempt++) {
+    let project: FilmProject | null
+    try {
+      project = await readProject(cwd)
+    } catch (error) {
+      if (!(error instanceof FilmError) || error.code !== 'PROJECT_INVALID' || attempt >= LOSER_READS) throw error
+      project = null
+    }
+    if (project !== null) return project
+    if (attempt >= LOSER_READS) throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} disappeared while it was being created.`)
+    await delay(LOSER_READ_DELAY_MS)
+  }
+}
+
 /**
  * Start a project in the workspace, with its empty storyboard. An existing
  * project is never replaced, and neither is a board already saved (even a
- * damaged one) or a deleted board's tombstone. A board saved before the film
- * existed keeps its place: the film takes that board's id.
+ * damaged one) or the tombstone of the board deleted under the new film's id;
+ * a tombstone an older board left is cleared (see {@link CanvasDocumentStore.create}).
+ * A board saved before the film existed keeps its place: the film takes that
+ * board's id. A workspace inside a hidden or credential folder is refused
+ * ({@link checkWorkspaceLocation}).
  * @param cwd - the workspace directory.
  * @param input - the title and frame.
  * @param now - the creation time.
@@ -219,6 +283,7 @@ export async function createProject(
   input: NewProject,
   now: Date = new Date(),
 ): Promise<{ project: FilmProject; created: boolean }> {
+  await checkWorkspaceLocation(cwd)
   const time = now.toISOString()
   await mkdir(join(cwd, FILM_DIR), { recursive: true })
   const project: FilmProject = {
@@ -236,9 +301,7 @@ export async function createProject(
     await new CanvasDocumentStore(cwd, project.id).create(emptyFilmBoard(project.id, project.title, time)).catch(() => undefined)
     return { project, created: true }
   }
-  const existing = await readProject(cwd)
-  if (existing === null) throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} disappeared while it was being created.`)
-  return { project: existing, created: false }
+  return { project: await readCreatedProject(cwd), created: false }
 }
 
 /**

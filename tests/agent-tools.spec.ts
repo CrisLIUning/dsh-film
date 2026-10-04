@@ -695,6 +695,22 @@ describe('timeline tools', () => {
     expect((await run('timeline_query')).visuals).toEqual([expect.objectContaining({ id: placed.placed.clipId, path: 'canvas/media/b.png' })])
   })
 
+  it('names a sound item\'s file the ways place names one: a workspace file is copied in once, film/… is the film\'s', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'media'), { recursive: true })
+    await writeFile(join(cwd, 'media', 'bed.mp3'), 'music bed')
+    const preview = await run('timeline_edit', { dryRun: true, sound: { items: [{ kind: 'music', file: 'media/bed.mp3', durationSeconds: 4 }] }, operationId: 'op-bed' })
+    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+    const placed = await run('timeline_edit', { baseRevision: 0, sound: { items: [{ kind: 'music', file: 'media/bed.mp3', durationSeconds: 4 }] }, operationId: 'op-bed' })
+    expect(placed.result).toMatchObject({ committed: true, revision: 1 })
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['bed.mp3'])
+    expect((await run('timeline_query')).music).toEqual([expect.objectContaining({ path: 'canvas/media/bed.mp3' })])
+    // Spelled with film/ in front, the film's own file is used as it is.
+    const again = await run('timeline_edit', { dryRun: true, sound: { items: [{ kind: 'music', file: 'film/canvas/media/bed.mp3', durationSeconds: 4 }] } })
+    expect(again.result).toMatchObject({ committed: false })
+    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['bed.mp3'])
+  })
+
   it('lists the film\'s files and the workspace\'s media not in the film yet', async () => {
     await startFilm()
     await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
