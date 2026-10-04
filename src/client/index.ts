@@ -1,6 +1,6 @@
 /**
- * dsh-film browser half: the four parts of the film workbench — script,
- * storyboard, editing desk, director desk — as right-sidebar tab types, each
+ * dsh-film browser half: the three parts of the film workbench — script,
+ * storyboard, director desk — as right-sidebar tab types, each
  * with an entry box on the sidebar's guide page.
  *
  * Built by tsdown into the `__ModuleLoader__` factory bundle at
@@ -10,7 +10,6 @@
  * external package depends on no monorepo-internal types.
  */
 
-import { startCaptionRunner } from './caption-runner.ts'
 import { en, zh } from './locales.ts'
 import { TabBody } from './TabBody.tsx'
 import type { Translate } from './types.ts'
@@ -61,8 +60,6 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { zh, en }), 'dsh-film: dictionaries')
-  // Every window runs caption jobs (the Host has no browser of its own), whichever tab is open.
-  ctx.effect(() => startCaptionRunner(), 'dsh-film: caption runner')
   const t = ctx.locale.bind(LOCALE_NAMESPACE)
   for (const part of PARTS) {
     ctx.effect(() => ctx.sidebarRightTabs.register({

@@ -132,7 +132,7 @@ export interface StoryApi {
   source(documentId: string, objectId: string, scope?: StoryBindingScope): Promise<StorySourcePreview>
   /** Send a saved object to the board as a source card, optionally with an idle production node. */
   handoff(documentId: string, body: StoryHandoffRequest): Promise<StoryHandoffResponse>
-  /** What the canvas and the cut adopted from this screenplay, compared with the saved text. */
+  /** What the canvas adopted from this screenplay, compared with the saved text. */
   impact(documentId: string): Promise<StoryImpactResponse>
 }
 

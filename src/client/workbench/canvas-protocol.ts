@@ -79,9 +79,6 @@ export function canvasProtocol(options: CanvasHostOptions): FrameProtocol {
           if (typeof data.documentId === 'string' && typeof data.objectId === 'string') requestStoryOpen(projectId, { documentId: data.documentId, objectId: data.objectId })
           options.openView('story')
           break
-        case 'vibedev:timeline-open':
-          options.openView('timeline')
-          break
         case 'vibedev:modeling-task':
           // Modeling tasks go to the agent in Studio; not wired in the workbench yet.
           post({ type: 'vibedev:modeling-result', projectId, requestId: data.requestId, accepted: false, error: '影视工作台暂不支持从这里发起建模任务。' })

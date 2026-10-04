@@ -1,6 +1,6 @@
 /**
  * Sending screenplay objects to the storyboard canvas (送到画布) and reading
- * back what the canvas and the cut adopted (制作影响), apart from React: which
+ * back what the canvas adopted (制作影响), apart from React: which
  * production purposes a card offers, the handoff request, and how impact
  * items are labelled and acted on.
  *
@@ -79,17 +79,16 @@ export function handoffFocusNode(response: { node: { id: string }; productionNod
  * @returns the key.
  */
 export function impactItemKey(item: StoryImpactItem): string {
-  const usage = item.usageId ?? `${item.sourceType ?? 'input'}:${item.nodeId}:${item.clipId ?? ''}:${item.directorShotId ?? ''}:${item.outputPath ?? ''}`
+  const usage = item.usageId ?? `${item.sourceType ?? 'input'}:${item.nodeId}:${item.directorShotId ?? ''}:${item.outputPath ?? ''}`
   return `${usage}:${item.field}`
 }
 
 /**
- * Where an impact item leads: the timeline for cut items, the canvas node
- * otherwise, or nowhere when the item names no node.
+ * Where an impact item leads: the canvas node, or nowhere when the item
+ * names no node.
  * @param item - the item.
  * @returns the action.
  */
-export function impactAction(item: StoryImpactItem): { kind: 'timeline' } | { kind: 'canvas'; nodeId: string } | { kind: 'none' } {
-  if (item.sourceType === 'timeline-media' || item.sourceType === 'timeline-slot') return { kind: 'timeline' }
+export function impactAction(item: StoryImpactItem): { kind: 'canvas'; nodeId: string } | { kind: 'none' } {
   return item.nodeId.trim() !== '' ? { kind: 'canvas', nodeId: item.nodeId } : { kind: 'none' }
 }

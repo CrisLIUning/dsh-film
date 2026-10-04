@@ -1,8 +1,8 @@
 /**
- * 制作影响: what the storyboard and the cut adopted from this screenplay,
- * compared with the saved text — production inputs, generated outputs,
- * director-shot links and timeline clips — each with a way to the canvas
- * node or the timeline. Read-only: a change notice adopts nothing.
+ * 制作影响: what the storyboard adopted from this screenplay, compared with
+ * the saved text — production inputs, generated outputs and director-shot
+ * links — each with a way to the canvas node. Read-only: a change notice
+ * adopts nothing.
  *
  * Ported from Studio `apps/web/src/components/production/screenwriter/
  * StoryImpact.tsx` (a drawer there, a DSH modal here).
@@ -25,7 +25,7 @@ const STATUS_TONES: Record<StoryImpactItem['status'], TagTone> = { unchanged: 's
  * The impact report.
  * @param props - the screenplay, whether the body has unsaved text, and where items lead.
  */
-export function ImpactDialog({ api, documentId, revision, dirty, t, onClose, onLocate, onOpenTimeline }: {
+export function ImpactDialog({ api, documentId, revision, dirty, t, onClose, onLocate }: {
   api: StoryApi
   documentId: string
   /** The saved revision; a new one re-reads the report. */
@@ -34,7 +34,6 @@ export function ImpactDialog({ api, documentId, revision, dirty, t, onClose, onL
   t: Translate
   onClose: () => void
   onLocate: (nodeId: string) => void
-  onOpenTimeline: () => void
 }): ReactNode {
   const [result, setResult] = useState<StoryImpactResponse | null>(null)
   const [error, setError] = useState<string | undefined>()
@@ -86,15 +85,12 @@ export function ImpactDialog({ api, documentId, revision, dirty, t, onClose, onL
                       <div className={css.impactMeta}>
                         <span>{t('sw.impact.adoptedRevision')} <code>{item.adoptedRevision}</code></span>
                         {item.nodeId !== '' && <span>{t('sw.impact.node')} <code>{item.nodeId}</code></span>}
-                        {item.clipId !== undefined && <span>{t('sw.impact.clip')} <code>{item.clipId}</code></span>}
                         {item.directorShotId !== undefined && <span>{t('sw.impact.directorShot')} <code>{item.directorShotId}</code></span>}
                         {item.outputPath !== undefined && <span>{t('sw.impact.output')} <code>{item.outputPath}</code></span>}
                       </div>
                     </details>
                     <div className={css.actions}>
-                      {action.kind === 'timeline'
-                        ? <Button size="sm" variant="ghost" onClick={onOpenTimeline}>{t('sw.impact.openTimeline')}</Button>
-                        : <Button size="sm" variant="ghost" disabled={action.kind === 'none'} onClick={() => { if (action.kind === 'canvas') onLocate(action.nodeId) }}>{t('sw.impact.locate')}</Button>}
+                      <Button size="sm" variant="ghost" disabled={action.kind === 'none'} onClick={() => { if (action.kind === 'canvas') onLocate(action.nodeId) }}>{t('sw.impact.locate')}</Button>
                     </div>
                   </article>
                 )

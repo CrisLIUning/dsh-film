@@ -1,5 +1,5 @@
 /**
- * One hosted app (storyboard canvas, editing desk, director desk) in a frame
+ * One hosted app (the storyboard canvas, with the director desk) in a frame
  * filling the tab. The app is served by this plugin's Host half from
  * `api/dsh-film/apps/<app>/index.html`, on the Host's own origin, so it calls
  * the plugin's routes with the same sign-in as the page.

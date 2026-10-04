@@ -1,5 +1,5 @@
 /**
- * Guide artwork for the four parts, drawn like the Host's own guide artwork:
+ * Guide artwork for the three parts, drawn like the Host's own guide artwork:
  * a 36px fixed-palette canvas, hidden from assistive technology.
  */
 
@@ -36,23 +36,6 @@ export function ArtworkBoard({ size = 36, className }: ArtworkProps) {
       <rect x="20" y="9" width="10" height="7.5" rx="1.5" stroke="#7C8CF8" strokeWidth="2" />
       <rect x="13" y="21" width="10" height="7.5" rx="1.5" stroke="#7C8CF8" strokeWidth="2" />
       <path d="M11.5 16.5V19H18V21M25 16.5V19H18" stroke="#B3BCFB" strokeWidth="2" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-/**
- * The editing desk: clips on two tracks under a playhead.
- * @param props - canvas size and layout class.
- * @returns the artwork.
- */
-export function ArtworkTimeline({ size = 36, className }: ArtworkProps) {
-  return (
-    <svg width={size} height={size} className={className} aria-hidden="true" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="6" y="10" width="13" height="5.5" rx="1.5" fill="#4CC38A" />
-      <rect x="21" y="11" width="9" height="4.5" rx="1.5" stroke="#4CC38A" strokeWidth="2" />
-      <rect x="6" y="20.5" width="8" height="4.5" rx="1.5" stroke="#4CC38A" strokeWidth="2" />
-      <rect x="16" y="19.5" width="14" height="5.5" rx="1.5" fill="#9FE0BF" />
-      <path d="M18 6.5V29.5" stroke="#2F9E68" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }

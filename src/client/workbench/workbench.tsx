@@ -8,11 +8,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { Button, Input, Menu, fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilmView, Translate, WorkbenchProps } from '../types.ts'
-import { ASPECT_RATIOS, TITLE_MAX, fetchAssets, mediaUrl } from './api.ts'
-import type { AspectRatio, FilmProject, MediaAsset, ProjectChange } from './api.ts'
+import { ASPECT_RATIOS, TITLE_MAX } from './api.ts'
+import type { AspectRatio, FilmProject, ProjectChange } from './api.ts'
 import { AppFrame } from './AppFrame.tsx'
 import type { FrameProtocol } from './AppFrame.tsx'
 import { canvasProtocol } from './canvas-protocol.ts'
@@ -37,7 +37,7 @@ const PROBLEMS: Readonly<Record<string, string>> = {
  * The parts this build draws. An older entry still in memory (a restart is
  * pending) may hand over a part this build no longer has.
  */
-const VIEWS = { story: true, board: true, timeline: true, director: true } as const satisfies Record<FilmView, true>
+const VIEWS = { story: true, board: true, director: true } as const satisfies Record<FilmView, true>
 
 const isKnownView = (view: string): view is FilmView => Object.hasOwn(VIEWS, view)
 
@@ -138,26 +138,14 @@ function hostedApp(view: FilmView, project: FilmProject, cwd: string, openView: 
     case 'board':
     case 'director':
       return { app: 'canvas', protocol: canvasProtocol({ projectId: project.id, title: project.title, cwd, view: view === 'board' ? 'canvas' : 'director', openView }) }
-    case 'timeline':
-      return { app: 'editor', protocol: filmProtocol({ cwd, project: project.id }) }
     default:
       return undefined
-  }
-}
-
-/** For apps written for this workbench: the workspace in the URL, the look by message. */
-function filmProtocol(query: Readonly<Record<string, string>>): FrameProtocol {
-  return {
-    query: theme => ({ ...query, theme: theme.scheme }),
-    sendTheme: (post, theme) => { post({ source: 'dsh-film', type: 'theme', theme }) },
-    receive: () => {},
   }
 }
 
 /** A part's own view: the script, and what the other parts show while their app is not in this build. */
 function NativePart({ view, cwd, visible, t, openView, project }: WorkbenchProps & { project: FilmProject }): ReactNode {
   switch (view) {
-    case 'timeline': return <MediaShelf cwd={cwd} visible={visible} t={t} />
     case 'story': return <ScreenwriterView cwd={cwd} project={project} visible={visible} t={t} openView={openView} />
     case 'board': return <p className={css.soon}>{t('board.soon')}</p>
     case 'director': return <p className={css.soon}>{t('director.soon')}</p>
@@ -167,7 +155,7 @@ function NativePart({ view, cwd, visible, t, openView, project }: WorkbenchProps
 /** Saves one change to the film; a refusal is shown in the header. */
 type SaveChange = (change: ProjectChange) => Promise<void>
 
-/** The header the four parts share: the film's title (click to rename), its frame menu and its file. */
+/** The header the three parts share: the film's title (click to rename), its frame menu and its file. */
 function ProjectHeader({ project, cwd, t }: { project: FilmProject; cwd: string; t: Translate }): ReactNode {
   const [error, setError] = useState<string | undefined>()
   useEffect(() => { setError(undefined) }, [project.id])
@@ -258,9 +246,10 @@ function TitleEditor({ title, save, t }: { title: string; save: SaveChange; t: T
 const isAspectRatio = (value: string): value is AspectRatio => (ASPECT_RATIOS as readonly string[]).includes(value)
 
 /**
- * The film's frame: a menu of the frames the editing desk cuts in. A frame
- * from an earlier version the desk lacks (4:3) is shown as it is, with no
- * entry checked, until another is picked.
+ * The film's frame: a menu of the offered frames, the film frame the
+ * storyboard canvas and the director desk use. A frame from an earlier
+ * version that is no longer offered (4:3) is shown as it is, with no entry
+ * checked, until another is picked.
  */
 function AspectMenu({ aspectRatio, save, t }: { aspectRatio: string; save: SaveChange; t: Translate }): ReactNode {
   const [open, setOpen] = useState(false)
@@ -303,82 +292,3 @@ function AspectMenu({ aspectRatio, save, t }: { aspectRatio: string; save: SaveC
     />
   )
 }
-
-type ShelfState =
-  | { status: 'loading' }
-  | { status: 'ready'; assets: MediaAsset[]; truncated: boolean }
-  | { status: 'failed'; message: string }
-
-function MediaShelf({ cwd, visible, t }: { cwd: string; visible: boolean; t: Translate }): ReactNode {
-  const [state, setState] = useState<ShelfState>({ status: 'loading' })
-  const [selected, setSelected] = useState<MediaAsset | undefined>()
-  const [revision, setRevision] = useState(0)
-  useEffect(() => {
-    if (!visible) return
-    const controller = new AbortController()
-    fetchAssets(cwd, controller.signal)
-      .then((listing) => { setState({ status: 'ready', ...listing }) })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return
-        setState({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
-      })
-    return () => { controller.abort() }
-  }, [cwd, visible, revision])
-  return (
-    <section className={css.shelf}>
-      <Preview cwd={cwd} asset={selected} visible={visible} t={t} />
-      <div className={css.shelfHeader}>
-        <h3 className={css.sectionTitle}>{t('assets.title')}</h3>
-        <Button variant="ghost" size="sm" onClick={() => { setRevision(value => value + 1) }}>{t('assets.refresh')}</Button>
-      </div>
-      {state.status === 'loading' && <p className={css.quiet} role="status">{t('assets.loading')}</p>}
-      {state.status === 'failed' && <p className={css.error} role="alert">{t('assets.loadFailed', { message: state.message })}</p>}
-      {state.status === 'ready' && state.assets.length === 0 && <p className={css.quiet}>{t('assets.empty')}</p>}
-      {state.status === 'ready' && state.assets.length > 0 && (
-        <ul className={css.assets}>
-          {state.assets.map(asset => (
-            <li key={asset.path}>
-              <button
-                type="button"
-                className={css.asset}
-                aria-pressed={selected?.path === asset.path}
-                onClick={() => { setSelected(asset) }}
-                title={asset.path}
-              >
-                <span className={css.assetKind}>{t(`kind.${asset.kind}`)}</span>
-                <span className={css.assetPath}>{asset.path}</span>
-                <span className={css.assetSize}>{fileSizeText(asset.bytes)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {state.status === 'ready' && state.truncated && <p className={css.quiet}>{t('assets.truncated', { count: state.assets.length })}</p>}
-    </section>
-  )
-}
-
-function Preview({ cwd, asset, visible, t }: { cwd: string; asset: MediaAsset | undefined; visible: boolean; t: Translate }): ReactNode {
-  const player = useRef<HTMLMediaElement | null>(null)
-  const [failed, setFailed] = useState<string | undefined>()
-  useEffect(() => { setFailed(undefined) }, [asset?.path])
-  useEffect(() => {
-    if (!visible) player.current?.pause()
-  }, [visible])
-  if (asset === undefined) return <div className={css.preview}><p className={css.quiet}>{t('preview.empty')}</p></div>
-  if (failed === asset.path) return <div className={css.preview}><p className={css.error}>{t('preview.failed', { path: asset.path })}</p></div>
-  const src = mediaUrl(cwd, asset.path)
-  const onError = (): void => { setFailed(asset.path) }
-  return (
-    <div className={css.preview}>
-      {asset.kind === 'video' && (
-        <video key={src} ref={(element) => { player.current = element }} className={css.media} src={src} controls preload="metadata" onError={onError} />
-      )}
-      {asset.kind === 'audio' && (
-        <audio key={src} ref={(element) => { player.current = element }} className={css.audio} src={src} controls preload="metadata" onError={onError} />
-      )}
-      {asset.kind === 'image' && <img key={src} className={css.media} src={src} alt={asset.path} onError={onError} />}
-    </div>
-  )
-}
-

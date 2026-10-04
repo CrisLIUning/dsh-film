@@ -5,7 +5,7 @@
  */
 
 /** The workbench parts, one right-sidebar tab type each. */
-export type FilmView = 'story' | 'board' | 'timeline' | 'director'
+export type FilmView = 'story' | 'board' | 'director'
 
 /** Bound translate function of this plugin's dictionary. */
 export type Translate = (key: string, params?: Record<string, string | number>) => string

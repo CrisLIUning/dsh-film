@@ -192,17 +192,8 @@ describe('title editing', () => {
     expect(titleKeyAction('a', false)).toBeUndefined()
   })
 
-  it('offers exactly the editing desk\'s frames (the video editor\'s HOST_PROJECT_ASPECTS, which the Host pins too)', async () => {
+  it('offers exactly the frames the Host accepts (src/project.ts ASPECT_RATIOS)', async () => {
     const { ASPECT_RATIOS } = await api()
     expect([...ASPECT_RATIOS].sort()).toEqual(['9:16', '16:9', '1:1', '4:5', '21:9', '2.39:1'].sort())
-  })
-})
-
-describe('media paths', () => {
-  it('builds the media URL from the workspace and the path relative to it', async () => {
-    const { mediaUrl } = await api()
-    const url = new URL(mediaUrl('C:\\ws', 'footage/a b.mp4'))
-    expect(url.pathname).toBe('/base/api/dsh-film/media')
-    expect(Object.fromEntries(url.searchParams)).toEqual({ cwd: 'C:\\ws', path: 'footage/a b.mp4' })
   })
 })

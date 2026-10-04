@@ -4,7 +4,7 @@
  * and under a web client mounted below a path alike.
  */
 
-/** Frames a film can be given, mirroring the Host's project model: the editing desk's own set. */
+/** Frames a film can be given, mirroring the Host's project model. */
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:5', '21:9', '2.39:1'] as const
 export type AspectRatio = typeof ASPECT_RATIOS[number]
 /** A frame a project file may hold: one of {@link ASPECT_RATIOS}, or `4:3` kept from an earlier version. */
@@ -28,16 +28,6 @@ export interface FilmProject {
 export interface ProjectChange {
   title?: string
   aspectRatio?: AspectRatio
-}
-
-export type MediaKind = 'image' | 'video' | 'audio'
-
-export interface MediaAsset {
-  /** Relative to the workspace, with `/` separators (the film's own files start with `film/`). */
-  path: string
-  kind: MediaKind
-  bytes: number
-  modifiedAt: string
 }
 
 /** A failed call: the Host's error code and message, or the transport's. */
@@ -112,27 +102,4 @@ export async function ensureProject(cwd: string): Promise<{ project: FilmProject
  */
 export async function updateProject(cwd: string, change: ProjectChange): Promise<FilmProject> {
   return (await call<{ project: FilmProject }>(endpoint('project/update'), postJson({ cwd, ...change }))).project
-}
-
-/**
- * List the workspace's media files — the film's (`film/…`) and the
- * workspace's own — newest first.
- * @param cwd - the workspace directory.
- * @param signal - cancels the request.
- * @returns the files and whether the list is incomplete.
- */
-export async function fetchAssets(cwd: string, signal?: AbortSignal): Promise<{ assets: MediaAsset[]; truncated: boolean }> {
-  return await call(endpoint('assets', { cwd }), signal === undefined ? {} : { signal })
-}
-
-/**
- * The URL a media element plays a workspace file from (byte ranges
- * supported). The Host serves only media inside the workspace, so the file
- * travels as a path relative to it.
- * @param cwd - the workspace directory.
- * @param path - the file, relative to the workspace, with `/` separators.
- * @returns the URL.
- */
-export function mediaUrl(cwd: string, path: string): string {
-  return endpoint('media', { cwd, path }).href
 }

@@ -74,7 +74,7 @@ export interface ScreenwriterViewProps {
   project: FilmProject
   visible: boolean
   t: Translate
-  /** Open another workbench part (the storyboard after 送到画布, the timeline from the impact report). */
+  /** Open another workbench part (the storyboard after 送到画布). */
   openView?: (view: FilmView) => void
 }
 
@@ -404,7 +404,6 @@ export function ScreenwriterView({ cwd, project, visible, t, openView }: Screenw
           t={t}
           onClose={() => { setDialog(null) }}
           onLocate={(nodeId) => { setDialog(null); showOnCanvas(nodeId) }}
-          onOpenTimeline={() => { setDialog(null); openView?.('timeline') }}
         />
       )}
     </section>

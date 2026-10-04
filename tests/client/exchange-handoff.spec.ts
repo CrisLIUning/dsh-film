@@ -116,14 +116,13 @@ describe('sending to the canvas and the impact report', () => {
     expect(handoffFocusNode({ node: { id: 'story-source-1' } })).toBe('story-source-1')
   })
 
-  it('keys impact items and leads them to the canvas node or the timeline', () => {
+  it('keys impact items and leads them to the canvas node, never to a timeline', () => {
     const item: StoryImpactItem = { nodeId: 'node_1', objectId: 'p', objectKind: 'entity', title: 't', field: 'prompt', adoptedRevision: 'r', status: 'changed', manualChanged: false }
-    expect(impactItemKey(item)).toBe('input:node_1::::prompt')
+    expect(impactItemKey(item)).toBe('input:node_1:::prompt')
     expect(impactItemKey({ ...item, usageId: 'output:node_1:req:abc:p:references', field: 'references' })).toBe('output:node_1:req:abc:p:references:references')
     expect(impactAction(item)).toEqual({ kind: 'canvas', nodeId: 'node_1' })
     expect(impactAction({ ...item, nodeId: ' ' })).toEqual({ kind: 'none' })
-    expect(impactAction({ ...item, sourceType: 'timeline-slot', nodeId: '' })).toEqual({ kind: 'timeline' })
-    expect(impactAction({ ...item, sourceType: 'timeline-media' })).toEqual({ kind: 'timeline' })
+    expect(impactAction({ ...item, sourceType: 'director', directorShotId: 'camera' })).toEqual({ kind: 'canvas', nodeId: 'node_1' })
   })
 })
 
