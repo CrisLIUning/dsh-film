@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ModelTooLargeError, readGlbFacts, readGltfFacts } from '../../src/model-files/gltf.js'
+import type { GltfReadOptions } from '../../src/model-files/gltf.js'
 import { ModelReadError } from '../../src/model-files/types.js'
 import type { ModelBox } from '../../src/model-files/types.js'
 import { compileSpacePlan } from '../../src/space-plan/compile.js'
@@ -22,7 +23,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-async function measure(bytes: Buffer, options = LIMIT) {
+async function measure(bytes: Buffer, options: GltfReadOptions = LIMIT) {
   const path = join(dir, 'model.glb')
   await writeFile(path, bytes)
   return readGlbFacts(path, options)
