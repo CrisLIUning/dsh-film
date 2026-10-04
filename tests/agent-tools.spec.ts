@@ -78,6 +78,7 @@ describe('the tool set', () => {
       'media_get_task', 'media_cancel_task',
       'director_query', 'director_models', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
+      'video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio',
     ])
     for (const tool of tools.values()) {
       expect(tool.parameters).toMatchObject({ type: 'object' })
@@ -85,13 +86,18 @@ describe('the tool set', () => {
     }
   })
 
-  it('carries 30 core tools and nothing of the removed editing desk', () => {
+  it('carries 30 core tools and none of the cut tools 0.2.0 removed', () => {
     const core = filmCoreTools(services).map(tool => tool.name)
     expect(core).toHaveLength(30)
     expect(core).toEqual(expect.arrayContaining(['media_get_task', 'media_cancel_task']))
+    // Narrowed in 0.3 to the removed tools: the video_* cutting tools are new, and their texts
+    // still never name the removed desk, recognition or render engine.
+    const removed = ['timeline_query', 'timeline_edit', 'timeline_transcribe', 'timeline_apply_captions', 'timeline_render']
+    for (const name of removed) expect(tools.has(name), name).toBe(false)
     const texts = [...[...tools.values()].map(tool => `${tool.name}: ${tool.description}`), `FILM_GUIDANCE: ${FILM_GUIDANCE}`]
     for (const text of texts) {
-      expect(text, text.slice(0, 60)).not.toMatch(/timeline_|剪辑|editing desk|caption|ffmpeg/iu)
+      for (const name of removed) expect(text, text.slice(0, 60)).not.toContain(name)
+      expect(text, text.slice(0, 60)).not.toMatch(/剪辑台|editing desk|caption|ffmpeg|timeline_/iu)
     }
     // A review is handed on to generation only.
     const review = tools.get('director_review')!.parameters as { properties: Record<string, { enum?: unknown[] }> }
@@ -109,6 +115,21 @@ describe('the tool set', () => {
     expect(stage).toContain('place_model')
     expect(stage).toContain('director_models')
     expect(FILM_GUIDANCE).toContain('director_models')
+  })
+
+  it('keeps the video_* cutting tools in the editing group, and says the film task tools follow them', () => {
+    const groups = filmToolGroups(services)
+    expect(groups.editing!.tools().map(tool => tool.name)).toEqual(['video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio'])
+    expect(groups.editing!.description).toMatch(/^Cut, split, render, join and extract the sound of video nodes \(video_\*\)\. Only cutting and joining: no transitions, music or effects\.$/u)
+    expect(filmCoreTools(services).map(tool => tool.name).filter(name => name.startsWith('video_'))).toEqual([])
+    expect(FILM_GUIDANCE).toContain('### Cutting and joining')
+    expect(FILM_GUIDANCE).toContain('VIDEO_JOIN_NEEDS_PAGE')
+    expect(FILM_GUIDANCE).toContain('reference limits')
+    expect(tools.get('media_get_task')!.description).toContain('video_*')
+    expect(tools.get('media_get_task')!.description).toContain('landedNodeId')
+    expect(tools.get('media_cancel_task')!.description).toContain('video_*')
+    // No subtitle tools yet: the group promises none.
+    expect(groups.editing!.description).not.toMatch(/subtitle/u)
   })
 
   it('promises no skill, preview or desk this workbench does not have', () => {
@@ -806,6 +827,25 @@ describe('installing the tools into film conversations', () => {
     host.dispose()
   })
 
+  it('starts a conversation with the editing group when the board has a video with a file', async () => {
+    await startFilm()
+    const host = fakeHost()
+    installFilmAgentTools(host.ctx as never, { tools: () => filmCoreTools(services), groups: filmToolGroups(services), guidance: 'film guidance' })
+    // An empty video node is not enough.
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }] })
+    const early = host.agent('early', cwd)
+    await host.emit('agent/created', early)
+    expect(early.tools.has('director_query')).toBe(false)
+    expect(early.tools.has('video_clip')).toBe(false)
+    await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'shot', metadata: { content: '/api/projects/p/raw/canvas/media/shot.mp4' } }] })
+    const later = host.agent('later', cwd)
+    await host.emit('agent/created', later)
+    expect(later.tools.has('video_clip')).toBe(true)
+    expect(later.tools.has('video_join')).toBe(true)
+    expect(later.tools.has('director_query')).toBe(false)
+    host.dispose()
+  })
+
   it('film_tools lists the groups and enables them for the calling conversation', async () => {
     await startFilm()
     const host = fakeHost()
@@ -817,7 +857,7 @@ describe('installing the tools into film conversations', () => {
     const tool = filmToolsTool(groups, () => installer)
     const exec = { ...execFor(cwd), agent } as never
     const listed = await tool.execute({}, exec) as { groups: Array<{ name: string; enabled: boolean; tools: string[] }> }
-    expect(listed.groups.map(group => [group.name, group.enabled])).toEqual([['director', false], ['modeling', false]])
+    expect(listed.groups.map(group => [group.name, group.enabled])).toEqual([['director', false], ['modeling', false], ['editing', false]])
     const enabled = await tool.execute({ enable: ['director'] }, exec) as { groups: Array<{ name: string; enabled: boolean }>; note: string }
     expect(enabled.groups.find(group => group.name === 'director')?.enabled).toBe(true)
     expect(agent.tools.has('director_stage')).toBe(true)

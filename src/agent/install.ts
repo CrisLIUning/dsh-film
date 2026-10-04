@@ -6,9 +6,10 @@
  * when it starts in a film workspace, or the moment its workspace gets a film.
  * A scoped registration unwinds with its agent.
  *
- * The same holds inside a film: the director desk's and the modeling tools are
- * groups a conversation takes on when it needs them (a board with a director
- * node starts with the director group; `film_tools` enables any group).
+ * The same holds inside a film: the director desk's, the modeling and the
+ * cutting tools are groups a conversation takes on when it needs them (a board
+ * with a director node starts with the director group, one with a video with
+ * the cutting group; `film_tools` enables any group).
  * @module dsh-film/agent/install
  */
 

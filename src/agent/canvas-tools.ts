@@ -75,7 +75,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** Board failures as tool failures with their code. */
-async function guarded<T>(run: () => Promise<T>): Promise<T> {
+export async function guarded<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {
