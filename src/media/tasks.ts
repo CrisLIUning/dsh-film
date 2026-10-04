@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { effectiveVideoModes } from './catalogue.js'
 import type { HostMediaModel } from './catalogue.js'
 import { readProject } from '../project.js'
 import { StoryAssets } from '../screenwriter/assets.js'
@@ -152,6 +153,28 @@ const GATEWAY_MODES: Readonly<Record<string, string>> = {
   'image-to-video': 'first_frame',
   'first-last-frame': 'first_last_frame',
   reference: 'omni_reference',
+}
+
+/** The progress line of an image-to-video request sent as 全能参考 ({@link firstFrameGoesToReference}). */
+export const FIRST_FRAME_AS_REFERENCE = '这条线路不支持图生视频，图片改走全能参考'
+
+/**
+ * Whether an image-to-video request for this model has to go as 全能参考: the
+ * model serves no first-frame mode but takes reference images (the Seedance 2.5
+ * and lec lanes that declare `first_frame: false`). A board saved while the
+ * canvas still offered 图生视频 on them, or an older canvas page, asks for
+ * image-to-video; dsh-media would refuse it (VIDEO_MODE_UNSUPPORTED).
+ * An unknown model, or a catalogue that cannot be read, changes nothing.
+ * @param media - dsh-media's service.
+ * @param model - the requested model id.
+ * @returns true to send the image as a reference image.
+ */
+async function firstFrameGoesToReference(media: MediaServiceLike, model: string | undefined): Promise<boolean> {
+  if (model === undefined) return false
+  const video = await media.models().then(models => models.find(entry => entry.id === model)?.video, () => undefined)
+  if (video === undefined) return false
+  const modes = effectiveVideoModes(video)
+  return modes.first_frame === undefined && (modes.omni_reference?.inputs.referenceImages?.max ?? 0) > 0
 }
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
@@ -406,11 +429,13 @@ export class FilmMediaTasks {
     const model = text(body.model)
     // Resolved before the task exists: an unavailable reference refuses the request rather than failing a started run.
     const films = await this.filmReferences(cwd, body)
+    const asReference = surface === 'video' && text(body.videoMode) === 'image-to-video' && await firstFrameGoesToReference(media, model)
     const taskId = randomUUID()
     const output = text(body.output) ?? `canvas/media/${surface}-${taskId.slice(0, 10)}${surface === 'image' ? '.png' : '.mp4'}`
     const outputPath = projectFile(cwd, output)
     const target: MediaTarget = { cwd, folder: dirname(outputPath), stem: basename(outputPath, extname(outputPath)) }
-    const task: FilmTask = { taskId, projectId, surface, model: model ?? '', status: 'queued', startedAt: Date.now(), endedAt: null, progress: ['已提交'], error: null }
+    const progress = asReference ? ['已提交', FIRST_FRAME_AS_REFERENCE] : ['已提交']
+    const task: FilmTask = { taskId, projectId, surface, model: model ?? '', status: 'queued', startedAt: Date.now(), endedAt: null, progress, error: null }
     this.tasks.set(this.key(cwd, taskId), task)
     await this.save(cwd, task)
     const controller = new AbortController()
@@ -425,12 +450,17 @@ export class FilmMediaTasks {
         ...['low', 'medium', 'high', 'auto'].includes(String(body.quality)) ? { quality: String(body.quality) } : {},
         references: ordered(links(body.referenceImages), inputs([...texts(body.images), ...texts(body.image === undefined ? [] : [body.image])]), (body.referenceOrder as Body | undefined)?.images),
       }, target, controller.signal)
-      : this.runVideo(cwd, task, media, this.videoRequest(cwd, body, prompt, model, films), target, controller.signal)
+      : this.runVideo(cwd, task, media, this.videoRequest(cwd, body, prompt, model, films, asReference), target, controller.signal)
     void run.finally(() => { this.running.delete(this.key(cwd, taskId)) })
     return { taskId, status: task.status }
   }
 
-  private videoRequest(cwd: string, body: Body, prompt: string, model: string | undefined, films: ReadonlyMap<string, string>): VideoServiceRequest {
+  /**
+   * The dsh-media request for a canvas video body.
+   * @param asReference - the body asks for image-to-video on a model that takes the image only as a
+   *   reference ({@link firstFrameGoesToReference}): send it as 全能参考 with the image as a reference image.
+   */
+  private videoRequest(cwd: string, body: Body, prompt: string, model: string | undefined, films: ReadonlyMap<string, string>, asReference = false): VideoServiceRequest {
     const resolveOne = (value: unknown): string | undefined => {
       const source = text(value)
       return source === undefined ? undefined : films.get(source) ?? (isLink(source) ? source : projectFile(cwd, source))
@@ -440,10 +470,14 @@ export class FilmMediaTasks {
     const order = body.referenceOrder as Body | undefined
     const canvasMode = text(body.videoMode)
     if (canvasMode === 'video-edit') throw new FilmMediaError(400, 'VIDEO_MODE_UNSUPPORTED', '影视工作台暂不支持视频编辑模式。')
-    const mode = canvasMode === undefined ? undefined : GATEWAY_MODES[canvasMode]
+    const mode = asReference ? 'omni_reference' : canvasMode === undefined ? undefined : GATEWAY_MODES[canvasMode]
     const images = ordered(links(body.referenceImages), localFiles(body.images), order?.images)
-    const firstFrame = resolveOne(body.firstFrame) ?? (mode === 'first_frame' || mode === 'first_last_frame' ? images.shift() : undefined)
-    const lastFrame = resolveOne(body.lastFrame) ?? (mode === 'first_last_frame' ? images.shift() : undefined)
+    if (asReference) {
+      const named = resolveOne(body.firstFrame)
+      if (named !== undefined) images.unshift(named)
+    }
+    const firstFrame = asReference ? undefined : resolveOne(body.firstFrame) ?? (mode === 'first_frame' || mode === 'first_last_frame' ? images.shift() : undefined)
+    const lastFrame = asReference ? undefined : resolveOne(body.lastFrame) ?? (mode === 'first_last_frame' ? images.shift() : undefined)
     const videos = ordered(links(body.referenceVideos), localFiles(body.referenceVideo), order?.videos)
     const audios = ordered(links(body.referenceAudios), localFiles(body.referenceAudio === undefined ? [] : [body.referenceAudio]), order?.audios)
     const duration = typeof body.length === 'number' ? body.length : typeof body.duration === 'number' ? body.duration : undefined

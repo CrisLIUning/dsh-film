@@ -1,0 +1,1567 @@
+{
+  "source": "videoCapabilities() of dsh-film 0.2.0 (e39f488, src/media/catalogue.ts) for the seven Seedance 2.0 lanes of gateway-video-models-1003.json, which declare modes schema 1; 0.3.0 must give the same (it may add fields).",
+  "lanes": {
+    "seedance-2-0-official": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "maxReferenceImageBytes": 5242880,
+      "maxReferenceVideoBytes": 52428800,
+      "maxReferenceAudioBytes": 52428800,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2-0-official-fast": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "480p",
+        "720p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "maxReferenceImageBytes": 5242880,
+      "maxReferenceVideoBytes": 52428800,
+      "maxReferenceAudioBytes": 52428800,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2-0-official-mini": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p",
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "480p",
+        "720p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "maxReferenceImageBytes": 5242880,
+      "maxReferenceVideoBytes": 52428800,
+      "maxReferenceAudioBytes": 52428800,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2.0": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "720p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "720p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2.0-1080p": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "1080p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "1080p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2.0-480p": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "480p"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "480p"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    },
+    "seedance-2.0-4k": {
+      "videoModeSchemaVersion": 1,
+      "videoModeConstraints": {
+        "text-to-video": {
+          "inputs": {},
+          "requiredAnyOf": [],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "4k"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "image-to-video": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "4k"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "first-last-frame": {
+          "inputs": {
+            "firstFrame": {
+              "min": 1,
+              "max": 1
+            },
+            "lastFrame": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "firstFrame",
+              "lastFrame"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "4k"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        },
+        "reference": {
+          "inputs": {
+            "referenceImages": {
+              "min": 0,
+              "max": 9
+            },
+            "referenceVideos": {
+              "min": 0,
+              "max": 3,
+              "source": "gateway_media_asset"
+            },
+            "referenceAudios": {
+              "min": 0,
+              "max": 3
+            }
+          },
+          "requiredAnyOf": [
+            [
+              "referenceImages"
+            ],
+            [
+              "referenceVideos"
+            ]
+          ],
+          "supportedAspects": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "supportedResolutions": [
+            "4k"
+          ],
+          "supportedDurationsSeconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      },
+      "videoModes": [
+        "text-to-video",
+        "image-to-video",
+        "first-last-frame",
+        "reference"
+      ],
+      "supportedAspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4",
+        "21:9",
+        "adaptive"
+      ],
+      "supportedResolutions": [
+        "4k"
+      ],
+      "supportedDurationsSeconds": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "textToVideo": true,
+      "imageToVideo": true,
+      "referenceImageInput": true,
+      "referenceVideoInput": true,
+      "referenceAudioInput": true,
+      "nativeAudioOutput": true,
+      "maxReferenceImages": 9,
+      "maxReferenceVideos": 3,
+      "maxReferenceAudios": 3,
+      "allowedImageMimes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ],
+      "allowedVideoMimes": [
+        "video/mp4",
+        "video/quicktime"
+      ]
+    }
+  }
+}
