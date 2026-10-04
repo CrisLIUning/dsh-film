@@ -140,7 +140,9 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
       name: 'director_models',
       description: 'List the 3D model files a director scene can use (read-only): the film\'s own (film/…, including film/spaces/ sets) and, with '
         + 'includeWorkspace (default true), GLB/FBX/OBJ files elsewhere in the workspace not imported yet. Each gives path, inFilm, format, role '
-        + '(space|model), placeable, suggestedKind (scene|prop|auto: auto means it has a rig — a character goes through the 导演 tab\'s 空间库), the '
+        + '(space|model), placeable, suggestedKind (scene|prop|auto: auto means it may carry a rig — a skinned glTF (hasSkin:true), or any FBX, whose '
+        + 'rig the Host cannot inspect; place_model places it as a prop unless you pass kind, and a rigged character is imported by the person in the '
+        + '导演 tab\'s 空间库), the '
         + 'measured bounds in file units, metresPerUnit when the file declares its units (GLB 1, FBX by its unit) or suggestedMetresPerUnit (OBJ guess), '
         + 'sizeMetres when the units are known, hasSkin, compression and any problem; pending means not measured yet (place_model measures it). Place '
         + 'one with director_stage place_model. At most 100 entries.',
