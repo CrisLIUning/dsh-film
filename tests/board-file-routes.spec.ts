@@ -191,6 +191,8 @@ describe('the 0.1 editing desk paths', () => {
       ['GET', '/api/canvas/timelines/film-1/media'],
       ['POST', '/api/canvas/timelines/film-1/media'],
       ['POST', '/api/canvas/timelines/film-1/render'],
+      // The 0.1 import path, kept through 0.2.x as an alias of /api/canvas/assets/:boardId/import.
+      ['POST', '/api/canvas/timelines/film-1/import'],
       ['GET', '/api/community/media'],
       ['GET', '/api/media/video-editor-models'],
     ]

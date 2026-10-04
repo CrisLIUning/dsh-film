@@ -139,19 +139,22 @@ describe('GET /api/canvas/assets/:boardId', () => {
     expect(stored.assets.some(asset => 'model' in asset)).toBe(false)
   })
 
-  it('keeps the 0.1 import path as an alias for media and models, and refuses a .gltf', async () => {
+  it('imports media and models through the assets path, refuses a .gltf, and no longer answers the 0.1 path', async () => {
     await file('film/film.json', JSON.stringify({ format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }))
     await file('footage/take.mov', 'mov!')
     await writeBytes('props/chair.glb', chairGlb())
     await file('props/lamp.gltf', '{"asset":{"version":"2.0"}}')
-    expect((await post('/api/canvas/timelines/film-1/import?project=film-1', { path: 'footage/take.mov' })).body)
+    const path = '/api/canvas/assets/film-1/import?project=film-1'
+    expect((await post(path, { path: 'footage/take.mov' })).body)
       .toEqual({ file: { name: 'canvas/media/take.mov', size: 4, mime: 'video/quicktime' }, kind: 'video' })
-    expect((await post('/api/canvas/timelines/film-1/import?project=film-1', { path: 'props/chair.glb' })).body)
+    expect((await post(path, { path: 'props/chair.glb' })).body)
       .toMatchObject({ file: { name: 'canvas/models/chair.glb' }, kind: 'model', model: { format: 'glb' } })
-    for (const path of ['/api/canvas/assets/film-1/import?project=film-1', '/api/canvas/timelines/film-1/import?project=film-1']) {
-      expect(await post(path, { path: 'props/lamp.gltf' })).toMatchObject({ status: 400, body: { code: 'CANVAS_IMPORT_INVALID', error: expect.stringContaining('GLB') } })
-      expect(await post(path, { path: 'props/none.glb' })).toMatchObject({ status: 404, body: { code: 'CANVAS_IMPORT_NOT_FOUND' } })
-    }
+    expect(await post(path, { path: 'props/lamp.gltf' })).toMatchObject({ status: 400, body: { code: 'CANVAS_IMPORT_INVALID', error: expect.stringContaining('GLB') } })
+    expect(await post(path, { path: 'props/none.glb' })).toMatchObject({ status: 404, body: { code: 'CANVAS_IMPORT_NOT_FOUND' } })
+    // The 0.1 path (kept through 0.2.x) is gone: it imports nothing.
+    await file('footage/other.mov', 'mov2')
+    expect(await post('/api/canvas/timelines/film-1/import?project=film-1', { path: 'footage/other.mov' })).toMatchObject({ status: 404, body: { error: { code: 'NOT_FOUND' } } })
+    await expect(readFile(join(cwd, 'film', 'canvas', 'media', 'other.mov'))).rejects.toThrow()
   })
 
   it('leaves out a workspace file the film imported, until it changes or the film\'s copy goes', async () => {
@@ -162,7 +165,7 @@ describe('GET /api/canvas/assets/:boardId', () => {
     expect(await offered()).toEqual(['footage/take.mov', 'music/bed.mp3'])
     const url = new URL('http://host/api/dsh-film/studio-write')
     url.searchParams.set('cwd', cwd)
-    url.searchParams.set('path', '/api/canvas/timelines/film-1/import?project=film-1')
+    url.searchParams.set('path', '/api/canvas/assets/film-1/import?project=film-1')
     url.searchParams.set('method', 'POST')
     const imported = await router.dispatch(new Request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: 'footage/take.mov' }) }))
     expect(imported.status).toBe(200)

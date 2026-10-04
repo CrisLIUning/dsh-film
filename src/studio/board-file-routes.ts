@@ -6,9 +6,8 @@
  *   `film/canvas/models/` (see src/canvas/workspace-import.ts). Answers
  *   `{ file: { name, size, mime }, kind, reused?, model? }`; a model carries
  *   its facts. A film workspace only, outside hidden and credential folders.
- * - `POST /api/canvas/timelines/:boardId/import` — the same handler under its
- *   0.1 path, which the canvas and the agent called; kept through 0.2.x and
- *   removed in 0.3.0.
+ *   (0.1 served it as `POST /api/canvas/timelines/:boardId/import`; that path
+ *   was kept through 0.2.x and is gone since 0.3.0.)
  * - `POST /api/canvas/assets/:boardId/attach` — `{ path, targetNodeId?,
  *   expectedContent?, width?, height?, durationSeconds?, title? }`: put a film
  *   file (`path` relative to `film/`) into an existing node, or land it on the
@@ -34,9 +33,8 @@ import { projectPath } from './project-routes.js'
 import { StudioReply } from './router.js'
 import type { StudioRequest, StudioRouter } from './router.js'
 
-/** The import's path; the legacy one goes in 0.3.0. */
+/** The import's path. */
 export const BOARD_IMPORT_PATH = '/api/canvas/assets/:boardId/import'
-export const LEGACY_BOARD_IMPORT_PATH = '/api/canvas/timelines/:boardId/import'
 /** The agent's attach. */
 export const BOARD_ATTACH_PATH = '/api/canvas/assets/:boardId/attach'
 
@@ -70,7 +68,6 @@ export function addBoardFileRoutes(router: StudioRouter, events: ProjectEvents):
     }
   }
   router.add('POST', BOARD_IMPORT_PATH, importFile)
-  router.add('POST', LEGACY_BOARD_IMPORT_PATH, importFile)
   router.add('POST', BOARD_ATTACH_PATH, request => attachFile(request, events))
 }
 
