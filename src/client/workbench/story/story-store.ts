@@ -327,6 +327,59 @@ export class StoryStore {
   }
 
   /**
+   * Create a screenplay from an import and open it (Studio's
+   * `useStoryDocument.importCopy`). Refused while the open one has unsaved
+   * text; if the person typed while the import ran, their text stays open and
+   * the copy only joins the list.
+   * @param run - the import request.
+   * @param recover - handles a failure itself (answers true) instead of showing it.
+   * @returns whether the copy opened.
+   */
+  async importCopy(run: () => Promise<StoryMutationResult>, recover?: (error: unknown) => boolean): Promise<boolean> {
+    if (this.dirty || this.state.saving || this.busy) return false
+    this.busy = true
+    // Answers to reads started before the import (a pending open or refresh) no longer apply.
+    const token = ++this.generation
+    const baseline = this.state.draft
+    this.set({ saving: true, error: null })
+    try {
+      const result = await run()
+      if (token !== this.generation) return false
+      this.set({ saving: false })
+      if (this.state.draft !== baseline) {
+        try {
+          this.set({ documents: await this.api.list() })
+        } catch {
+          // The next poll lists the copy.
+        }
+        this.scheduleSave()
+        return false
+      }
+      this.generation += 1
+      this.accept(result.document)
+      return true
+    } catch (error) {
+      if (token === this.generation) {
+        this.set({ saving: false })
+        if (recover?.(error) !== true) this.fail(error)
+      }
+      return false
+    } finally {
+      this.busy = false
+    }
+  }
+
+  /**
+   * Show a failure from a call the view made itself (sending to the canvas):
+   * a stale revision brings in the version on disk first.
+   * @param error - what the call threw.
+   */
+  report(error: unknown): void {
+    if (error instanceof StoryConflictError) this.replace(error.current)
+    this.set({ error: { message: message(error), diagnostics: error instanceof StoryApiError ? error.diagnostics : [] } })
+  }
+
+  /**
    * Show a newer version of the open screenplay that a card save read,
    * unless the person has unsaved text.
    * @param document - the newer version.

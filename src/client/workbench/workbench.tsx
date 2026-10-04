@@ -97,10 +97,10 @@ function filmProtocol(query: Readonly<Record<string, string>>): FrameProtocol {
 }
 
 /** A part's own view: the script, and what the other parts show while their app is not in this build. */
-function NativePart({ view, cwd, visible, t, project }: WorkbenchProps & { project: FilmProject }): ReactNode {
+function NativePart({ view, cwd, visible, t, openView, project }: WorkbenchProps & { project: FilmProject }): ReactNode {
   switch (view) {
     case 'timeline': return <MediaShelf cwd={cwd} visible={visible} t={t} />
-    case 'story': return <ScreenwriterView cwd={cwd} project={project} visible={visible} t={t} />
+    case 'story': return <ScreenwriterView cwd={cwd} project={project} visible={visible} t={t} openView={openView} />
     case 'board': return <p className={css.soon}>{t('board.soon')}</p>
     case 'director': return <p className={css.soon}>{t('director.soon')}</p>
   }

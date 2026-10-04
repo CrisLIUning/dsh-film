@@ -9,6 +9,7 @@
 
 import type { FilmView } from '../types.ts'
 import type { FrameProtocol } from './AppFrame.tsx'
+import { onCanvasFocus, requestStoryOpen, takeCanvasFocus } from './film-links.ts'
 import { readHostTheme } from './host-theme.ts'
 import type { HostTheme } from './host-theme.ts'
 
@@ -41,6 +42,8 @@ let requests = 0
 export function canvasProtocol(options: CanvasHostOptions): FrameProtocol {
   const { projectId, view } = options
   const viewRequest = (): Record<string, unknown> => ({ type: 'vibedev:film-view', projectId, view, requestId: `dsh-film-${++requests}` })
+  // The canvas centres and selects a node on `vibedev:story-focus` (its use-story-canvas-sync); only the storyboard tab takes them.
+  const focus = (nodeId: string): Record<string, unknown> => ({ type: 'vibedev:story-focus', projectId, nodeId })
   return {
     query(theme) {
       const surface = surfaceOf(theme)
@@ -61,14 +64,19 @@ export function canvasProtocol(options: CanvasHostOptions): FrameProtocol {
     receive(data, post) {
       if (!isMessage(data) || (data.projectId !== undefined && data.projectId !== projectId)) return
       switch (data.type) {
-        case 'vibedev:film-view-ready':
-          // The canvas is listening: show the part this tab is for.
+        case 'vibedev:film-view-ready': {
+          // The canvas is listening: show the part this tab is for, and a node the 剧本 tab asked for while it loaded.
           post(viewRequest())
+          const nodeId = view === 'canvas' ? takeCanvasFocus(projectId) : undefined
+          if (nodeId !== undefined) post(focus(nodeId))
           break
+        }
         case 'vibedev:canvas-theme-request':
           this.sendTheme(post, readHostTheme())
           break
         case 'vibedev:story-open':
+          // 返回编剧 on a source card: the 剧本 tab opens the object it came from.
+          if (typeof data.documentId === 'string' && typeof data.objectId === 'string') requestStoryOpen(projectId, { documentId: data.documentId, objectId: data.objectId })
           options.openView('story')
           break
         case 'vibedev:timeline-open':
@@ -81,6 +89,9 @@ export function canvasProtocol(options: CanvasHostOptions): FrameProtocol {
         default:
           break
       }
+    },
+    attach(post) {
+      return view === 'canvas' ? onCanvasFocus(projectId, (nodeId) => { post(focus(nodeId)) }) : () => {}
     },
   }
 }

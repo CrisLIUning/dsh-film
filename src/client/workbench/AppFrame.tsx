@@ -27,6 +27,8 @@ export interface FrameProtocol {
   sendTheme(post: FramePost, theme: HostTheme): void
   /** Handle one message from the app (already checked to come from this frame). */
   receive(data: unknown, post: FramePost): void
+  /** Start sending the app messages of the workbench's own (other tabs' requests) once it is loaded; returns the stop. */
+  attach?(post: FramePost): () => void
 }
 
 export interface AppFrameProps {
@@ -80,9 +82,11 @@ export function AppFrame({ app, protocol, title, t, missing }: AppFrameProps): R
     }
     window.addEventListener('message', receive)
     const stop = observeHostTheme((theme) => { current.current.sendTheme(post, theme) })
+    const detach = current.current.attach?.(post)
     return () => {
       window.removeEventListener('message', receive)
       stop()
+      detach?.()
     }
   }, [availability])
 

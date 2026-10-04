@@ -4,14 +4,28 @@
  * section and card logic edits what the service wrote.
  */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createProject } from '../../src/project.js'
 import { createStudioRouter } from '../../src/routes.js'
 import { parseStoryMarkdown } from '../../src/screenwriter/contracts/index.js'
 import { replaceStoryEditorSection, sectionRole, storyEditorSections } from '../../src/client/workbench/story/body-sections.js'
 import { mergeStoryCardFields, readStoryCard, storyCardOperations } from '../../src/client/workbench/story/cards.js'
+import {
+  bindPlan,
+  bindingFileName,
+  coverBinding,
+  currentReferenceRead,
+  effectiveBindings,
+  overrideToggle,
+  referenceReadKey,
+  referenceRowStatus,
+  setMainOperations,
+} from '../../src/client/workbench/story/references.js'
+import type { ReferenceRead } from '../../src/client/workbench/story/references.js'
 import { StoryApiError, StoryConflictError, storyApi } from '../../src/client/workbench/story/story-api.js'
 import type { StoryApi } from '../../src/client/workbench/story/story-api.js'
 
@@ -164,5 +178,97 @@ describe('card editing on a real screenplay', () => {
     const remote = { ...baseline, visualState: '湿透的蓑衣' }
     expect(mergeStoryCardFields(baseline, { ...baseline, name: '蓑衣客' }, remote)).toEqual({ merged: { ...remote, name: '蓑衣客' }, conflicts: [] })
     expect(mergeStoryCardFields(baseline, { ...baseline, name: '蓑衣客' }, { ...baseline, name: '刀客' }).conflicts).toEqual(['name'])
+  })
+})
+
+describe('reference images through the client API', () => {
+  const sha = (text: string): string => createHash('sha256').update(text).digest('hex')
+
+  /** A film with two images (one with a Chinese name and a space) and the screenplay. */
+  async function film() {
+    const project = (await createProject(cwd, { title: '雨夜来客', aspectRatio: '16:9' })).project
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', '陌生人 正面.png'), 'face bytes')
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'side.png'), 'side bytes')
+    return { project, document: await screenplay() }
+  }
+
+  it('lists the library, binds the picked images and reads them back', async () => {
+    const { document } = await film()
+    const library = await api.assets()
+    expect(library.map(item => item.filePath).sort()).toEqual(['canvas/media/side.png', 'canvas/media/陌生人 正面.png'])
+    const face = library.find(item => item.filePath.endsWith('正面.png'))!
+    expect(face.sha256).toBe(sha('face bytes'))
+
+    // The picker's plan: the first picked image becomes the main reference.
+    const target = { kind: 'entity' as const, id: 'person_1' }
+    const picked = [face, library.find(item => item.filePath.endsWith('side.png'))!]
+    let current = document
+    for (const item of bindPlan(picked, { target, scope: 'document', purpose: 'appearance', direct: [] })) {
+      current = (await api.bind(current.documentId, { ...item, expectedRevision: current.revision, operationId: `bind-${item.filePath.length}` })).document
+    }
+    const metadata = current.parsed.metadata!
+    expect(metadata.bindings.map(item => item.primary)).toEqual([true, false])
+    const cover = coverBinding(metadata, target)!
+    expect(bindingFileName(metadata, cover)).toBe('陌生人 正面.png')
+    expect(effectiveBindings(metadata, target, 'scene_1', 'appearance')).toMatchObject({ inherited: true, suppressed: false })
+
+    const references = await api.references(current.documentId)
+    expect(references.map(item => item.status)).toEqual(['available', 'available'])
+    const read: ReferenceRead = { key: referenceReadKey(current.documentId, current.revision), status: 'loaded', references }
+    expect(referenceRowStatus(currentReferenceRead(read, referenceReadKey(current.documentId, current.revision)), cover).status).toBe('available')
+
+    // The cover and the picker thumbnails load through the studio route.
+    const bytes = await fetch(api.referenceUrl(current.documentId, cover.assetId, cover.assetVersionId))
+    expect([bytes.status, bytes.headers.get('content-type'), await bytes.text()]).toEqual([200, 'image/png', 'face bytes'])
+    const thumbnail = await fetch(api.fileUrl(face.filePath))
+    expect([thumbnail.status, await thumbnail.text()]).toEqual([200, 'face bytes'])
+    expect(requests.at(-1)?.path).toBe('/app/api/dsh-film/studio?path=/api/projects/film-1/raw/canvas/media/%E9%99%8C%E7%94%9F%E4%BA%BA%20%E6%AD%A3%E9%9D%A2.png')
+
+    // A changed file is reported, not substituted.
+    await writeFile(join(cwd, 'film', 'canvas', 'media', '陌生人 正面.png'), 'retouched')
+    const after = await api.references(current.documentId)
+    expect(after.find(item => item.asset.id === cover.assetId)?.status).toBe('version-mismatch')
+    expect((await fetch(api.referenceUrl(current.documentId, cover.assetId, cover.assetVersionId))).status).toBe(409)
+  })
+
+  it('sets a main reference, turns a purpose off for a scene and unbinds through the store paths', async () => {
+    const { document } = await film()
+    const target = { kind: 'entity' as const, id: 'person_1' }
+    const [face, side] = (await api.assets()).sort((left, right) => left.filePath.localeCompare(right.filePath))
+    let current = document
+    for (const item of bindPlan([side!, face!], { target, scope: 'document', purpose: 'appearance', direct: [] })) {
+      current = (await api.bind(current.documentId, { ...item, expectedRevision: current.revision, operationId: crypto.randomUUID() })).document
+    }
+    const extra = current.parsed.metadata!.bindings.find(item => !item.primary)!
+    current = (await api.apply(current.documentId, { expectedRevision: current.revision, operations: setMainOperations(extra), operationId: 'op-main' })).document
+    expect(current.parsed.metadata!.bindings.filter(item => item.primary).map(item => item.id)).toEqual([extra.id])
+
+    const off = overrideToggle(current.parsed.metadata!, target, 'scene_1', 'appearance', true, () => 'x1')
+    current = (await api.apply(current.documentId, { expectedRevision: current.revision, operations: off, operationId: 'op-off' })).document
+    expect(effectiveBindings(current.parsed.metadata!, target, 'scene_1', 'appearance')).toMatchObject({ bindings: [], suppressed: true })
+    const on = overrideToggle(current.parsed.metadata!, target, 'scene_1', 'appearance', false, () => 'x2')
+    current = (await api.apply(current.documentId, { expectedRevision: current.revision, operations: on, operationId: 'op-on' })).document
+    expect(current.parsed.metadata!.referenceOverrides).toEqual([])
+
+    const unbound = await api.unbind(current.documentId, extra.id, current.revision)
+    expect(requests.at(-1)).toEqual({ method: 'POST', path: `/app/api/dsh-film/studio-write?path=/api/projects/film-1/story/documents/${current.documentId}/bindings/${extra.id}`, verb: 'DELETE' })
+    expect(unbound.changed).toBe(true)
+    // The remaining binding takes over as main; the file stays.
+    expect(unbound.document.parsed.metadata!.bindings.map(item => item.primary)).toEqual([true])
+    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'side.png'), 'utf8')).toBe('side bytes')
+
+    const stale = await api.unbind(current.documentId, 'binding_gone', current.revision).catch((error: unknown) => error)
+    expect(stale).toBeInstanceOf(StoryConflictError)
+  })
+
+  it('refuses a binding whose image changed since it was listed', async () => {
+    const { document } = await film()
+    const [face] = await api.assets()
+    await writeFile(join(cwd, 'film', 'canvas', 'media', face!.filePath.split('/').pop()!), 'changed meanwhile')
+    const [item] = bindPlan([face!], { target: { kind: 'entity', id: 'person_1' }, scope: 'document', purpose: 'appearance', direct: [] })
+    const refused = await api.bind(document.documentId, { ...item!, expectedRevision: document.revision, operationId: 'op-changed' }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(StoryApiError)
+    expect(refused).toMatchObject({ status: 409, code: 'STORY_ASSET_CHANGED' })
   })
 })
