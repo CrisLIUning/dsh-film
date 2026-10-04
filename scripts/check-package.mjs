@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 /**
  * Pre-pack guard (run by `npm run prepack` after the build): refuse to pack a
- * package that would install but silently lack parts.
+ * package that would install but silently lack parts, or carry parts it no
+ * longer ships.
  *
- * - The built apps: without apps/ the package still loads, but the storyboard
- *   canvas, director desk and editing desk tabs have nothing to show
- *   (src/apps.ts findApps returns []) and captions have no runner page.
- * - The licences and notices that must ship with vendored and bundled code,
- *   including the editor's licenses/ (LGPL, MPL, Apache, ONNX Runtime,
- *   MediaPipe and OpenCV texts and the libav.js build record) and the
- *   sections of its THIRD-PARTY-NOTICES.txt that point at them.
+ * - The built app: without apps/canvas the package still loads, but the
+ *   storyboard canvas and director desk tabs have nothing to show (src/apps.ts
+ *   findApps returns []).
+ * - apps/ holds the canvas and nothing else: the Host serves every
+ *   apps/<dir> with an index.html (src/apps.ts findApps), and build-apps only
+ *   replaces the app it builds, so a folder left from an earlier build (0.1's
+ *   apps/editor) would ship and be routed.
+ * - No top-level vendor/ or models/ (0.1's editor bridge and model lists).
+ * - The licences and notices that must ship with bundled code, including the
+ *   Apache License beside the director desk's glTF decoders when it has them.
  * - None of the app files scripts/app-excludes.mjs removes is present.
  * - lib/ holds only output of a current src/ file (tsc never deletes stale
- *   output; a removed lib/captions/gateway.js once nearly shipped), and the
- *   entry files package.json points at exist.
+ *   output; a removed module once nearly shipped), and the entry files
+ *   package.json points at exist.
  * - No file in lib/ or client/ contains this checkout's absolute path or a
  *   home-directory path (a build that bakes in where it ran).
- * - No app code or data file carries GPL-3.0 eSpeak NG (the editor's VibeDev
- *   build leaves out the Kokoro and vits-web Piper voices that bring it).
  * - Every app file name can be routed by the Host (others are skipped).
  *
  *   node scripts/check-package.mjs
@@ -30,38 +32,28 @@ const root = resolve(import.meta.dirname, '..')
 const problems = []
 const SEGMENT = /^[A-Za-z0-9_$.-]+$/
 
-const REBUILD_APPS = 'rebuild with `node scripts/build-apps.mjs canvas editor` (maintainers: needs the canvas, director desk and editor checkouts)'
-const REWRITE_NOTICES = 'write them with `node scripts/build-apps.mjs notices canvas editor`'
+/** The one app the package ships. */
+const APP = 'canvas'
+const REBUILD_APPS = 'rebuild with `node scripts/build-apps.mjs canvas` (maintainers: needs the canvas and director desk checkouts)'
+const REWRITE_NOTICES = 'write them with `node scripts/build-apps.mjs notices canvas`'
 
 /** Files the package must carry, with what goes wrong without each and how to fix it. */
 const REQUIRED = [
   ['apps/canvas/index.html', 'the storyboard canvas and director desk tabs would be empty', REBUILD_APPS],
-  ['apps/editor/index.html', 'the editing desk tab would be empty', REBUILD_APPS],
-  ['apps/editor/caption-runner.html', 'caption recognition would have no runner page', REBUILD_APPS],
   ['LICENSE', 'the package would ship without its own licence', 'restore it from git'],
   ['lib/director/vendor/director-math/LICENSE', 'the vendored director math would ship without its licence', 'run `npm run build`'],
   ['apps/canvas/LICENSE', 'the canvas would ship without its licence', REWRITE_NOTICES],
   ['apps/canvas/THIRD-PARTY-NOTICES.txt', 'the canvas bundle would ship without its third-party notices', REWRITE_NOTICES],
   ['apps/canvas/director-desk/LICENSE', 'the director desk would ship without its licence', REWRITE_NOTICES],
   ['apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt', 'the director desk would ship without its third-party notices', REBUILD_APPS],
-  ['apps/editor/LICENSE', 'the editing desk would ship without its licence', REWRITE_NOTICES],
-  ['apps/editor/ai-video-editor/LICENSE', 'the embedded ai-video-editor would ship without its licence', REWRITE_NOTICES],
-  ['apps/editor/ai-video-editor/MODEL_LICENSES.md', 'the editor\'s model and media licence notice would be missing', REWRITE_NOTICES],
-  ['apps/editor/THIRD-PARTY-NOTICES.txt', 'the editor bundle would ship without its third-party notices', REWRITE_NOTICES],
-  ['apps/editor/licenses/LGPL-2.1.txt', 'the editor\'s FFmpeg code (libav.js build, AAC encoder) would ship without the LGPL', REWRITE_NOTICES],
-  ['apps/editor/licenses/libav-timeline-compat-BUILD.md', 'the custom libav.js build would ship without its build record', REWRITE_NOTICES],
-  ['apps/editor/licenses/mediabunny-MPL-2.0.txt', 'Mediabunny would ship without the MPL-2.0', REWRITE_NOTICES],
-  ['apps/editor/licenses/Apache-2.0.txt', 'MediaPipe, TensorFlow.js and OpenCV would ship without the Apache License', REWRITE_NOTICES],
-  ['apps/editor/licenses/onnxruntime-LICENSE.txt', 'ONNX Runtime would ship without its licence', REWRITE_NOTICES],
-  ['apps/editor/licenses/onnxruntime-ThirdPartyNotices-older-versions.txt', 'ONNX Runtime\'s older third-party notices would be missing', REWRITE_NOTICES],
-  ['apps/editor/licenses/mediapipe-LICENSE.txt', 'MediaPipe would ship without its LICENSE', REWRITE_NOTICES],
-  ['apps/editor/licenses/opencv-BSD-3-Clause.txt', 'opencv.js would ship without the BSD licence of OpenCV before 4.5', REWRITE_NOTICES],
-  ['apps/editor/licenses/opencv-COPYRIGHT.txt', 'opencv.js would ship without OpenCV\'s copyright holders', REWRITE_NOTICES],
-  ['vendor/video-editor-bridge.mjs', 'the Host half could not load (timeline commands, captions, render)', REBUILD_APPS],
-  ['vendor/video-editor-bridge.LICENSE.txt', 'the bridge contract would ship without its licences', REWRITE_NOTICES],
 ]
 
 const fileAt = path => statSync(join(root, ...path.split('/')), { throwIfNoEntry: false })
+
+// The director desk's optional glTF decoders (Draco is Apache-2.0) need the licence text beside them.
+if (fileAt('apps/canvas/director-desk/decoders')?.isDirectory() === true) {
+  REQUIRED.push(['apps/canvas/director-desk/licenses/Apache-2.0.txt', 'the director desk\'s Draco decoder would ship without the Apache License', REBUILD_APPS])
+}
 
 for (const [path, consequence, fix] of REQUIRED) {
   const info = fileAt(path)
@@ -69,44 +61,27 @@ for (const [path, consequence, fix] of REQUIRED) {
   else if (info.size === 0) problems.push(`${path} is empty: ${consequence}; ${fix}.`)
 }
 
-// The ONNX Runtime notices are versioned: one file for the newest onnxruntime-web the editor holds.
-const editorLicences = join(root, 'apps', 'editor', 'licenses')
-if (existsSync(editorLicences) && !readdirSync(editorLicences).some(name => /^onnxruntime-ThirdPartyNotices-v\d[^/]*\.txt$/u.test(name))) {
-  problems.push(`apps/editor/licenses/onnxruntime-ThirdPartyNotices-v<version>.txt is missing: ONNX Runtime's third-party notices would not ship; ${REWRITE_NOTICES}.`)
+// apps/ holds the canvas only: anything else there would ship, and a folder with an index.html would be served.
+if (existsSync(join(root, 'apps'))) {
+  const others = readdirSync(join(root, 'apps')).filter(name => name !== APP)
+  if (others.length > 0) {
+    problems.push(`apps/ holds ${others.map(name => `apps/${name}`).join(', ')} besides apps/${APP}: the package ships only the canvas, `
+      + 'and the Host would serve a leftover app folder; delete it by hand (build-apps replaces only the app it builds).')
+  }
 }
 
-// The editor's notices must carry the sections that point at those texts (an old notices file would not).
-const EDITOR_SECTIONS = [
-  'FFmpeg code under the GNU Lesser General Public License',
-  'Mediabunny (MPL-2.0): where its source is',
-  'ONNX Runtime (MIT, Microsoft)',
-  'MediaPipe (Apache-2.0, Google)',
-  'OpenCV (vendor/opencv.js)',
-]
-if (fileAt('apps/editor/THIRD-PARTY-NOTICES.txt')?.isFile() === true) {
-  const notices = readFileSync(join(root, 'apps', 'editor', 'THIRD-PARTY-NOTICES.txt'), 'utf8')
-  const missing = EDITOR_SECTIONS.filter(title => !notices.includes(`\n${title}\n`))
-  if (missing.length > 0) problems.push(`apps/editor/THIRD-PARTY-NOTICES.txt lacks the section(s) ${missing.map(title => `"${title}"`).join(', ')}; ${REWRITE_NOTICES}.`)
-}
-
-// MODEL_LICENSES.md's relative links must resolve in the package.
-if (fileAt('apps/editor/ai-video-editor/MODEL_LICENSES.md')?.isFile() === true) {
-  const base = join(root, 'apps', 'editor', 'ai-video-editor')
-  const text = readFileSync(join(base, 'MODEL_LICENSES.md'), 'utf8')
-  const broken = [...text.matchAll(/\]\(([^)\s#]+)(#[^)\s]*)?\)/gu)]
-    .map(match => match[1])
-    .filter(target => !/^[a-z][a-z0-9+.-]*:/iu.test(target) && statSync(resolve(base, target), { throwIfNoEntry: false })?.isFile() !== true)
-  if (broken.length > 0) problems.push(`apps/editor/ai-video-editor/MODEL_LICENSES.md has ${broken.length} link(s) that do not resolve in the package, e.g. ${broken[0]}; ${REWRITE_NOTICES}.`)
+// 0.1's editor bridge and model lists must not come back.
+for (const folder of ['vendor', 'models']) {
+  if (existsSync(join(root, folder))) problems.push(`${folder}/ exists at the top of the package: it belonged to an app 0.1 shipped and this version does not; delete it.`)
 }
 
 // Files the trim removes.
-for (const app of ['canvas', 'editor']) {
-  const directory = join(root, 'apps', app)
-  if (!existsSync(directory)) continue
-  const leftover = excludedFiles(app, directory)
+{
+  const directory = join(root, 'apps', APP)
+  const leftover = existsSync(directory) ? excludedFiles(APP, directory) : []
   if (leftover.length > 0) {
-    problems.push(`apps/${app} still holds ${leftover.length} file(s) dsh-film does not ship (scripts/app-excludes.mjs), e.g. ${leftover[0].path}; `
-      + `remove them with \`node scripts/build-apps.mjs trim ${app}\`.`)
+    problems.push(`apps/${APP} still holds ${leftover.length} file(s) dsh-film does not ship (scripts/app-excludes.mjs), e.g. ${leftover[0].path}; `
+      + `remove them with \`node scripts/build-apps.mjs trim ${APP}\`.`)
   }
 }
 
@@ -164,40 +139,13 @@ if (existsSync(join(root, 'lib'))) {
   if (leaks.length > 0) problems.push(`${leaks.length} build file(s) contain an absolute path from the build machine, e.g. ${leaks[0]}; fix the build and run \`npm run build\`.`)
 }
 
-// eSpeak NG is GPL-3.0-or-later. The editor's VibeDev build leaves out the two speech
-// front ends that carry it (Kokoro through phonemizer, the vits-web Piper voices through
-// piper-phonemize) and its own build fails on these markers; this repeats the check on
-// what is about to ship, so an editor copied in from an older build cannot slip through.
-{
-  const MARKERS = ['espeak_EVENT_TYPE', 'espeak-ng-data', 'piper_phonemize', 'kokoro-js', 'KokoroTTS', '@diffusionstudio/vits-web']
-  const NAMES = /(^|[/\\])(kokoro|phonemizer|vits-web|espeak)[^/\\]*$/iu
-  // Licence texts and notices may name these packages; only code and data can carry them.
-  const DOCUMENT = /(\.(md|txt)|(^|[/\\])(LICEN[CS]E|NOTICE|COPYING)[^/\\]*)$/iu
-  const found = []
-  for (const app of ['canvas', 'editor']) {
-    const directory = join(root, 'apps', app)
-    if (!existsSync(directory)) continue
-    for (const file of walk(directory)) {
-      const path = toPosix(relative(root, file))
-      if (DOCUMENT.test(path)) continue
-      if (NAMES.test(path)) { found.push(`${path} (file name)`); continue }
-      const text = readFileSync(file).toString('latin1')
-      const marker = MARKERS.find(item => text.includes(item))
-      if (marker !== undefined) found.push(`${path} (${marker})`)
-    }
-  }
-  if (found.length > 0) {
-    problems.push(`${found.length} app file(s) carry GPL-3.0 eSpeak NG code, e.g. ${found[0]}: the editor copy predates the build that leaves it out; `
-      + 'rebuild with `node scripts/build-apps.mjs editor` from a video-editor checkout at or after a0282ca.')
-  }
-}
-
 // The Host routes app files by exact path; a name it cannot carry is skipped.
-for (const app of ['canvas', 'editor']) {
-  const directory = join(root, 'apps', app)
-  if (!existsSync(directory)) continue
-  const unroutable = walk(directory).map(file => toPosix(relative(directory, file))).filter(path => !path.split('/').every(part => SEGMENT.test(part)))
-  if (unroutable.length > 0) problems.push(`apps/${app}: ${unroutable.length} file name(s) the Host cannot route, e.g. ${unroutable[0]}.`)
+{
+  const directory = join(root, 'apps', APP)
+  const unroutable = existsSync(directory)
+    ? walk(directory).map(file => toPosix(relative(directory, file))).filter(path => !path.split('/').every(part => SEGMENT.test(part)))
+    : []
+  if (unroutable.length > 0) problems.push(`apps/${APP}: ${unroutable.length} file name(s) the Host cannot route, e.g. ${unroutable[0]}.`)
 }
 
 if (problems.length > 0) {
@@ -208,5 +156,5 @@ if (problems.length > 0) {
 }
 
 const count = directory => walk(join(root, directory)).length
-console.log(`[check-package] dsh-film ${manifest.version}: ok — apps/canvas ${count('apps/canvas')} files, apps/editor ${count('apps/editor')} files, `
+console.log(`[check-package] dsh-film ${manifest.version}: ok — apps/${APP} ${count(`apps/${APP}`)} files, `
   + `lib ${count('lib')} files, client ${count('client')} files; licences and notices present`)

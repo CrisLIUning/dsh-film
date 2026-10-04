@@ -52,3 +52,11 @@ for (const file of files) {
   if (/\bimport\.meta\b/.test(code)) throw new Error(`${path}: import.meta survives in a CommonJS factory`)
   console.log(`${path}: ok (${code.length} bytes)`)
 }
+
+// The entry registers exactly the three parts' tab types; 0.1's film-timeline tab must not come back.
+{
+  const entry = readFileSync('client/client.js', 'utf8')
+  const missing = ['dsh-film/story', 'dsh-film/board', 'dsh-film/director'].filter(id => !entry.includes(JSON.stringify(id)) && !entry.includes(`'${id}'`))
+  if (missing.length > 0) throw new Error(`client/client.js: the tab type(s) ${missing.join(', ')} are not registered`)
+  if (/dsh-film\/timeline|film-timeline/.test(entry)) throw new Error('client/client.js: it still registers the film-timeline tab 0.2 removed')
+}
