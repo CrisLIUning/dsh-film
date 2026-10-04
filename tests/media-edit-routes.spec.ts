@@ -125,7 +125,8 @@ describe('POST /api/canvas/video/:boardId/cut', () => {
     expect(node).toMatchObject({ type: 'video', title: '片段 1', position: { x: 100 + 320 + 96, y: 50 } })
     expect(node.metadata).toMatchObject({
       content: `/api/projects/film/raw/${done.file.name}`, status: 'success', mimeType: 'video/mp4', naturalWidth: 64, naturalHeight: 64,
-      derivedFrom: { v: 1, op: 'cut', engine: 'host-copy', sources: [{ nodeId: 'src', path: 'canvas/media/src.mp4', inMs: 500, outMs: 1500 }] },
+      // The range it really holds: to the end of the picture showing at the out point (1480–1520 ms).
+      derivedFrom: { v: 1, op: 'cut', engine: 'host-copy', sources: [{ nodeId: 'src', path: 'canvas/media/src.mp4', inMs: 500, outMs: 1520, atMs: 0 }] },
     })
     for (const key of ['videoAttempt', 'videoGenerationInput', 'videoTaskId', 'gatewayReceipt']) expect(node.metadata[key]).toBeUndefined()
     expect(document.connections).toEqual([{ id: `derived:${landed}:src`, fromNodeId: 'src', toNodeId: landed }])
@@ -177,7 +178,7 @@ describe('POST /api/canvas/video/:boardId/join', () => {
     })
     expect(started.status).toBe(202)
     const done = await finished(started.body.taskId)
-    expect(done).toMatchObject({ status: 'done', file: { kind: 'video', derivedFrom: { op: 'join', sources: [{ nodeId: 'src', inMs: 0 }, { nodeId: 'second', inMs: 1000 }] } } })
+    expect(done).toMatchObject({ status: 'done', file: { kind: 'video', derivedFrom: { op: 'join', sources: [{ nodeId: 'src', inMs: 0, outMs: 2000, atMs: 0 }, { nodeId: 'second', inMs: 1000, outMs: 2000, atMs: 2000 }] } } })
     expect(done.file.name).toMatch(/^canvas\/media\/join-[0-9a-f]{10}\.mp4$/)
     expect(done.file.durationMs).toBeGreaterThanOrEqual(3000)
     expect(done.file.durationMs).toBeLessThan(3050)
@@ -203,6 +204,18 @@ describe('POST /api/canvas/video/:boardId/join', () => {
     expect(body.reasons.map((reason: any) => [reason.index, reason.reason])).toEqual([[1, 'resolution'], [2, 'missing-audio'], [2, 'not-keyframe']])
     expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toHaveLength(3)
     expect(await call('/api/canvas/video/film-1/join', { requestId: 'd0000000-0003', clips: [{ path: 'canvas/media/src.mp4' }] })).toMatchObject({ status: 400, body: { code: 'MEDIA_EDIT_INVALID' } })
+  })
+
+  it('names a clip without a picture with every other clip\'s reasons, not alone', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    await writeFixture(media('voice.m4a'), { frames: 0, audioSeconds: 2 })
+    await writeFixture(media('wide.mp4'), { width: 96 })
+    const { status, body } = await call('/api/canvas/video/film-1/join', {
+      requestId: 'd0000000-0000-4000-8000-000000000004',
+      clips: [{ path: 'canvas/media/src.mp4' }, { path: 'canvas/media/voice.m4a' }, { path: 'canvas/media/wide.mp4' }],
+    })
+    expect(status).toBe(422)
+    expect(body.reasons.map((reason: any) => [reason.index, reason.reason])).toEqual([[1, 'codec'], [2, 'resolution']])
   })
 })
 

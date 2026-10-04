@@ -20,8 +20,10 @@
  * started. With `land: { nearNodeId, connectFrom, title? }` the Host puts the
  * result on the board right of `nearNodeId` with an edge from each of
  * `connectFrom` and `metadata.derivedFrom` (C1); without it the page lands it
- * itself. A path is the file relative to `film/` (or the board's raw URL of
- * it) and never leaves `film/`.
+ * itself. `derivedFrom.sources` (also on the task's file) give the range of
+ * each source the result really holds and `atMs`, where it starts in the
+ * result, for remapping subtitles and director cues. A path is the file
+ * relative to `film/` (or the board's raw URL of it) and never leaves `film/`.
  *
  * Errors answer `{ error: <text>, code }` like Studio's canvas routes.
  * @module dsh-film/studio/media-edit-routes
@@ -166,12 +168,20 @@ function writingProgress(progress: (line: string) => void): (fraction: number) =
   }
 }
 
-/** One source of a derived node (C1 `derivedFrom.sources`). */
+/**
+ * One source of a derived node (C1 `derivedFrom.sources`): the range of the
+ * source the result really holds (a `'shrink'` cut starts at the next key
+ * frame, and a clip can run a B-frame's reference past its out point), and
+ * `atMs`, where that range starts in the result. A source time `t` in
+ * [inMs, outMs) plays at `atMs + t - inMs`. The request itself stays in the
+ * task's parameters.
+ */
 interface DerivedSource {
   nodeId: string
   path: string
   inMs: number
   outMs: number
+  atMs: number
 }
 
 /**
@@ -217,7 +227,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       surface: 'video' | 'audio'
       op: 'cut' | 'join' | 'extract-audio'
       target: string
-      sources: DerivedSource[]
+      sources: (result: EditResult) => DerivedSource[]
       land: Landing | undefined
       metadata?: Body
       run: (absolute: string, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => Promise<EditResult>
@@ -234,7 +244,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       events.emit(cwd, { type: 'file-changed', projectId, path: name })
       const kind: BoardMediaKind = mediaKindOfPath(name) ?? edit.surface
       const mime = mediaTypeOf(name)?.type ?? (kind === 'audio' ? 'audio/mp4' : 'video/mp4')
-      const derivedFrom = { v: 1, op: edit.op, requestId: edit.requestId, engine: 'host-copy', sources: edit.sources, createdAt: new Date().toISOString() }
+      const derivedFrom = { v: 1, op: edit.op, requestId: edit.requestId, engine: 'host-copy', sources: edit.sources(result), createdAt: new Date().toISOString() }
       let landedNodeId: string | null = null
       let landError: string | undefined
       if (edit.land !== undefined) {
@@ -320,7 +330,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       surface: source.probe.video === undefined ? 'audio' : 'video',
       op: 'cut',
       target: resultPath('clip', extension),
-      sources: [{ nodeId, path: source.path, inMs: range.inMs, outMs: range.outMs }],
+      sources: result => [{ nodeId, path: source.path, ...(result.range ?? range), atMs: 0 }],
       land,
       run: (target, options) => cutFile(source.absolute, target, range, boundary, options),
     })
@@ -334,25 +344,31 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     const clips: Array<SourceFile & { probe: EditProbe; inMs: number; outMs: number; nodeId: string }> = []
     for (const [index, value] of (body.clips as unknown[]).entries()) {
       if (!isObject(value)) return reply(400, 'MEDIA_EDIT_INVALID', `Clip ${index + 1} must be an object with a path.`)
+      // A clip without a picture is one of joinProblems' reasons, reported with every other clip's.
       const source = await probedSource(request.cwd, value.path)
-      if (source.probe.video === undefined) {
-        return reply(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', `Clip ${index + 1} has no picture.`, { reasons: [{ index, reason: 'codec', detail: '这一段没有画面。' }] })
-      }
       const range = checkRange({ inMs: wholeMs(value.inMs, 'inMs'), outMs: wholeMs(value.outMs, 'outMs') }, source.probe.durationMs)
       clips.push({ ...source, ...range, nodeId: text(value.nodeId) ?? '' })
     }
     const reasons = await joinProblems(clips.map(clip => ({ path: clip.absolute, inMs: clip.inMs, outMs: clip.outMs, probe: clip.probe })))
     if (reasons.length > 0) return reply(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', '这些片段不能无损拼接，需要在分镜页里重新编码。', { reasons })
     const land = landingOf(body.land)
-    const sources = clips.map(clip => ({ nodeId: clip.nodeId, path: clip.path, inMs: clip.inMs, outMs: clip.outMs }))
+    const requested = clips.map(clip => ({ nodeId: clip.nodeId, path: clip.path, inMs: clip.inMs, outMs: clip.outMs }))
     return start(request, {
       capability: 'video.join',
       requestId,
-      parameters: { clips: sources, ...(land !== undefined ? { land } : {}) },
+      parameters: { clips: requested, ...(land !== undefined ? { land } : {}) },
       surface: 'video',
       op: 'join',
       target: resultPath('join', '.mp4'),
-      sources,
+      sources: (result) => {
+        let atMs = 0
+        return requested.map((clip, index) => {
+          // joinFiles always reports placements; the requested lengths are only a fallback.
+          const placed = result.placements?.[index] ?? { inMs: clip.inMs, outMs: clip.outMs, atMs }
+          atMs = placed.atMs + placed.outMs - placed.inMs
+          return { nodeId: clip.nodeId, path: clip.path, ...placed }
+        })
+      },
       land,
       metadata: { workflowKind: 'final', videoEditOperation: 'concat' },
       run: (target, options) => joinFiles(clips.map(clip => ({ path: clip.absolute, inMs: clip.inMs, outMs: clip.outMs })), target, options),
@@ -382,7 +398,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       surface: 'audio',
       op: 'extract-audio',
       target: resultPath('extract', extension),
-      sources: [{ nodeId, path: source.path, inMs: span.inMs, outMs: span.outMs }],
+      sources: result => [{ nodeId, path: source.path, ...(result.range ?? span), atMs: 0 }],
       land,
       run: (target, options) => extractAudio(source.absolute, target, range, options),
     })

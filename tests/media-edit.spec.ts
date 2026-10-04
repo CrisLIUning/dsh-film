@@ -43,6 +43,23 @@ async function pictureTimes(path: string): Promise<{ times: number[]; firstType:
   }
 }
 
+/** The sound packets' start times and lengths, in seconds. */
+async function soundPackets(path: string): Promise<Array<{ time: number; duration: number }>> {
+  const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+  try {
+    const track = await input.getPrimaryAudioTrack()
+    if (track === null) return []
+    const packets: Array<{ time: number; duration: number }> = []
+    for await (const packet of new EncodedPacketSink(track).packets(undefined, undefined, { metadataOnly: true })) packets.push({ time: packet.timestamp, duration: packet.duration })
+    return packets
+  } finally {
+    input.dispose()
+  }
+}
+
+/** One AAC frame at 48 kHz, in seconds. */
+const AAC_FRAME = 1024 / 48000
+
 describe('probeDetailed', () => {
   it('reads length, size, codecs, decoder configuration hashes and key frames', async () => {
     const path = await writeFixture(join(media, 'a.mp4'), { frames: 75, gop: 25 })
@@ -91,17 +108,33 @@ describe('cutFile', () => {
     expect(times[0]).toBe(-500)
     expect(times.filter(time => time >= 0)).toHaveLength(25)
     expect(await readdir(media)).toEqual(['clip-1.mp4', 'src.mp4'])
+    // It holds the source from the in point to the end of the picture showing at the out point (2480–2520 ms).
+    expect(result.range).toEqual({ inMs: 1500, outMs: 2520 })
+    // The pre-roll is no key frame a range can start on.
+    expect((await probeDetailed(result.path)).keyframesMs).toEqual([500])
   })
 
-  it('with the shrink boundary starts at the next key frame and never runs longer than the range', async () => {
+  it('with the shrink boundary starts picture and sound together at the next key frame, with no pre-roll', async () => {
     const source = await writeFixture(join(media, 'src.mp4'), { frames: 75, gop: 25 })
-    const result = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 500, outMs: 2500 }, 'shrink')
+    const result = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 600, outMs: 2500 }, 'shrink')
     const { times, firstType } = await pictureTimes(result.path)
     expect(firstType).toBe('key')
-    expect(times[0]).toBeGreaterThanOrEqual(0)
-    expect(result.durationMs).toBeLessThanOrEqual(2000)
-    // From the key frame at 1 s to 2.5 s.
+    // From the key frame at 1 s to 2.5 s, shown from 0 on: nothing for an edit list to hide.
     expect(times).toHaveLength(38)
+    expect(times[0]).toBe(0)
+    // The sound starts at 0 too; before it only the two AAC frames a decoder primes with (under the sound's own edit list).
+    const sound = await soundPackets(result.path)
+    expect(sound[0]!.time).toBeGreaterThanOrEqual(-2 * AAC_FRAME - 0.005)
+    expect(sound.some(packet => packet.time <= 1e-9 && packet.time + packet.duration > 0)).toBe(true)
+    expect(result.durationMs).toBeLessThanOrEqual(1500 + 25)
+    expect(result.range).toEqual({ inMs: 1000, outMs: 2520 })
+  })
+
+  it('with the shrink boundary refuses a range with no key frame in it', async () => {
+    const source = await writeFixture(join(media, 'src.mp4'), { frames: 75, gop: 25 })
+    const refused = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 1100, outMs: 1900 }, 'shrink').catch((error: unknown) => error)
+    expect(refused).toMatchObject({ status: 422, code: 'MEDIA_EDIT_NEEDS_TRANSCODE', extra: { reasons: [{ index: 0, reason: 'not-keyframe' }] } })
+    expect(await readdir(media)).toEqual(['src.mp4'])
   })
 
   it('keeps the name of an existing file and takes the next free one', async () => {
@@ -177,6 +210,69 @@ describe('joinFiles', () => {
     const joined = await probeDetailed(result.path)
     expect(joined.keyframesMs).toEqual([0, 1000, 2000, 3000])
     expect(joined.video?.configHash).toBe(a.probe.video?.configHash)
+    expect(result.placements).toEqual([{ inMs: 0, outMs: 2000, atMs: 0 }, { inMs: 1000, outMs: 3000, atMs: 2000 }])
+  })
+
+  it('starts a first clip between key frames with its pre-roll hidden, and the next clip right after its in-range part', async () => {
+    const a = await clip('a.mp4', { frames: 75 })
+    const b = await clip('b.mp4', { frames: 75 })
+    const clips = [{ path: a.path, inMs: 500, outMs: 2000 }, { path: b.path, inMs: 1000, outMs: 2000 }]
+    expect(await joinProblems(clips.map((entry, index) => ({ ...entry, probe: [a, b][index]!.probe })))).toEqual([])
+    const result = await joinFiles(clips, join(media, 'join-1.mp4'))
+    const { times, firstType } = await pictureTimes(result.path)
+    expect(firstType).toBe('key')
+    // A's pictures from its key frame at 0 (shown before 0, under the edit list), then B's from 1500 ms.
+    expect(times.slice(0, 2)).toEqual([-500, -460])
+    expect(times).toHaveLength(75)
+    expect(times.slice(49, 51)).toEqual([1460, 1500])
+    expect(result.placements).toEqual([{ inMs: 500, outMs: 2000, atMs: 0 }, { inMs: 1000, outMs: 2000, atMs: 1500 }])
+    expect(result.durationMs).toBeGreaterThanOrEqual(2500)
+    expect(result.durationMs).toBeLessThan(2500 + 25)
+    expect((await probeDetailed(result.path)).keyframesMs).toEqual([500, 1500])
+  })
+
+  it('refuses a cut\'s result as a later clip: its first picture hangs on a key frame of the hidden pre-roll', async () => {
+    const a = await clip('a.mp4', { frames: 75 })
+    const b = await clip('b.mp4', { frames: 75 })
+    const cut = await cutFile(a.path, join(media, 'cut.mp4'), { inMs: 1500, outMs: 2500 }, 'expand')
+    const cutProbe = await probeDetailed(cut.path)
+    const clips = [{ path: b.path, inMs: 0, outMs: 1000 }, { path: cut.path, inMs: 0, outMs: cutProbe.durationMs! }]
+    const reasons = await joinProblems([{ ...clips[0]!, probe: b.probe }, { ...clips[1]!, probe: cutProbe }])
+    expect(reasons).toEqual([{ index: 1, reason: 'not-keyframe', detail: expect.stringContaining('下一个关键帧在 500 ms') }])
+    // joinFiles refuses it too rather than showing the pre-roll mid-film.
+    await expect(joinFiles(clips, join(media, 'join-1.mp4'))).rejects.toMatchObject({ code: 'VIDEO_JOIN_NEEDS_TRANSCODE', extra: { reasons: [{ index: 1, reason: 'not-keyframe' }] } })
+    // As the first clip it joins, the pre-roll hidden by the edit list.
+    const first = await joinFiles([clips[1]!, clips[0]!], join(media, 'join-2.mp4'))
+    expect(first.placements?.[1]?.atMs).toBe(cut.range!.outMs - cut.range!.inMs)
+  })
+
+  it('writes the sound back to back across the cuts, never more than half a frame off the picture', async () => {
+    const clips = []
+    for (const name of ['a.mp4', 'b.mp4', 'c.mp4']) clips.push({ path: (await clip(name, { frames: 50 })).path, inMs: 0, outMs: 2000 })
+    const result = await joinFiles(clips, join(media, 'join-1.mp4'))
+    const sound = await soundPackets(result.path)
+    // Every packet is one AAC frame and starts where the one before ended: no gap a player could drop.
+    expect(sound.every(packet => Math.abs(packet.duration - AAC_FRAME) < 1e-6)).toBe(true)
+    expect(sound.slice(1).every((packet, index) => Math.abs(packet.time - (sound[index]!.time + sound[index]!.duration)) < 1e-6)).toBe(true)
+    // Where each clip's sound starts in the result, against its picture.
+    for (const placed of result.placements!.slice(1)) {
+      const at = placed.atMs / 1000
+      const first = sound.find(packet => packet.time >= at - AAC_FRAME / 2)!
+      expect(Math.abs(first.time - at)).toBeLessThanOrEqual(AAC_FRAME / 2 + 1e-6)
+    }
+    const end = sound.at(-1)!.time + sound.at(-1)!.duration
+    expect(Math.abs(end - 6)).toBeLessThanOrEqual(AAC_FRAME)
+  })
+
+  it('refuses a clip whose sound ends more than a frame before its picture, unless it is the last', async () => {
+    const a = await clip('a.mp4', { frames: 50, audioSeconds: 1.9 })
+    const b = await clip('b.mp4', { frames: 50 })
+    const entries = (first: typeof a, second: typeof a) => [{ path: first.path, probe: first.probe, inMs: 0, outMs: 2000 }, { path: second.path, probe: second.probe, inMs: 0, outMs: 2000 }]
+    const reasons = await joinProblems(entries(a, b))
+    expect(reasons).toEqual([{ index: 0, reason: 'missing-audio', detail: expect.stringContaining('早') }])
+    await expect(joinFiles(entries(a, b), join(media, 'join-1.mp4'))).rejects.toMatchObject({ code: 'VIDEO_JOIN_NEEDS_TRANSCODE', extra: { reasons: [{ index: 0, reason: 'missing-audio' }] } })
+    expect(await joinProblems(entries(b, a))).toEqual([])
+    expect((await readdir(media)).sort()).toEqual(['a.mp4', 'b.mp4'])
   })
 
   it('keeps a B-frame\'s reference past the out point and starts the next clip after it, so no two pictures share a time', async () => {
@@ -192,6 +288,8 @@ describe('joinFiles', () => {
     expect(shown[0]).toBe(0)
     // Every gap between pictures is one frame: nothing missing, nothing doubled.
     expect(shown.slice(1).every((time, index) => time - shown[index]! === 40)).toBe(true)
+    // The placements say so: A runs to 1000 ms, not the 940 asked for, and B starts there.
+    expect(result.placements).toEqual([{ inMs: 0, outMs: 1000, atMs: 0 }, { inMs: 1000, outMs: 2000, atMs: 1000 }])
   })
 
   it('names every clip that cannot be copied into one track, and why', async () => {

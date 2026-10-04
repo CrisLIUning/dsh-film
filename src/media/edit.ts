@@ -12,26 +12,35 @@
  * - Cut: a `Conversion` with `trim` and `copy: { mode: 'forced' }`. With the
  *   default `'expand'` boundary the copy starts at the key frame before the
  *   in point and the MP4 gets an edit list that starts playback exactly at
- *   it; `'shrink'` starts at the next key frame instead (for players that
- *   ignore edit lists). Audio-only files keep their container.
+ *   it; `'shrink'` moves the in point to the first key frame at or after it,
+ *   so picture and sound both start there with no pre-roll and no edit list
+ *   on the picture (for players that ignore edit lists). Audio-only files
+ *   keep their container. The result reports the source range it really
+ *   holds (`range`).
  * - Join: mediabunny has no concatenation, so packets are read from each clip
  *   (`EncodedPacketSink`) and written to one video and one audio track
  *   (`EncodedVideoPacketSource` / `EncodedAudioPacketSource`) with their
  *   timestamps shifted. A track takes one decoder configuration, so every clip
  *   must match the first in codec, coded size and decoder configuration
  *   (avcC), in sound format, and every clip after the first must start on a
- *   key frame.
+ *   key frame (a cut's hidden pre-roll is not one). The sound is written back
+ *   to back, a packet dropped at a cut where keeping it would put the sound
+ *   more than half a frame ahead of the picture; a clip whose sound leaves a
+ *   gap of more than a frame is refused (`missing-audio`), since a copy cannot
+ *   fill it with silence. The result reports where each clip sits
+ *   (`placements`).
  * - Extract audio: a `Conversion` with the video discarded and the audio
  *   copied into an MP4 audio file (`.m4a`), or the source's own container
  *   when it is already an audio file.
  *
  * Every edit writes a hidden temporary file next to its result and renames it
- * when it is complete; a cancelled or failed edit deletes it.
+ * when it is complete; a cancelled or failed edit deletes it, and
+ * {@link sweepEditTemporaries} removes what a crashed or killed Host left.
  * @module dsh-film/media/edit
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { link, lstat, rename, rm, stat } from 'node:fs/promises'
+import { link, lstat, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import {
   ALL_FORMATS, Conversion, ConversionCanceledError, EncodedAudioPacketSource, EncodedPacketSink, EncodedVideoPacketSource, FilePathSource,
@@ -90,7 +99,7 @@ export interface EditProbe {
   hasAudio?: boolean
   video?: VideoTrackFacts
   audio?: AudioTrackFacts
-  /** Presentation times of the first {@link PROBE_KEYFRAME_LIMIT} key frames. */
+  /** Presentation times of the first {@link PROBE_KEYFRAME_LIMIT} key frames from 0 on (a cut's hidden pre-roll is left out). */
   keyframesMs?: number[]
   /** The picture's rotation metadata, in degrees (not part of the route answer). */
   rotation?: number
@@ -107,6 +116,20 @@ export interface EditResult {
   width?: number
   height?: number
   hasAudio?: boolean
+  /** A cut or sound copy: the range of the source (ms) the result really holds, which may start at a later key frame (`'shrink'`) or end a B-frame's reference past the out point. */
+  range?: { inMs: number; outMs: number }
+  /** A join: where each clip sits, in play order. */
+  placements?: ClipPlacement[]
+}
+
+/** Where one clip of a join sits: the range of its source the result holds, and where that starts in the result. */
+export interface ClipPlacement {
+  /** Source time (ms) the clip starts at: its in point, or the key frame on it. */
+  inMs: number
+  /** Source time (ms) its picture ends at, a B-frame's reference past the out point included. */
+  outMs: number
+  /** Where it starts in the result (ms). */
+  atMs: number
 }
 
 export interface EditOptions {
@@ -192,7 +215,9 @@ async function keyframesOf(track: InputVideoTrack): Promise<number[]> {
   const times: number[] = []
   let packet = await sink.getFirstKeyPacket({ metadataOnly: true })
   while (packet !== null && times.length < PROBE_KEYFRAME_LIMIT) {
-    times.push(Math.round(packet.timestamp * 1000))
+    const time = Math.round(packet.timestamp * 1000)
+    // A cut's pre-roll (before 0, hidden by the edit list) is no place a range can start.
+    if (time >= 0) times.push(time === 0 ? 0 : time)
     packet = await sink.getNextKeyPacket(packet, { metadataOnly: true })
   }
   return times
@@ -333,7 +358,27 @@ async function resultFacts(path: string): Promise<EditResult> {
 }
 
 /**
- * Run one copying `Conversion` into a temporary file, then name it.
+ * How long a result's picture (or, without one, its sound) runs from 0: what
+ * of the source a cut really holds after its start.
+ * @param path - the result.
+ * @returns seconds, or `undefined` when it cannot be read.
+ */
+async function primaryEnd(path: string): Promise<number | undefined> {
+  const input = openInput(path)
+  try {
+    const track = await input.getPrimaryVideoTrack() ?? await input.getPrimaryAudioTrack()
+    const end = track === null ? undefined : await track.computeDuration()
+    return end !== undefined && Number.isFinite(end) && end > 0 ? end : undefined
+  } catch {
+    return undefined
+  } finally {
+    input.dispose()
+  }
+}
+
+/**
+ * Run one copying `Conversion` into a temporary file, then name it. A trim
+ * copies from the key frame before its start, which the MP4's edit list hides.
  * @param source - the absolute source path.
  * @param target - the absolute result path wanted.
  * @param format - the output container.
@@ -345,7 +390,7 @@ async function convert(
   source: string,
   target: string,
   format: OutputFormat,
-  conversion: { trim?: { start: number; end: number }; boundary: 'expand' | 'shrink'; audioOnly: boolean },
+  conversion: { trim?: { start: number; end: number }; audioOnly: boolean },
   options: EditOptions,
 ): Promise<EditResult> {
   const { signal } = options
@@ -362,7 +407,7 @@ async function convert(
       output,
       ...(conversion.audioOnly ? { video: { discard: true } } : {}),
       ...(conversion.trim !== undefined ? { trim: conversion.trim } : {}),
-      copy: { mode: 'forced', boundaryPolicy: conversion.boundary },
+      copy: { mode: 'forced', boundaryPolicy: 'expand' },
       showWarnings: false,
     })
     const refused = running.discardedTracks.find(entry => entry.reason === 'cannot_copy' && (entry.track.isAudioTrack() || entry.track.isVideoTrack()))
@@ -377,7 +422,9 @@ async function convert(
     await running.execute()
     if (isAborted(signal)) throw abortError(signal)
     const named = await settle(temporary, target)
-    return await resultFacts(named)
+    const [facts, end] = await Promise.all([resultFacts(named), primaryEnd(named)])
+    const startMs = Math.round((conversion.trim?.start ?? 0) * 1000)
+    return { ...facts, ...(end !== undefined ? { range: { inMs: startMs, outMs: startMs + Math.round(end * 1000) } } : {}) }
   } catch (error) {
     if (output.state === 'started' || output.state === 'pending') await output.cancel().catch(() => undefined)
     if (error instanceof ConversionCanceledError || isAborted(signal)) throw abortError(signal)
@@ -394,7 +441,7 @@ async function convert(
  * @param source - the absolute source path.
  * @param target - the absolute result path wanted (`.mp4` for a video, the source's container for audio).
  * @param range - the range, in ms of the source.
- * @param boundary - `'expand'` starts at the key frame before the in point (with an edit list); `'shrink'` at the one after.
+ * @param boundary - `'expand'` copies from the key frame before the in point and starts playback at the in point (an edit list); `'shrink'` moves the in point to the first key frame at or after it.
  * @param options - cancel and progress.
  * @returns the result.
  */
@@ -402,7 +449,38 @@ export async function cutFile(source: string, target: string, range: { inMs: num
   const probe = await probeDetailed(source)
   if (!probe.ok) throw new MediaEditError(422, 'MEDIA_EDIT_UNSUPPORTED', 'The file cannot be read as video or audio.')
   const { format } = copyTarget(source, probe, false)
-  return convert(source, target, format(), { trim: { start: range.inMs / 1000, end: range.outMs / 1000 }, boundary, audioOnly: false }, options)
+  let start = range.inMs / 1000
+  if (boundary === 'shrink' && probe.video !== undefined) {
+    // mediabunny's own 'shrink' keeps the in point as time 0 and leaves the picture to an empty edit; starting the
+    // trim on the key frame itself puts picture and sound at 0 together, with nothing to hide.
+    const key = await keyFrameFrom(source, range.inMs)
+    if (key === undefined || key * 1000 >= range.outMs - KEYFRAME_TOLERANCE_MS) {
+      const detail = `${range.inMs}–${range.outMs} ms 里没有关键帧，不能从关键帧开始剪。`
+      throw new MediaEditError(422, 'MEDIA_EDIT_NEEDS_TRANSCODE', detail, { reasons: [{ index: 0, reason: 'not-keyframe', detail }] })
+    }
+    start = key
+  }
+  return convert(source, target, format(), { trim: { start, end: range.outMs / 1000 }, audioOnly: false }, options)
+}
+
+/**
+ * The first key frame at or after a time.
+ * @param path - the video.
+ * @param inMs - the time.
+ * @returns its presentation time in seconds, or `undefined` when none follows.
+ */
+async function keyFrameFrom(path: string, inMs: number): Promise<number | undefined> {
+  const input = openInput(path)
+  try {
+    const track = await input.getPrimaryVideoTrack()
+    if (track === null) return undefined
+    const sink = new EncodedPacketSink(track)
+    let packet = await sink.getKeyPacket((inMs + KEYFRAME_TOLERANCE_MS) / 1000, { verifyKeyPackets: true }) ?? await sink.getFirstKeyPacket({ verifyKeyPackets: true })
+    while (packet !== null && packet.timestamp * 1000 < inMs - KEYFRAME_TOLERANCE_MS) packet = await sink.getNextKeyPacket(packet, { verifyKeyPackets: true })
+    return packet?.timestamp
+  } finally {
+    input.dispose()
+  }
 }
 
 /**
@@ -420,7 +498,6 @@ export async function extractAudio(source: string, target: string, range: { inMs
   const { format } = copyTarget(source, probe, true)
   return convert(source, target, format(), {
     ...(range !== undefined ? { trim: { start: range.inMs / 1000, end: range.outMs / 1000 } } : {}),
-    boundary: 'expand',
     audioOnly: true,
   }, options)
 }
@@ -433,11 +510,13 @@ export interface JoinClip {
   outMs: number
 }
 
+
 /**
  * The key packet a clip starts from, when its in point is one.
  * @param track - the clip's picture.
  * @param inMs - the in point.
- * @returns the packet, or `null` when no key frame lies within a millisecond of it.
+ * @returns the packet, or `null` when no key frame lies within a millisecond
+ *   of it (at 0 a key frame of a cut's pre-roll, before 0, does not count).
  */
 async function keyPacketAt(track: InputVideoTrack, inMs: number): Promise<EncodedPacket | null> {
   const sink = new EncodedPacketSink(track)
@@ -446,12 +525,146 @@ async function keyPacketAt(track: InputVideoTrack, inMs: number): Promise<Encode
     // Looked up just past the in point: probes list key frames rounded to the millisecond (1458 for 1458.33).
     : await sink.getKeyPacket((inMs + KEYFRAME_TOLERANCE_MS) / 1000, { verifyKeyPackets: true })
   if (packet === null) return null
-  return inMs === 0 || Math.abs(packet.timestamp * 1000 - inMs) <= KEYFRAME_TOLERANCE_MS ? packet : null
+  const time = packet.timestamp * 1000
+  // At 0 a first picture shown a little later still starts the clip; one shown before 0 is a pre-roll the edit list hides.
+  return Math.abs(time - inMs) <= KEYFRAME_TOLERANCE_MS || (inMs === 0 && time > 0) ? packet : null
+}
+
+/** One clip measured for a join: the packet it starts from, and the source times its picture spans. */
+interface MeasuredClip {
+  sink: EncodedPacketSink
+  startPacket: EncodedPacket
+  /** Source seconds it starts at: the first clip's in point (its pre-roll hidden by an edit list), or the key frame a later clip starts on. */
+  clipStart: number
+  /** Source seconds its picture ends at. */
+  clipEnd: number
+  /** The out point, in source seconds. */
+  end: number
+}
+
+/**
+ * Find where a clip starts and measure where its picture ends (from the index
+ * only), so the sound can stop where the picture does.
+ * @param video - the clip's picture.
+ * @param clip - the clip.
+ * @param index - its place in the play order: the first may start between key frames.
+ * @returns the measures, or `null` when a later clip does not start on a key frame.
+ */
+async function measureClip(video: InputVideoTrack, clip: JoinClip, index: number): Promise<MeasuredClip | null> {
+  const sink = new EncodedPacketSink(video)
+  // The first clip may start between key frames: its pre-roll gets negative times and the MP4 an edit list.
+  const startPacket = index === 0
+    ? (clip.inMs === 0 ? await sink.getFirstKeyPacket({ verifyKeyPackets: true }) : await sink.getKeyPacket(clip.inMs / 1000, { verifyKeyPackets: true }) ?? await sink.getFirstKeyPacket({ verifyKeyPackets: true }))
+    : await keyPacketAt(video, clip.inMs)
+  if (startPacket === null) return null
+  const clipStart = index === 0 ? clip.inMs / 1000 : startPacket.timestamp
+  const end = clip.outMs / 1000
+  let clipEnd = clipStart
+  for await (const packet of clipPackets(sink, startPacket, end, true)) clipEnd = Math.max(clipEnd, packet.timestamp + packet.duration)
+  return { sink, startPacket, clipStart, clipEnd, end }
+}
+
+/**
+ * Places a join's sound packets back to back, so players that play decoded
+ * sound without looking at its times keep it with the picture. At a cut the
+ * previous clip's last packet runs past its picture and the next clip's first
+ * one may start before its own: a packet is dropped when writing it would put
+ * the sound more than half a frame ahead of the picture. A gap of more than a
+ * frame (a clip's sound ends before its picture, starts after it, or breaks
+ * off) cannot be filled by copying, so it is a reason to re-encode.
+ */
+class SoundPlacer {
+  /** Result time the next packet goes at. */
+  private cursor: number | undefined
+  private clip = { index: 0, shift: 0, first: true, soundEnd: -Infinity }
+  /** The clip before this one: its index and how much sooner (ms) its sound ended than its picture. */
+  private previous: { index: number; shortMs: number } | undefined
+
+  /**
+   * Begin a clip.
+   * @param index - its place in the play order.
+   * @param shift - what its source times add to become result times.
+   */
+  startClip(index: number, shift: number): void {
+    this.clip = { index, shift, first: true, soundEnd: -Infinity }
+  }
+
+  /**
+   * Where a packet goes.
+   * @param packet - the clip's next sound packet (source times).
+   * @returns its result time, `'skip'` to drop it, or the reason when the sound leaves a gap.
+   */
+  place(packet: EncodedPacket): number | 'skip' | JoinReason {
+    const expected = packet.timestamp + this.clip.shift
+    const first = this.clip.first
+    this.clip.first = false
+    this.clip.soundEnd = Math.max(this.clip.soundEnd, packet.timestamp + packet.duration)
+    if (this.cursor === undefined) {
+      this.cursor = expected + packet.duration
+      return expected
+    }
+    const lead = this.cursor - expected
+    if (lead > packet.duration / 2) return 'skip'
+    if (lead < -packet.duration) {
+      const gapMs = Math.round(-lead * 1000)
+      const previous = this.previous
+      if (first && previous !== undefined && previous.shortMs > packet.duration * 500) {
+        const detail = Number.isFinite(previous.shortMs)
+          ? `这一段的声音比画面早 ${previous.shortMs} ms 结束，无损拼接会让后面的声音和画面错开，需要重新编码补静音。`
+          : '这一段在所选范围里没有声音，无损拼接会让后面的声音和画面错开，需要重新编码补静音。'
+        return { index: previous.index, reason: 'missing-audio', detail }
+      }
+      return { index: this.clip.index, reason: 'missing-audio', detail: `这一段的声音和画面之间有 ${gapMs} ms 空隙（声音晚于画面开始或中途断开），需要重新编码补静音。` }
+    }
+    const at = this.cursor
+    this.cursor += packet.duration
+    return at
+  }
+
+  /**
+   * End a clip.
+   * @param clipEnd - source seconds its picture ends at.
+   */
+  endClip(clipEnd: number): void {
+    const { index, soundEnd } = this.clip
+    this.previous = { index, shortMs: soundEnd === -Infinity ? Infinity : Math.round((clipEnd - soundEnd) * 1000) }
+  }
+}
+
+/**
+ * Whether the clips' sound can be written back to back without a gap, run as
+ * {@link joinFiles} will (from the index only).
+ * @param clips - the clips in play order, every one with a picture and sound and starting where a join can.
+ * @returns the reason, when there is a gap.
+ */
+async function soundGap(clips: readonly JoinClip[]): Promise<JoinReason | undefined> {
+  const placer = new SoundPlacer()
+  let offset = 0
+  for (const [index, clip] of clips.entries()) {
+    const input = openInput(clip.path)
+    try {
+      const [video, audio] = await Promise.all([input.getPrimaryVideoTrack(), input.getPrimaryAudioTrack()])
+      if (video === null || audio === null) return undefined
+      const measured = await measureClip(video, clip, index)
+      if (measured === null) return undefined
+      placer.startClip(index, offset - measured.clipStart)
+      for await (const packet of clipSounds(audio, measured.clipStart, measured.clipEnd, true)) {
+        const placed = placer.place(packet)
+        if (typeof placed === 'object') return placed
+      }
+      placer.endClip(measured.clipEnd)
+      offset += measured.clipEnd - measured.clipStart
+    } finally {
+      input.dispose()
+    }
+  }
+  return undefined
 }
 
 /**
  * Why clips cannot be joined by copying their packets, compared with the
- * first clip: nothing means they can.
+ * first clip: nothing means they can. When the clips match, their sound is
+ * also checked for gaps a copy cannot fill.
  * @param clips - the clips in play order, each with its probe.
  * @returns the reasons.
  */
@@ -488,19 +701,26 @@ export async function joinProblems(clips: ReadonlyArray<JoinClip & { probe: Edit
     } else if (index === 0 && probe.audio !== undefined && !(mp4.getSupportedAudioCodecs() as string[]).includes(probe.audio.codec)) {
       reasons.push({ index, reason: 'audio-format', detail: `声音编码 ${probe.audio.codec} 不能无损写入 MP4。` })
     }
-    // A clip after the first must start on a key frame, or its pre-roll would show mid-film.
-    if (index > 0 && inMs > 0) {
+    // A clip after the first must start on a key frame, or its pre-roll would show mid-film: also at 0, where a cut's
+    // result starts on a picture whose key frame lies before 0, hidden by its edit list.
+    if (index > 0) {
       const input = openInput(path)
       try {
         const track = await input.getPrimaryVideoTrack()
         if (track === null || await keyPacketAt(track, inMs) === null) {
-          const near = probe.keyframesMs?.filter(time => time <= inMs).at(-1)
-          reasons.push({ index, reason: 'not-keyframe', detail: `入点 ${inMs} ms 不在关键帧上${near !== undefined ? `（前一个关键帧在 ${near} ms）` : ''}。` })
+          const before = probe.keyframesMs?.filter(time => time <= inMs).at(-1)
+          const after = probe.keyframesMs?.find(time => time > inMs)
+          const near = [before !== undefined ? `前一个关键帧在 ${before} ms` : '', after !== undefined ? `下一个关键帧在 ${after} ms` : ''].filter(part => part !== '').join('，')
+          reasons.push({ index, reason: 'not-keyframe', detail: `入点 ${inMs} ms 不在关键帧上${near !== '' ? `（${near}）` : ''}。` })
         }
       } finally {
         input.dispose()
       }
     }
+  }
+  if (reasons.length === 0 && first.audio !== undefined) {
+    const gap = await soundGap(clips)
+    if (gap !== undefined) reasons.push(gap)
   }
   return reasons
 }
@@ -538,7 +758,7 @@ async function* clipPackets(sink: EncodedPacketSink, start: EncodedPacket, end: 
  * @param clips - two or more clips in play order.
  * @param target - the absolute result path wanted (`.mp4`).
  * @param options - cancel and progress.
- * @returns the result.
+ * @returns the result, with where each clip sits in it.
  */
 export async function joinFiles(clips: readonly JoinClip[], target: string, options: EditOptions = {}): Promise<EditResult> {
   const { signal } = options
@@ -552,24 +772,22 @@ export async function joinFiles(clips: readonly JoinClip[], target: string, opti
     let videoConfig: VideoDecoderConfig | undefined
     let audioConfig: AudioDecoderConfig | undefined
     let offset = 0
-    let audioCursor = -Infinity
+    let firstSound = true
+    const placer = new SoundPlacer()
+    const placements: ClipPlacement[] = []
     for (const [index, clip] of clips.entries()) {
       const input = openInput(clip.path)
       try {
         const video = await input.getPrimaryVideoTrack()
         const audio = await input.getPrimaryAudioTrack()
         if (video === null) throw new MediaEditError(422, 'MEDIA_EDIT_UNSUPPORTED', `Clip ${index + 1} has no picture.`)
-        const sink = new EncodedPacketSink(video)
-        // The first clip may start between key frames: its pre-roll gets negative times and the MP4 an edit list.
-        const startPacket = index === 0
-          ? (clip.inMs === 0 ? await sink.getFirstKeyPacket({ verifyKeyPackets: true }) : await sink.getKeyPacket(clip.inMs / 1000, { verifyKeyPackets: true }) ?? await sink.getFirstKeyPacket({ verifyKeyPackets: true }))
-          : await keyPacketAt(video, clip.inMs)
-        if (startPacket === null) throw new MediaEditError(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', `Clip ${index + 1} does not start on a key frame.`)
-        const clipStart = index === 0 ? clip.inMs / 1000 : startPacket.timestamp
-        const end = clip.outMs / 1000
-        // Measure first (from the index only), so the sound can stop where the picture does.
-        let clipEnd = clipStart
-        for await (const packet of clipPackets(sink, startPacket, end, true)) clipEnd = Math.max(clipEnd, packet.timestamp + packet.duration)
+        const measured = await measureClip(video, clip, index)
+        if (measured === null) {
+          throw new MediaEditError(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', `Clip ${index + 1} does not start on a key frame.`, {
+            reasons: [{ index, reason: 'not-keyframe', detail: `入点 ${clip.inMs} ms 不在关键帧上。` }],
+          })
+        }
+        const { sink, startPacket, clipStart, clipEnd, end } = measured
         if (videoSource === undefined) {
           videoConfig = (await video.getDecoderConfig()) ?? undefined
           const codec = await video.getCodec()
@@ -588,8 +806,9 @@ export async function joinFiles(clips: readonly JoinClip[], target: string, opti
           await output.start()
         }
         const shift = offset - clipStart
+        placer.startClip(index, shift)
         const pictures = clipPackets(sink, startPacket, end, false)[Symbol.asyncIterator]()
-        const sounds = audioSource !== undefined && audio !== null ? clipSounds(audio, clipStart, clipEnd) : undefined
+        const sounds = audioSource !== undefined && audio !== null ? clipSounds(audio, clipStart, clipEnd, false) : undefined
         let nextPicture = await pictures.next()
         let nextSound = await sounds?.next()
         let firstPicture = videoConfig !== undefined && index === 0
@@ -605,15 +824,17 @@ export async function joinFiles(clips: readonly JoinClip[], target: string, opti
             nextPicture = await pictures.next()
           } else if (nextSound !== undefined && nextSound.done !== true) {
             const packet = nextSound.value
-            const time = packet.timestamp + shift
-            // A packet straddling the cut would overlap the previous clip's sound.
-            if (time >= audioCursor - 1e-6) {
-              await audioSource!.add(packet.clone({ timestamp: time }), audioCursor === -Infinity ? { decoderConfig: audioConfig! } : undefined)
-              audioCursor = time + packet.duration
+            const placed = placer.place(packet)
+            if (typeof placed === 'object') throw new MediaEditError(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', placed.detail, { reasons: [placed] })
+            if (placed !== 'skip') {
+              await audioSource!.add(packet.clone({ timestamp: placed }), firstSound ? { decoderConfig: audioConfig! } : undefined)
+              firstSound = false
             }
             nextSound = await sounds!.next()
           }
         }
+        placer.endClip(clipEnd)
+        placements.push({ inMs: Math.round(clipStart * 1000), outMs: Math.round(clipEnd * 1000), atMs: Math.round(offset * 1000) })
         offset += clipEnd - clipStart
       } finally {
         input.dispose()
@@ -625,7 +846,7 @@ export async function joinFiles(clips: readonly JoinClip[], target: string, opti
     await output.finalize()
     options.onProgress?.(1)
     const named = await settle(temporary, target)
-    return await resultFacts(named)
+    return { ...await resultFacts(named), placements }
   } catch (error) {
     if (output.state === 'started' || output.state === 'pending') await output.cancel().catch(() => undefined)
     if (isAborted(signal)) throw abortError(signal)
@@ -635,12 +856,13 @@ export async function joinFiles(clips: readonly JoinClip[], target: string, opti
   }
 }
 
-/** A clip's sound packets that start within [start, end). */
-async function* clipSounds(track: InputAudioTrack, start: number, end: number): AsyncGenerator<EncodedPacket> {
+/** A clip's sound packets that overlap [start, end) and start before its end. */
+async function* clipSounds(track: InputAudioTrack, start: number, end: number, metadataOnly: boolean): AsyncGenerator<EncodedPacket> {
   const sink = new EncodedPacketSink(track)
-  const first = await sink.getPacket(start) ?? await sink.getFirstPacket()
+  const options = metadataOnly ? { metadataOnly: true } : {}
+  const first = await sink.getPacket(start, options) ?? await sink.getFirstPacket(options)
   if (first === null) return
-  for await (const packet of sink.packets(first)) {
+  for await (const packet of sink.packets(first, undefined, options)) {
     if (packet.timestamp >= end) return
     if (packet.timestamp + packet.duration <= start) continue
     yield packet

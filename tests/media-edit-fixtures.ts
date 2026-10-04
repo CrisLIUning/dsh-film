@@ -54,7 +54,7 @@ export interface FixtureOptions {
   otherConfig?: boolean
   /** Sound: false for none. Default 48 kHz stereo. */
   audio?: false | { sampleRate?: number; channels?: number }
-  /** Seconds of sound when there is no picture. */
+  /** Seconds of sound; by default as long as the picture (2 without one). */
   audioSeconds?: number
   /** B-frames: after each key frame, pictures come in decode order P(n+1), B(n), as an encoder with one B-frame writes them. */
   bframes?: boolean
@@ -93,7 +93,7 @@ export async function writeFixture(path: string, options: FixtureOptions = {}): 
   const audio = sound !== undefined ? new EncodedAudioPacketSource('aac') : undefined
   if (audio !== undefined) output.addAudioTrack(audio)
   await output.start()
-  const seconds = frames > 0 ? frames / fps : options.audioSeconds ?? 2
+  const seconds = options.audioSeconds ?? (frames > 0 ? frames / fps : 2)
   const audioFrame = sound === undefined ? 0 : 1024 / sound.sampleRate
   const audioPackets = sound === undefined ? 0 : Math.ceil(seconds / audioFrame)
   // Interleaved by time, as an encoder would write them.
