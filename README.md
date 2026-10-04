@@ -2,19 +2,73 @@
 
 在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和 VibeDev 里做片：聊天右侧的侧栏多出四个标签——**剧本、分镜画布、剪辑台、导演台**。左边和 Agent 聊，右边看和改成果。项目是工作区里 `film/` 下的普通文件；Agent 用专门的影视工具改剧本、分镜和剪辑（见下），和右边看到的是同一份。
 
-> 现在是 0.0.x 预览版。分镜画布（含导演台）和剪辑台用的是 VibeDev 的原版前端，跑在插件自己的接口上；剧本标签是按 DSH 界面重写的，文件格式与 VibeDev Studio 的编剧台相同。图片、视频的生成由 [dsh-media](https://github.com/CrisLIUning/dsh-media) 负责，剪辑台的编辑器来自 [vibedev-video-editor](https://github.com/CrisLIUning/vibedev-video-editor)。
+> 0.1 是第一个公开发布的版本，仍属预览。分镜画布（含导演台）和剪辑台用的是 VibeDev 的原版前端，跑在插件自己的接口上；剧本标签是按 DSH 界面重写的，文件格式与 VibeDev Studio 的编剧台相同。图片、视频的生成由可选的 [dsh-media](https://github.com/CrisLIUning/dsh-media) 插件负责，剪辑台的编辑器来自 [vibedev-video-editor](https://github.com/CrisLIUning/vibedev-video-editor)。
 
-A film workbench for DeepSeek Harness and VibeDev: four right-sidebar tabs — script, storyboard, editing desk and director desk — working on one film per workspace, kept as plain files under `film/`. In this 0.0.x preview the storyboard (with the director desk) and the editing desk are VibeDev's original front ends running on the plugin's own API, and the script tab is a DSH-native rewrite. The agent works on the same film through its own film tools.
+A film workbench for DeepSeek Harness and VibeDev: four right-sidebar tabs — script, storyboard, editing desk and director desk — working on one film per workspace, kept as plain files under `film/`. In this 0.1 preview, the first public release, the storyboard (with the director desk) and the editing desk are VibeDev's original front ends running on the plugin's own API, and the script tab is a DSH-native rewrite. The agent works on the same film through its own film tools.
 
 ## 安装 · Install
 
-- **VibeDev**：在设置的插件页安装 `dsh-film`。
-- **DeepSeek Harness 命令行**：`dsh plugin add dsh-film`。
-- **DeepSeek Harness 桌面版**：先完全退出桌面版，再运行 `dsh plugin --profile desktop add dsh-film`。
+需要 DeepSeek Harness 0.2.x，或基于它的 VibeDev（VibeDev Next）。插件以包名 `dsh-film` 发布在 npm 官方源；中国大陆镜像源（registry.npmmirror.com）从 npm 同步，新版本一般稍后就有。
+
+**插件页（推荐）**：在 VibeDev 或 DeepSeek Harness 的“插件”页点“添加插件”，选“安装第三方插件”（按包名或地址安装），在“包名或地址”里填 `dsh-film`。展开“安装源”，选“npm 官方源”或“中国大陆镜像源”（国内网络选镜像源通常更快），再点“安装”。
+
+**命令行**：
+
+- DeepSeek Harness 桌面版：先完全退出桌面版，再运行下面的命令（`dsh` 命令在桌面版应用菜单的“管理 dsh 命令…”里安装）：
+
+  ```bash
+  dsh plugin --profile desktop add dsh-film
+  ```
+
+- VibeDev（VibeDev Next）桌面版：命令叫 `vibedev-app`，在应用菜单的“管理 vibedev-app 命令…”里安装。同样先完全退出应用，再运行：
+
+  ```bash
+  vibedev-app plugin --profile desktop add dsh-film
+  ```
+
+  VibeDev 的数据在 `~/.vibedev-app`，用 `dsh` 命令装的插件到不了它那里。
+
+- 用 npm 安装的 `dsh` 命令行（终端或 Web 版）：
+
+  ```bash
+  dsh plugin add dsh-film
+  ```
+
+**从 GitHub Release 安装**：插件页的“包名或地址”和上面的命令也接受 Release 里的 `.tgz` 直链，例如
+
+```
+https://github.com/CrisLIUning/dsh-film/releases/download/v0.1.0/dsh-film-0.1.0.tgz
+```
+
+直链不经过安装源，需要本机能直接访问 GitHub（或配好代理）。包约 42 MB，网速慢时可能超过 pnpm 默认的 60 秒下载时限而失败。这时最省事的是改为按包名从中国大陆镜像源安装；也可以把时限调长：pnpm 11（DeepSeek Harness 和 VibeDev 桌面版自带的就是它）不再从 `~/.npmrc` 读取这个设置，要在 pnpm 的全局配置 `config.yaml` 里加一行 `fetchTimeout: 600000`（Windows：`%LOCALAPPDATA%\pnpm\config\config.yaml`；macOS：`~/Library/Preferences/pnpm/config.yaml`；Linux：`~/.config/pnpm/config.yaml`），或设环境变量 `pnpm_config_fetch_timeout=600000`；pnpm 10 及更早的版本则在 `~/.npmrc` 里加 `fetch-timeout=600000`。
+
+**刚发布的版本**：pnpm 11 默认只安装发布满一天的版本（`minimumReleaseAge`）。新版本发布后的头一天，按包名可能装不上（0.1.0 是第一个版本）或装到上一个版本；可以等一天，或者用上面的 Release 直链。
+
+**不能从 Git 仓库安装**：不要在插件页填仓库地址 `https://github.com/CrisLIUning/dsh-film`，也不要对它运行 `dsh plugin add`。`lib/`、`client/` 和 `apps/`（分镜画布、导演台、剪辑台的前端）都是构建产物，不在 git 里，从仓库装上的插件用不了。
+
+**dsh-media 是可选的**：只有在分镜画布里生成图片和视频才需要另装 [dsh-media](https://github.com/CrisLIUning/dsh-media)（包名 `dsh-media`，装法相同；走 VibeDev 网关，按用量从 VibeDev 余额扣费）。不装也能写剧本、排分镜、剪辑、识别原声字幕和渲染成片。
+
+**用到时才下载、且要先经你同意的**：
+
+- 原声字幕用的 Whisper small 和 Silero 语音检测模型，合计约 242 MB；
+- 后台渲染用的 FFmpeg（GPL 版本，压缩包约 86 MB）：只在 Windows x64 上、本机找不到 ffmpeg 时才会提出下载；其他系统请自行安装 ffmpeg；
+- 剪辑台的其他 AI 模型（配音、抠像等），见下文“剪辑台的 AI 模型”。
 
 装好后打开任意会话的右侧侧栏，在“开始”页点“剧本”等入口。会话需要有工作区。
 
-In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Harness, run `dsh plugin add dsh-film`, or `dsh plugin --profile desktop add dsh-film` for the desktop app (quit it fully first). Then open the right sidebar of a session that has a workspace and pick a part on its start page.
+**升级**：插件页暂不支持自动更新，先卸载再按上面的方法装新版本。影片是工作区里 `film/` 下的文件，卸载插件不会动它们。
+
+Requires DeepSeek Harness 0.2.x or VibeDev (VibeDev Next), which is built on it. The plugin is published to npm as `dsh-film`; the npmmirror China mirror syncs from npm.
+
+- **Plugin page** (recommended): Plugins → Add plugin → install a third-party plugin by package name, enter `dsh-film`, pick the npm registry or the China mirror under the install source, and install.
+- **Command line**: for the DeepSeek Harness desktop app, quit it fully, then run `dsh plugin --profile desktop add dsh-film` (the `dsh` command is installed from the app menu). VibeDev Next's command is `vibedev-app` (app menu → Manage vibedev-app Command…): quit the app fully, then run `vibedev-app plugin --profile desktop add dsh-film`; it keeps its data in `~/.vibedev-app`, which `dsh` does not reach. With the npm `dsh` CLI, run `dsh plugin add dsh-film`.
+- **GitHub Release**: the plugin page and the commands also take the release asset URL, e.g. `https://github.com/CrisLIUning/dsh-film/releases/download/v0.1.0/dsh-film-0.1.0.tgz`. It is fetched straight from GitHub, not through a registry. The file is about 42 MB, and on a slow connection pnpm's default 60-second fetch timeout can cut it off: install by name from the mirror instead, or raise the timeout — pnpm 11 (the one the desktop apps ship) no longer reads it from `~/.npmrc`, so add `fetchTimeout: 600000` to pnpm's global `config.yaml` (Windows `%LOCALAPPDATA%\pnpm\config\config.yaml`, macOS `~/Library/Preferences/pnpm/config.yaml`, Linux `~/.config/pnpm/config.yaml`) or set `pnpm_config_fetch_timeout=600000`; pnpm 10 and earlier take `fetch-timeout=600000` in `~/.npmrc`.
+- **A fresh release**: pnpm 11 installs only versions published at least a day ago (`minimumReleaseAge`), so for the first day after a release an install by name may fail or get the previous version; wait a day or use the release URL.
+- **Not from the git repository**: `lib/`, `client/` and `apps/` (the storyboard, director desk and editing desk front ends) are build outputs that are not in git, so a plugin installed from the repository URL does not work.
+- **dsh-media is optional**: only image and video generation on the storyboard needs [dsh-media](https://github.com/CrisLIUning/dsh-media). Everything else works without it.
+- **Downloads only after you agree**: the Whisper small and Silero speech-detection models for captions (about 242 MB together); the FFmpeg renderer (GPL build, about 86 MB zipped), offered only on Windows x64 when no ffmpeg is found — elsewhere install ffmpeg yourself; and the editing desk's other models.
+
+Then open the right sidebar of a session that has a workspace and pick a part on its start page. To upgrade, uninstall and install the new version; your film stays in the workspace's `film/` folder.
 
 ## 文件 · Files
 
@@ -85,17 +139,36 @@ The background render plans the cut with the editor's own headless planner and r
 npm install
 npm run typecheck
 npm test
-npm run build      # lib/ (Host half) + client/ (browser half)
+npm run build      # 先删掉 lib/ 和 client/，再构建 lib/（Host 一侧）和 client/（浏览器一侧）
 ```
 
-原版前端另行构建后放进 `apps/`（不进 git）：`node scripts/build-apps.mjs canvas editor`，分别从相邻的 vibedev-canvas 和 vibedev-video-editor 检出构建。剪辑台的时间线命令引擎（Host 一侧执行放置命令用）是 vibedev-video-editor 的桥接合约构建，放在 `vendor/video-editor-bridge.mjs`。
+从源码只能构建 `lib/` 和 `client/`。`apps/` 里的原版前端不在 git 里，要从相邻的三个检出另行构建：
+
+| 检出 | 分支 | 说明 |
+| --- | --- | --- |
+| `../canvas` | `feat/dsh-host` | [vibedev-canvas](https://github.com/CrisLIUning/vibedev-canvas)，分镜画布；**私有仓库** |
+| `../director-desk` | `feat/dsh-procedural-mannequin` | [vibedev-director-desk](https://github.com/CrisLIUning/vibedev-director-desk)，导演台；画布的构建会一起构建它 |
+| `../video-editor` | `main` | [vibedev-video-editor](https://github.com/CrisLIUning/vibedev-video-editor)，剪辑台 |
+
+`node scripts/build-apps.mjs canvas editor`（`npm run build:apps`）构建它们并复制到 `apps/canvas`、`apps/editor`，同时把剪辑台的桥接合约——Host 一侧执行时间线命令、规划渲染用的引擎——复制到 `vendor/video-editor-bridge.mjs`（这个文件在 git 里）。画布仓库是私有的，所以只有维护者能重新构建 `apps/`；其他人要完整的插件请安装发布的包。
+
+构建 `apps/` 时，脚本把来源仓库的许可证和 `THIRD-PARTY-NOTICES.txt` 写进各应用目录：后者列出应用打包可能含有的全部 npm 生产依赖（按 lockfile 里不带 `"dev": true` 的条目走完整闭包），每个都有版本、许可证、仓库和 node_modules 里 LICENSE/LICENCE/COPYING/NOTICE 的全文，没有许可证文件的会写明。只重写许可证和声明、不重建前端：`node scripts/build-apps.mjs notices canvas editor`（`npm run build:notices`），要在构建这些前端的检出上运行（只读它们的 lockfile 和 node_modules，不连网）。
 
 浏览器端按 DSH 的模块加载格式打包：`client/client.js` 每次启动加载，只登记四个标签；工作台本体在 `client/client.workbench.js`，第一次打开标签时才加载。`scripts/check-client.mjs` 会检查打包结果（文件清单、加载器首行、只引用宿主提供的模块）。
 
-## License
+**发布**：`npm pack` 和 `npm publish` 先跑 `prepack`——`npm run build`，再用 `scripts/check-package.mjs` 检查 `apps/canvas/index.html`、`apps/editor/index.html`、`apps/editor/caption-runner.html` 和下文列出的许可证、声明文件都在，`lib/` 里没有对不上源码的过期文件，缺一样就拒绝打包（没有 `apps/` 的包能装上，但画布和剪辑台两个标签是空的）。`publishConfig` 把发布固定到 npm 官方源，镜像源不接受发布。同一个 `dsh-film-<版本>.tgz` 附到 GitHub Release `v<版本>`。
 
-MIT
+Only `lib/` and `client/` build from this repository. `apps/` is built by `node scripts/build-apps.mjs canvas editor` from sibling checkouts — `../canvas` on `feat/dsh-host` (vibedev-canvas, a private repository, so only maintainers can rebuild `apps/`), `../director-desk` on `feat/dsh-procedural-mannequin`, and `../video-editor` (vibedev-video-editor) — and the same step writes each app's licences and `THIRD-PARTY-NOTICES.txt` (every production npm dependency the bundle can contain, with version, licence, repository and licence text); `node scripts/build-apps.mjs notices canvas editor` rewrites only those. `prepack` builds and then runs `scripts/check-package.mjs`, which refuses to pack without the apps, the licence and notice files, or with stale files in `lib/`. `publishConfig` sends `npm publish` to the npm registry.
 
-后台渲染下载的 FFmpeg 是独立程序，不属于本插件，按 GNU GPL 2.0 或更高版本发布；源码见 https://git.ffmpeg.org/ffmpeg.git（提交 46d8f462ee，release/9.0 分支），构建脚本见 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)（autobuild-2026-10-01-13-06）。下载后其许可证全文在程序旁的 `LICENSE.txt`。
+## 许可 · License
 
-导演台的场景数学（`src/director/vendor/director-math/`，构建后在 `lib/director/vendor/director-math/`）原样复制自 [vibedev-director-desk](https://github.com/CrisLIUning/vibedev-director-desk)，Copyright (c) 2026 YZ，以 MIT 许可证发布（条款与上文相同，原文见该目录的 `LICENSE`）。
+本插件以 MIT 许可证发布，见 `LICENSE`。包里还带着下面这些别人的代码，各自的许可证都随包分发：
+
+- **导演台的场景数学**：`lib/director/vendor/director-math/`（源码在 `src/director/vendor/director-math/`）原样复制自 [vibedev-director-desk](https://github.com/CrisLIUning/vibedev-director-desk)，Copyright (c) 2026 YZ，MIT；许可证原文在包里的 `lib/director/vendor/director-math/LICENSE`。
+- **分镜画布** `apps/canvas/`：vibedev-canvas，MIT，见 `apps/canvas/LICENSE`；其中的导演台 `apps/canvas/director-desk/` 来自 vibedev-director-desk（MIT，Copyright (c) 2026 YZ，见 `apps/canvas/director-desk/LICENSE`）。两者打包进去的 npm 依赖见 `apps/canvas/THIRD-PARTY-NOTICES.txt`；导演台自己的构建另带 `apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt` 和 `licenses/`（Mediabunny，MPL-2.0）。
+- **剪辑台** `apps/editor/`：vibedev-video-editor（MIT，`apps/editor/LICENSE`）和它内嵌的 ai-video-editor（MIT，`apps/editor/ai-video-editor/LICENSE`）。这两份 MIT 只管源码，模型和素材的许可边界见 `apps/editor/ai-video-editor/MODEL_LICENSES.md`；npm 依赖和 `vendor/` 下的第三方文件见 `apps/editor/THIRD-PARTY-NOTICES.txt`。
+- **剪辑台的桥接合约** `vendor/video-editor-bridge.mjs`：含 vibedev-video-editor 和 ai-video-editor 的代码，两份 MIT 许可证见 `vendor/video-editor-bridge.LICENSE.txt`。
+
+后台渲染下载的 FFmpeg 是独立程序，不属于本插件，按 GNU GPL 2.0 或更高版本发布；源码见 https://git.ffmpeg.org/ffmpeg.git（提交 46d8f462ee，release/9.0 分支），构建脚本见 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)（autobuild-2026-10-01-13-06）。下载后其许可证全文在程序旁的 `LICENSE.txt`。剪辑台按需下载的模型各按清单 `models/video-editor-models.json` 里声明的许可。
+
+dsh-film is MIT (`LICENSE`). Bundled third-party code ships with its licences: the director desk's scene math (MIT, Copyright (c) 2026 YZ) at `lib/director/vendor/director-math/LICENSE`; the storyboard canvas and its director desk at `apps/canvas/LICENSE`, `apps/canvas/director-desk/LICENSE` and `apps/canvas/THIRD-PARTY-NOTICES.txt` (the desk's own build adds notices in `apps/canvas/director-desk/`); the editing desk at `apps/editor/LICENSE`, `apps/editor/ai-video-editor/LICENSE`, `apps/editor/ai-video-editor/MODEL_LICENSES.md` and `apps/editor/THIRD-PARTY-NOTICES.txt`; the editor bridge at `vendor/video-editor-bridge.LICENSE.txt`. The FFmpeg the background render can download is a separate GPL program, not part of this plugin; its licence is kept beside it.

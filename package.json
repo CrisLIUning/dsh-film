@@ -1,7 +1,7 @@
 {
   "name": "dsh-film",
-  "version": "0.0.1",
-  "description": "VibeDev 影视工作台：在 DeepSeek Harness 和 VibeDev 的右侧侧栏里写剧本、排分镜、剪辑和调度镜头 · A film workbench for DeepSeek Harness: script, storyboard, editing and director desks in the right sidebar",
+  "version": "0.1.0",
+  "description": "VibeDev 影视工作台：在 DeepSeek Harness 和 VibeDev 的右侧侧栏里写剧本、排分镜、剪辑和调度导演台，Agent 用影视工具协同改片 · Film workbench for DeepSeek Harness and VibeDev: screenplay, storyboard canvas, editing desk and director desk in the right sidebar, with film tools for the agent",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -45,12 +45,18 @@
   "keywords": [
     "dsh",
     "dsh-plugin",
+    "deepseek",
     "deepseek-harness",
     "vibedev",
     "film",
-    "storyboard",
+    "filmmaking",
+    "screenplay",
     "screenwriting",
-    "video-editing"
+    "storyboard",
+    "video-editing",
+    "video-editor",
+    "captions",
+    "ai-agent"
   ],
   "homepage": "https://github.com/CrisLIUning/dsh-film#readme",
   "repository": {
@@ -64,13 +70,19 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && npm run build:client",
+    "clean": "node scripts/clean.mjs",
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json && node scripts/copy-licenses.mjs && npm run build:client",
     "build:client": "tsdown && node scripts/check-client.mjs",
+    "build:apps": "node scripts/build-apps.mjs",
+    "build:notices": "node scripts/build-apps.mjs notices",
+    "check:package": "node scripts/check-package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test": "vitest run",
-    "prepack": "npm run build",
-    "build:apps": "node scripts/build-apps.mjs"
+    "prepack": "npm run build && node scripts/check-package.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
