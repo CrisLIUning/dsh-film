@@ -25,7 +25,7 @@ import { FilmError } from '../errors.js'
 import { FILM_DIR } from '../project.js'
 import { MotionCompileError, compileMotionIntoFilm } from '../director/authored-motion.js'
 import { verifyDirectorAssetSource } from '../director/asset-source.js'
-import { expandModelPlacements, isPlaceModel, prepareModelPlacements, withAgentOps } from '../director/model-placement.js'
+import { expandModelPlacements, importModelPlacements, isPlaceModel, prepareModelPlacements, withAgentOps } from '../director/model-placement.js'
 import type { PlacedModel } from '../director/model-placement.js'
 import type {
   DirectorInspectModelResponse, DirectorRenderResponse, DirectorRenderStatusResponse, DirectorReviewRequest, DirectorReviewSource,
@@ -285,36 +285,47 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
         await verifyDirectorAssetSource(film.root, file.path, op.source, ownIndex(index))
       }
     }
-    // The placements' files are found, measured, hashed and (on apply) copied in before the scene is read.
-    const placements = placing ? await prepareModelPlacements(rawOps, { cwd: request.cwd, projectId: film.projectId }, { dryRun }) : undefined
+    // The placements' files are found, measured and hashed before the scene is read; nothing is copied yet.
+    const placements = placing ? await prepareModelPlacements(rawOps, { cwd: request.cwd, projectId: film.projectId }) : undefined
     const address = addressOf(film, located)
-    const current = await desks.currentScene(located, address, request.raw.signal)
+    let current = await desks.currentScene(located, address, request.raw.signal)
     if (typeof body.expectedFingerprint === 'string' && current.fingerprint && body.expectedFingerprint !== current.fingerprint) {
       throw new DirectorRefusal(409, 'DIRECTOR_SCENE_CONFLICT', '场景在你读它之后变了;重新读一次(query structure 或 scene get)再写', { fingerprint: current.fingerprint, desk: current.desk })
     }
     // A node never opened as a desk starts as an empty scene — the same one
     // the desk itself would start, so nothing about it says "the agent's".
-    const base = current.project ?? createEmptyDirectorProject()
-    let staged: ReturnType<typeof stageDirectorScene>
-    let origin: number[] | undefined
-    let placed: PlacedModel[] | undefined
-    if (placements === undefined) {
-      staged = stageDirectorScene(base, plan)
-    } else {
-      // Synchronous from here to the write. The expanded imports were just hashed, so they skip verification.
-      const expanded = expandModelPlacements(rawOps!, placements, base, film.projectId)
-      origin = expanded.origin
-      staged = withAgentOps(() => stageDirectorScene(base, parseDirectorStagePlan({ ops: expanded.ops })), expanded.origin)
-      placed = expanded.placed
+    const stageOn = (scene: typeof current, prepared: typeof placements): { staged: ReturnType<typeof stageDirectorScene>; origin?: number[]; placed?: PlacedModel[] } => {
+      const base = scene.project ?? createEmptyDirectorProject()
+      if (prepared === undefined) return { staged: stageDirectorScene(base, plan) }
+      // The expanded imports were just hashed, so they skip verification.
+      const expanded = expandModelPlacements(rawOps!, prepared, base, film.projectId)
+      return { staged: withAgentOps(() => stageDirectorScene(base, parseDirectorStagePlan({ ops: expanded.ops })), expanded.origin), origin: expanded.origin, placed: expanded.placed }
     }
+    let { staged, origin, placed } = stageOn(current, placements)
     const inline = address === null
     let fingerprint = getDirectorProjectFingerprint(staged.project)
     let desk = current.desk
-    // Nothing may wait between reading the live scene and writing it (a desk opened in the gap would be written around), so diagnostics come after.
     if (!dryRun && !inline) {
-      const outcome = await desks.writeScene(film.documents, located, address, current.live, staged.project, () => film.announce(address.boardId))
-      fingerprint = outcome.fingerprint
-      desk = outcome.desk
+      // Workspace files are copied in only now, with the plan known to stage. The copies take
+      // time, so the scene is read again and the plan staged on it before the write.
+      const imports = placements === undefined ? undefined : await importModelPlacements(request.cwd, placements)
+      try {
+        if (imports?.any === true) {
+          const again = await desks.currentScene(located, address, request.raw.signal)
+          if (again.fingerprint !== current.fingerprint) {
+            throw new DirectorRefusal(409, 'DIRECTOR_SCENE_CONFLICT', '场景在放入模型时变了;重新读一次(query structure 或 scene get)再写', { fingerprint: again.fingerprint, desk: again.desk })
+          }
+          current = again
+          ;({ staged, origin, placed } = stageOn(current, imports.placements))
+        }
+        // Nothing may wait between reading the live scene and writing it (a desk opened in the gap would be written around), so diagnostics come after.
+        const outcome = await desks.writeScene(film.documents, located, address, current.live, staged.project, () => film.announce(address.boardId))
+        fingerprint = outcome.fingerprint
+        desk = outcome.desk
+      } catch (error) {
+        await imports?.undo()
+        throw error
+      }
     }
     const diagnostics = await directorDiagnostics(staged.project, { kind: 'diagnostics' }, located.echo)
     const answer: DirectorStageResponse & { placed?: PlacedModel[] } = {

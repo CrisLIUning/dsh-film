@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CanvasBoardAgent } from '../../src/canvas/board-agent.js'
 import { CanvasDocumentStore } from '../../src/canvas/documents.js'
+import { importModelPlacements, prepareModelPlacements } from '../../src/director/model-placement.js'
 import { invalidateWorkspaceMedia } from '../../src/media.js'
 import { clearModelFactsCache } from '../../src/model-files/facts.js'
 import { createProject } from '../../src/project.js'
@@ -213,6 +214,50 @@ describe('place_model', () => {
     expect(refused.body.error).toMatch(/^第 2 步:/u)
     // And in a placement after an op of the agent's own.
     expect(await stage([{ type: 'set_active_camera', cameraId: 'cam' }, { type: 'place_model', path: 'props/none.glb' }], { dryRun: true })).toMatchObject({ status: 400, body: { op: 1 } })
+  })
+
+  it('copies a workspace file in only on an apply that goes through', async () => {
+    await file('props/a.glb', boxGlb([0.5, 0.9, 0.45]))
+    await file('props/cup.obj', 'v -5 0 -4\nv 5 12 4\n')
+    const imports = async (): Promise<Record<string, unknown>> => JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'imports.json'), 'utf8').catch(() => '{"imports":{}}')).imports
+    // A stale fingerprint.
+    expect(await stage([{ type: 'place_model', path: 'props/a.glb' }], { expectedFingerprint: 'stale' })).toMatchObject({ status: 409, body: { code: 'DIRECTOR_SCENE_CONFLICT' } })
+    // A later op refused in staging.
+    expect(await apply([{ type: 'place_model', path: 'props/a.glb' }, { type: 'set_active_camera', cameraId: 'nope' }])).toMatchObject({ status: 400, body: { op: 1 } })
+    // A later placement without units.
+    expect(await apply([{ type: 'place_model', path: 'props/a.glb' }, { type: 'place_model', path: 'props/cup.obj' }])).toMatchObject({ status: 400, body: { code: 'DIRECTOR_MODEL_UNITS_UNKNOWN', op: 1 } })
+    expect(await modelsCopied()).toEqual([])
+    expect(await imports()).toEqual({})
+
+    const placed = await apply([{ type: 'place_model', path: 'props/a.glb' }])
+    expect(placed.status, JSON.stringify(placed.body)).toBe(200)
+    expect(await modelsCopied()).toEqual(['a.glb'])
+    expect(Object.keys(await imports())).toEqual(['props/a.glb'])
+  })
+
+  it('takes its copies back, and refuses a file that changed after it was measured', async () => {
+    await file('props/a.glb', boxGlb([0.5, 0.9, 0.45]))
+    await file('props/b.glb', boxGlb([1, 1, 1]))
+    await file('film/canvas/models/b.glb', boxGlb([1, 1, 1]))
+    const record = () => readFile(join(cwd, 'film', 'canvas', 'imports.json'), 'utf8').then(text => JSON.parse(text).imports, () => ({}))
+    const ops = [{ type: 'place_model', path: 'props/a.glb' }, { type: 'place_model', path: 'props/b.glb' }, { type: 'place_model', path: 'props/a.glb', at: [2, 0] }]
+    const prepared = await prepareModelPlacements(ops, { cwd, projectId: film })
+    const done = await importModelPlacements(cwd, prepared)
+    expect([...done.placements.values()].map(entry => [entry.filmPath, entry.imported, entry.wouldImport])).toEqual([
+      ['canvas/models/a.glb', true, undefined], ['canvas/models/b.glb', false, undefined], ['canvas/models/a.glb', false, undefined],
+    ])
+    expect(Object.keys(await record()).sort()).toEqual(['props/a.glb', 'props/b.glb'])
+    await done.undo()
+    // The new copy goes; the film's own earlier copy stays; the record is as it was.
+    expect((await modelsCopied()).sort()).toEqual(['b.glb'])
+    expect(await record()).toEqual({})
+
+    // Measured, then changed before the copy: refused, nothing left behind.
+    const measured = await prepareModelPlacements([ops[0]], { cwd, projectId: film })
+    await file('props/a.glb', boxGlb([2, 2, 2]))
+    await expect(importModelPlacements(cwd, measured)).rejects.toMatchObject({ status: 409, code: 'DIRECTOR_MODEL_CHANGED' })
+    expect((await modelsCopied()).sort()).toEqual(['b.glb'])
+    expect(await record()).toEqual({})
   })
 
   it('needs the fingerprint to apply, and refuses characters and .gltf files', async () => {

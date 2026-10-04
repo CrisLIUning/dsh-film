@@ -10,11 +10,16 @@
  * Two steps, so the stage route can keep its rule that nothing waits between
  * reading the live scene and writing it:
  *
- * 1. {@link prepareModelPlacements} does all the I/O before the scene is read:
- *    it finds the file, measures it in full, hashes it, works out its units,
- *    and copies a workspace file into `film/canvas/models/` (only when it is
- *    not a dry run; a dry run reports the name the copy would get).
- * 2. {@link expandModelPlacements} is synchronous: against the scene just read
+ * 1. {@link prepareModelPlacements} does the reading before the scene is read:
+ *    it finds the file, measures it in full, hashes it, works out its units
+ *    and, for a workspace file, the name its copy in `film/canvas/models/`
+ *    would get. Nothing is copied yet, so a plan refused for a stale
+ *    fingerprint, for a later op or in staging leaves the film as it was.
+ * 2. {@link importModelPlacements} copies the workspace files in, on an apply
+ *    already staged once against the scene: the stage route then reads the
+ *    scene again and stages it for real, and takes the copies back
+ *    ({@link ModelImports.undo}) when that or the write fails.
+ * 3. {@link expandModelPlacements} is synchronous: against the scene just read
  *    it turns each placement into the desk's own ops — `import_asset` (with
  *    the calibration), `calibrate_asset` (the measured bounds, so the size is
  *    stored), `place_asset` and, with a facing, `transform_objects` — reusing
@@ -28,10 +33,12 @@
  */
 
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
-import { stat } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { importWorkspaceFile, predictWorkspaceImport } from '../canvas/workspace-import.js'
 import { digestFile, projectRawUrl, resolveFilmFile } from '../film-files.js'
 import { WorkspaceMediaError, resolveWorkspaceFile } from '../media.js'
+import { readImports, restoreImport, withImportLock } from '../media-imports.js'
+import type { ImportRecord } from '../media-imports.js'
 import { modelFacts } from '../model-files/facts.js'
 import { modelTypeOf } from '../model-files/types.js'
 import type { ModelBox, ModelFacts, Vec3 } from '../model-files/types.js'
@@ -80,8 +87,10 @@ export interface PreparedPlacement {
   sizeMetres?: Vec3
   /** A copy of a workspace file was made for this op. */
   imported: boolean
-  /** A dry run of a workspace file: the film name its copy would get. */
+  /** A workspace file not yet copied in: the film name its copy would get. */
   wouldImport?: string
+  /** A workspace file (outside film/): its workspace-relative path, copied in by {@link importModelPlacements}. */
+  workspacePath?: string
 }
 
 /** What the answer reports per placement. */
@@ -222,10 +231,9 @@ function unitsOf(op: PlaceModelOp, facts: ModelFacts, index: number): { metresPe
  * Everything a plan's placements need from the disk, before the scene is read.
  * @param rawOps - the agent's plan ops.
  * @param film - the workspace and the film's id.
- * @param options - `dryRun` copies nothing.
- * @returns the placements, by the agent's op index.
+ * @returns the placements, by the agent's op index; nothing is copied.
  */
-export async function prepareModelPlacements(rawOps: readonly unknown[], film: { cwd: string; projectId: string }, options: { dryRun: boolean }): Promise<Map<number, PreparedPlacement>> {
+export async function prepareModelPlacements(rawOps: readonly unknown[], film: { cwd: string; projectId: string }): Promise<Map<number, PreparedPlacement>> {
   const indices = rawOps.flatMap((op, index) => isPlaceModel(op) ? [index] : [])
   if (indices.length > MAX_PLACE_MODEL_OPS) throw new DirectorStageError(`一份计划最多 ${MAX_PLACE_MODEL_OPS} 个 place_model`)
   const ops = indices.map(index => [index, parsePlaceModel(rawOps[index], index)] as const)
@@ -239,38 +247,82 @@ export async function prepareModelPlacements(rawOps: readonly unknown[], film: {
     if (!facts.placeable) throw new DirectorStageError(`${op.path} 读不出来，不能放：${facts.problem ?? '文件已损坏'}`, index)
     const units = unitsOf(op, facts, index)
     const kind = op.kind ?? (facts.suggestedKind === 'scene' ? 'scene' : 'prop')
-    let filmPath: string
-    let absolute = found.absolute
-    let imported = false
-    let wouldImport: string | undefined
-    if (found.where === 'film') {
-      filmPath = found.filmPath
-    } else if (options.dryRun) {
-      filmPath = wouldImport = (await predictWorkspaceImport(film.cwd, found.resolved)).name
-    } else {
-      const copy = await importWorkspaceFile(film.cwd, found.workspacePath)
-      filmPath = copy.file.name
-      absolute = join(film.cwd, FILM_DIR, ...filmPath.split('/'))
-      imported = copy.created
-    }
-    const info = await stat(absolute)
+    const wouldImport = found.where === 'film' ? undefined : (await predictWorkspaceImport(film.cwd, found.resolved)).name
+    const filmPath = found.where === 'film' ? found.filmPath : wouldImport!
+    const info = await stat(found.absolute)
     if (info.size <= 0) throw new DirectorStageError(`${op.path} 是空文件`, index)
     prepared.set(index, {
       op,
       filmPath,
       format: type.format,
       byteLength: info.size,
-      contentSha256: await digestFile(absolute),
+      contentSha256: await digestFile(found.absolute),
       ...(facts.bounds !== undefined ? { bounds: facts.bounds } : {}),
       kind,
       metresPerUnit: units.metresPerUnit,
       sizeFrom: units.sizeFrom,
       ...(facts.bounds !== undefined ? { sizeMetres: span(facts.bounds).map(value => value * units.metresPerUnit) as Vec3 } : {}),
-      imported,
-      ...(wouldImport !== undefined ? { wouldImport } : {}),
+      imported: false,
+      ...(found.where === 'workspace' ? { wouldImport, workspacePath: found.workspacePath } : {}),
     })
   }
   return prepared
+}
+
+/** The placements once their workspace files are in the film, and how to take the copies back. */
+export interface ModelImports {
+  placements: Map<number, PreparedPlacement>
+  /** Whether any workspace file was imported (copied, or answered by an earlier copy). */
+  any: boolean
+  /** Remove the copies this request made and put the import record back as it was. */
+  undo(): Promise<void>
+}
+
+/**
+ * Copy the placements' workspace files into `film/canvas/models/`, once the
+ * plan has been staged against the scene. Each copy must hold the bytes that
+ * were measured and hashed, or the apply is refused (and the copies taken back).
+ * @param cwd - the workspace.
+ * @param prepared - the placements, by the agent's op index.
+ * @returns the placements with their film names, and the undo.
+ */
+export async function importModelPlacements(cwd: string, prepared: ReadonlyMap<number, PreparedPlacement>): Promise<ModelImports> {
+  const placements = new Map(prepared)
+  const done = new Map<string, { name: string; created: boolean; previous: ImportRecord | undefined }>()
+  const undo = async (): Promise<void> => {
+    if (done.size === 0) return
+    await withImportLock(cwd, async () => {
+      for (const [path, copy] of done) {
+        if (copy.created) await rm(join(cwd, FILM_DIR, ...copy.name.split('/')), { force: true }).catch(() => {})
+        await restoreImport(cwd, path, copy.name, copy.previous)
+      }
+    })
+  }
+  try {
+    for (const [index, placement] of prepared) {
+      const path = placement.workspacePath
+      if (path === undefined) continue
+      let copy = done.get(path)
+      const first = copy === undefined
+      if (copy === undefined) {
+        const previous = (await readImports(cwd)).get(path)
+        const imported = await importWorkspaceFile(cwd, path)
+        copy = { name: imported.file.name, created: imported.created, previous }
+        done.set(path, copy)
+        const absolute = join(cwd, FILM_DIR, ...copy.name.split('/'))
+        const info = await stat(absolute)
+        if (info.size !== placement.byteLength || await digestFile(absolute) !== placement.contentSha256) {
+          throw new DirectorRefusal(409, 'DIRECTOR_MODEL_CHANGED', `第 ${index + 1} 步:${placement.op.path} 在放入影片时变了，重新读一次再放`, { op: index })
+        }
+      }
+      const { wouldImport: _wouldImport, workspacePath: _workspacePath, ...rest } = placement
+      placements.set(index, { ...rest, filmPath: copy.name, imported: first && copy.created })
+    }
+  } catch (error) {
+    await undo()
+    throw error
+  }
+  return { placements, any: done.size > 0, undo }
 }
 
 /** The prefixes of the asset and object ids a placement makes up when the op names none. */

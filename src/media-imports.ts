@@ -79,11 +79,35 @@ export function withImportLock<T>(cwd: string, action: () => Promise<T>): Promis
  * @param target - its film-relative path in the film.
  */
 export async function noteImport(cwd: string, source: { path: string; stats: Pick<Stats, 'size' | 'mtime'> }, target: string): Promise<void> {
+  await rewriteImports(cwd, (imports) => {
+    imports[source.path] = { target, size: source.stats.size, modifiedAt: source.stats.mtime.toISOString(), importedAt: new Date().toISOString() }
+  })
+}
+
+/**
+ * Take back an import's note: put back what the record held for the source
+ * before it, as long as the note is still this import's (names `target`).
+ * The caller holds {@link withImportLock}.
+ * @param cwd - the workspace directory.
+ * @param path - the source's workspace-relative path.
+ * @param target - the film-relative name the import noted.
+ * @param previous - what the record held for the source before the import, if anything.
+ */
+export async function restoreImport(cwd: string, path: string, target: string, previous: ImportRecord | undefined): Promise<void> {
+  await rewriteImports(cwd, (imports) => {
+    if (imports[path]?.target !== target) return false
+    if (previous === undefined) delete imports[path]
+    else imports[path] = previous
+  })
+}
+
+/** Rewrite the record whole; `change` returning `false` leaves it as it is. Failing to write loses only the libraries' hint. */
+async function rewriteImports(cwd: string, change: (imports: Record<string, ImportRecord>) => boolean | void): Promise<void> {
   const file = recordFile(cwd)
   const temporary = `${file}.${randomUUID()}.tmp`
   try {
     const imports = Object.fromEntries(await readImports(cwd))
-    imports[source.path] = { target, size: source.stats.size, modifiedAt: source.stats.mtime.toISOString(), importedAt: new Date().toISOString() }
+    if (change(imports) === false) return
     const state: ImportsFile = { version: 1, imports }
     await mkdir(dirname(file), { recursive: true })
     await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
