@@ -65,8 +65,8 @@ const APPS = {
     about: [
       'apps/canvas is the storyboard canvas built from vibedev-canvas (licence:',
       'LICENSE in this folder), with the director desk in director-desk/ built from',
-      'vibedev-director-desk (https://github.com/CrisLIUning/vibedev-director-desk;',
-      'licence: director-desk/LICENSE).',
+      'vibedev-director-desk (MIT, Copyright (c) 2026 YZ; its source repository is',
+      'not public; licence: director-desk/LICENSE).',
       '',
       'The desk\'s own build also writes director-desk/THIRD-PARTY-NOTICES.txt and',
       'director-desk/licenses/ (Mediabunny, MPL-2.0); the list below covers the',
