@@ -65,6 +65,24 @@ function fakeApi(initial: StoryDocument[]) {
     version: async () => { throw new Error('unused') },
     checkpoint: async () => { throw new Error('unused') },
     restore: async (documentId) => commit(documentId, 'restored\n'),
+    assets: async () => [],
+    references: async () => [],
+    bind: async () => { throw new Error('unused') },
+    unbind: async () => { throw new Error('unused') },
+    fileUrl: path => path,
+    referenceUrl: (documentId, assetId, versionId) => `${documentId}/${assetId}/${versionId}`,
+    studioUrl: path => path,
+    previewImport: async () => { throw new Error('unused') },
+    importCopy: async ({ content }) => {
+      if (gate !== undefined) await gate
+      const created = doc(`doc_${++counter}`, content, `r${counter}`, `副本 ${counter}`)
+      files.set(created.documentId, created)
+      return { document: created, changed: true }
+    },
+    exportDocument: async () => { throw new Error('unused') },
+    source: async () => { throw new Error('unused') },
+    handoff: async () => { throw new Error('unused') },
+    impact: async () => { throw new Error('unused') },
   }
   return {
     api,
@@ -211,5 +229,65 @@ describe('the screenplay store', () => {
     expect(store.getState()).toMatchObject({ status: 'ready', document: null })
     expect(await store.create('雨夜来客', 'short')).toBe(true)
     expect(store.getState()).toMatchObject({ draft: '# 雨夜来客\n', documents: [{ title: '雨夜来客' }] })
+  })
+})
+
+describe('importing a copy', () => {
+  it('opens the copy and adds it to the list', async () => {
+    const fake = fakeApi([doc('a', 'x\n', 'r0', '甲')])
+    const store = make(fake)
+    await store.start()
+    const epoch = store.getState().epoch
+    expect(await store.importCopy(() => fake.api.importCopy({ format: 'markdown', content: '# 导入\n', expectedPreviewDigest: 'd' }))).toBe(true)
+    expect(store.getState()).toMatchObject({ draft: '# 导入\n', saving: false, epoch: epoch + 1 })
+    expect(store.getState().documents.map(item => item.title)).toEqual(['副本 1', '甲'])
+  })
+
+  it('is refused while the open screenplay has unsaved text', async () => {
+    const fake = fakeApi([doc('a', 'x\n', 'r0')])
+    const store = make(fake)
+    await store.start()
+    store.edit('x\nunsaved\n')
+    const run = vi.fn(() => fake.api.importCopy({ format: 'markdown', content: 'y\n', expectedPreviewDigest: 'd' }))
+    expect(await store.importCopy(run)).toBe(false)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('keeps the person on their text when they typed while the import ran, and saves it', async () => {
+    const fake = fakeApi([doc('a', 'x\n', 'r0', '甲')])
+    const store = make(fake)
+    await store.start()
+    const release = fake.holdWrites()
+    const imported = store.importCopy(() => fake.api.importCopy({ format: 'markdown', content: '# 导入\n', expectedPreviewDigest: 'd' }))
+    store.edit('x\ntyped\n')
+    await vi.advanceTimersByTimeAsync(500)
+    release()
+    expect(await imported).toBe(false)
+    expect(store.getState().document?.documentId).toBe('a')
+    expect(store.getState().documents.map(item => item.title)).toEqual(['副本 1', '甲'])
+    await vi.advanceTimersByTimeAsync(500)
+    expect(fake.writes.map(write => write.content)).toEqual(['x\ntyped\n'])
+    expect(store.dirty).toBe(false)
+  })
+
+  it('hands a refusal to the caller, and shows one the caller does not take', async () => {
+    const fake = fakeApi([doc('a', 'x\n', 'r0')])
+    const store = make(fake)
+    await store.start()
+    const stale = new StoryApiError('preview again', 409, 'STORY_IMPORT_PREVIEW_REQUIRED')
+    const seen: unknown[] = []
+    expect(await store.importCopy(async () => { throw stale }, (error) => { seen.push(error); return true })).toBe(false)
+    expect(seen).toEqual([stale])
+    expect(store.getState()).toMatchObject({ saving: false, error: null })
+    expect(await store.importCopy(async () => { throw stale })).toBe(false)
+    expect(store.getState().error?.message).toBe('preview again')
+  })
+
+  it('reports a stale send by bringing in the version on disk', async () => {
+    const fake = fakeApi([doc('a', 'x\n', 'r0')])
+    const store = make(fake)
+    await store.start()
+    store.report(new StoryConflictError('changed', doc('a', 'x\nagent\n', 'r9')))
+    expect(store.getState()).toMatchObject({ draft: 'x\nagent\n', conflict: null, error: { message: 'changed' } })
   })
 })

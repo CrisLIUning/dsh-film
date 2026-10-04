@@ -2,9 +2,11 @@
  * The 结构, 镜头 and 人物/地点/道具 views: the screenplay's scenes, shots and
  * cards as the plugin parsed the saved file. Every change is an operation on
  * the saved screenplay, so the views are read-only while the body has
- * unsaved text.
+ * unsaved text. Cards show their main reference image as a cover (Studio
+ * `StoryCardImage`); scenes can be sent to the storyboard (送到画布).
  */
 
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StoryBlock, StoryDeletedObject, StoryEntity, StoryMetadata, StoryObjectTarget, StoryScene, StoryShot } from '../../../screenwriter/contracts/types.ts'
@@ -31,8 +33,39 @@ export interface CardViewContext {
   onDelete: (target: StoryObjectTarget) => void
   onRestore: (target: StoryObjectTarget) => void
   onScenePlace: (scene: StoryScene, placeId: string | null) => void
-  onOpenCard: (target: { kind: 'entity' | 'shot'; id: string }) => void
+  /** Open a card's details; `references` opens its reference picker at once. */
+  onOpenCard: (target: { kind: 'entity' | 'shot'; id: string }, options?: { references?: boolean }) => void
   onEditBlock: (blockId: string) => void
+  /** A card's cover image (its whole-screenplay main reference), or `null`. */
+  coverUrl: (target: { kind: 'entity' | 'shot'; id: string }) => string | null
+  /** Send a scene to the board as a source card (送到画布). */
+  onSendScene: (sceneId: string) => void
+  /** A send is under way. */
+  sending: boolean
+}
+
+const GLYPHS: Record<EntityKind | 'shot', ReactNode> = {
+  person: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" /></>,
+  place: <><path d="M4 11 12 4l8 7" /><path d="M6 10v10h12V10" /><path d="M10 20v-5h4v5" /></>,
+  prop: <><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>,
+  shot: <><rect x="3" y="6" width="18" height="12" rx="1.5" /><path d="M7 6v12M17 6v12M3 10h4M3 14h4M17 10h4M17 14h4" /></>,
+}
+
+/**
+ * A card's 16:9 cover: its main reference image, or the kind's glyph when it
+ * has none or the image cannot be read (Studio `StoryCardImage`).
+ * @param props - the image URL and the card kind.
+ */
+export function CardImage({ url, kind }: { url: string | null; kind: EntityKind | 'shot' }): ReactNode {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [url])
+  return (
+    <div className={css.cardImage}>
+      {url !== null && !failed
+        ? <img src={url} alt="" loading="lazy" onError={() => { setFailed(true) }} />
+        : <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{GLYPHS[kind]}</svg>}
+    </div>
+  )
 }
 
 const titleOf = (blocks: ReadonlyMap<string, StoryBlock>, id: string | undefined | null, t: Translate): string =>
@@ -110,6 +143,7 @@ export function StructureView({ context }: { context: CardViewContext }): ReactN
             {excerpt !== '' && <p className={css.excerpt}>{excerpt}</p>}
             <div className={css.actions}>
               <Button size="sm" variant="ghost" onClick={() => { context.onEditBlock(scene.headingBlockId) }}>{t('sw.editInBody')}</Button>
+              {filter === 'active' && <Button size="sm" variant="ghost" disabled={!canMutate || context.sending} onClick={() => { context.onSendScene(scene.id) }}>{t('sw.handoff.send')}</Button>}
               {filter === 'active' && <Button size="sm" variant="ghost" disabled={!canMutate} onClick={() => { context.onAddScene(scene.id) }}>{t('sw.insertBefore')}</Button>}
               <Button size="sm" variant="ghost" disabled={!canMutate} onClick={() => { context.onArchive({ kind: 'scene', id: scene.id }, scene.archived !== true) }}>{scene.archived === true ? t('sw.unarchive') : t('sw.archive')}</Button>
               <Button size="sm" variant="ghost" disabled={!canMutate} onClick={() => { context.onDelete({ kind: 'scene', id: scene.id }) }}>{t('sw.delete')}</Button>
@@ -144,6 +178,7 @@ export function ShotsView({ context }: { context: CardViewContext }): ReactNode 
           const markdown = blocks.get(shot.descriptionBlockId)?.markdown ?? ''
           return (
             <article key={shot.id} className={css.card}>
+              <CardImage url={context.coverUrl({ kind: 'shot', id: shot.id })} kind="shot" />
               <header className={css.cardHeader}>
                 <strong className={css.cardTitle}>{index + 1}. {cardName(markdown) || t('sw.unnamed')}</strong>
                 <div className={css.iconActions}>
@@ -157,6 +192,7 @@ export function ShotsView({ context }: { context: CardViewContext }): ReactNode 
                 {typeof shot.estimatedSeconds === 'number' && <span>{t('sw.secondsShort', { seconds: shot.estimatedSeconds })}</span>}
               </p>
               <div className={css.actions}>
+                <Button size="sm" variant="ghost" onClick={() => { context.onOpenCard({ kind: 'shot', id: shot.id }, { references: true }) }}>{t('sw.ref.choose')}</Button>
                 <Button size="sm" variant="ghost" onClick={() => { context.onOpenCard({ kind: 'shot', id: shot.id }) }}>{t('sw.details')}</Button>
               </div>
             </article>
@@ -186,10 +222,12 @@ export function EntitiesView({ kind, context }: { kind: EntityKind; context: Car
           const markdown = blocks.get(entity.profileBlockId)?.markdown ?? ''
           return (
             <article key={entity.id} className={css.card}>
+              <CardImage url={context.coverUrl({ kind: 'entity', id: entity.id })} kind={entity.kind} />
               <strong className={css.cardTitle}>{cardName(markdown) || t('sw.unnamed')}</strong>
               {cardDescription(markdown) !== '' && <p className={css.excerpt}>{cardDescription(markdown)}</p>}
               {typeof entity.visualIdentity === 'string' && entity.visualIdentity !== '' && <p className={css.meta}>{entity.visualIdentity}</p>}
               <div className={css.actions}>
+                <Button size="sm" variant="ghost" onClick={() => { context.onOpenCard({ kind: 'entity', id: entity.id }, { references: true }) }}>{t('sw.ref.choose')}</Button>
                 <Button size="sm" variant="ghost" onClick={() => { context.onOpenCard({ kind: 'entity', id: entity.id }) }}>{t('sw.details')}</Button>
               </div>
             </article>

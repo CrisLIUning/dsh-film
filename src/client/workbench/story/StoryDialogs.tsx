@@ -1,6 +1,7 @@
 /**
  * The 剧本 tab's dialogs: a new screenplay, a saved version, the history, a
- * merge after a conflict, deleting an object and a card's details.
+ * merge after a conflict, deleting an object and a card's details (with its
+ * reference images and 送到画布, see `StoryReferences.tsx`).
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -8,12 +9,14 @@ import type { ReactNode } from 'react'
 import { Button, Checkbox, Input, MarkdownText, Modal, SegmentedControl, Tag, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { projectStoryBody, storyBlockTitle } from '../../../screenwriter/contracts/tokens.ts'
-import type { StoryDeletionPreviewResponse, StoryDocument, StoryDocumentKind, StoryEntity, StoryObjectTarget } from '../../../screenwriter/contracts/types.ts'
+import type { StoryProductionPurpose } from '../../../screenwriter/contracts/production.ts'
+import type { StoryBindingScope, StoryDeletionPreviewResponse, StoryDocument, StoryDocumentKind, StoryEntity, StoryObjectTarget } from '../../../screenwriter/contracts/types.ts'
 import type { Translate } from '../../types.ts'
 import { GrowingTextarea } from './BodyView.tsx'
 import { orderedScenes } from './CardViews.tsx'
 import { cardName, mergeStoryCardFields, readStoryCard, storyCardChanged, storyCardOperations } from './cards.ts'
 import type { StoryCardField, StoryCardFields, StoryCardSnapshot, StoryCardTarget } from './cards.ts'
+import { StoryReferences } from './StoryReferences.tsx'
 import { StoryConflictError } from './story-api.ts'
 import type { StoryApi, StoryVersion } from './story-api.ts'
 import type { StoryStore } from './story-store.ts'
@@ -313,16 +316,20 @@ class CardConflict extends Error {
 
 const fieldText = (value: StoryCardFields[StoryCardField]): string => Array.isArray(value) ? value.join(', ') : value === null || value === '' ? '—' : String(value)
 
-export function CardDialog({ target, document, api, store, canMutate, t, onClose, onEditBlock, onDelete }: {
+export function CardDialog({ target, document, api, store, canMutate, autoOpenReferences = false, t, onClose, onEditBlock, onDelete, onSend }: {
   target: StoryCardTarget
   document: StoryDocument
   api: StoryApi
   store: StoryStore
   canMutate: boolean
+  /** Open the reference picker at once (the card's 选择参考 button). */
+  autoOpenReferences?: boolean
   t: Translate
   onClose: () => void
   onEditBlock: (blockId: string) => void
   onDelete: (target: StoryObjectTarget) => void
+  /** Send this card to the board (送到画布), optionally with a production node. */
+  onSend: (target: StoryCardTarget, scope: StoryBindingScope, purpose?: StoryProductionPurpose) => Promise<boolean>
 }): ReactNode {
   const [baseline, setBaseline] = useState<StoryCardSnapshot | null>(() => readStoryCard(document, target))
   const [fields, setFields] = useState<StoryCardFields | null>(() => baseline?.fields ?? null)
@@ -488,6 +495,17 @@ export function CardDialog({ target, document, api, store, canMutate, t, onClose
             </fieldset>
           </>
         )}
+        <StoryReferences
+          api={api}
+          store={store}
+          document={document}
+          target={target}
+          canMutate={canMutate && !busy}
+          cardDirty={dirty}
+          autoOpen={autoOpenReferences}
+          t={t}
+          onSend={(scope, purpose) => onSend(target, scope, purpose)}
+        />
         {review !== null && (
           <section className={css.review} role="alert">
             <p>{review.latest === null ? t('sw.detail.removed') : t('sw.detail.conflict')}</p>

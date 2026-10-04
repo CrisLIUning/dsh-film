@@ -4,21 +4,33 @@
  * Built on DSH's own primitives; the file format and the plugin endpoints are
  * Studio's screenwriter, so the agent's screenwriting tools and this view
  * edit the same files.
+ *
+ * Also as in Studio's `ScreenwriterWorkspace`: reference-image covers,
+ * import and export, sending scenes and cards to the storyboard (送到画布,
+ * which then shows the new node there) and the 制作影响 report; and the
+ * storyboard's 返回编剧 opens the object a source card came from.
  */
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { Button, SegmentedControl, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels, SegmentedTab } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { StoryEntity, StoryObjectTarget, StoryOperation, StoryScene } from '../../../screenwriter/contracts/types.ts'
-import type { Translate } from '../../types.ts'
+import type { StoryProductionPurpose } from '../../../screenwriter/contracts/production.ts'
+import type { StoryBindingScope, StoryEntity, StoryObjectTarget, StoryOperation, StoryScene } from '../../../screenwriter/contracts/types.ts'
+import type { FilmView, Translate } from '../../types.ts'
 import type { FilmProject } from '../api.ts'
+import { onStoryOpen, requestCanvasFocus, takeStoryOpen } from '../film-links.ts'
+import type { StoryOpenRequest } from '../film-links.ts'
 import { BodyView } from './BodyView.tsx'
 import type { BodyMode } from './BodyView.tsx'
 import { EntitiesView, ShotsView, StructureView, orderedScenes, orderedShots } from './CardViews.tsx'
 import type { CardViewContext, EntityKind, ObjectFilter } from './CardViews.tsx'
 import type { StoryCardTarget } from './cards.ts'
 import { CardDialog, ConflictDialog, DeleteDialog, HistoryDialog, NewDocumentDialog, VersionDialog } from './StoryDialogs.tsx'
+import { ExportDialog, ImportDialog } from './StoryExchangeDialogs.tsx'
+import { ImpactDialog } from './StoryImpactDialog.tsx'
+import { handoffFocusNode, handoffRequest } from './handoff.ts'
+import { coverBinding } from './references.ts'
 import { storyApi } from './story-api.ts'
 import { StoryStore } from './story-store.ts'
 import css from './screenwriter.module.css'
@@ -31,7 +43,10 @@ type Dialog =
   | { kind: 'history' }
   | { kind: 'conflict' }
   | { kind: 'delete'; target: StoryObjectTarget }
-  | { kind: 'card'; target: StoryCardTarget }
+  | { kind: 'card'; target: StoryCardTarget; references?: boolean }
+  | { kind: 'import' }
+  | { kind: 'export' }
+  | { kind: 'impact' }
 
 const VIEWS: readonly View[] = ['body', 'structure', 'shots', 'person', 'place', 'prop']
 
@@ -59,13 +74,15 @@ export interface ScreenwriterViewProps {
   project: FilmProject
   visible: boolean
   t: Translate
+  /** Open another workbench part (the storyboard after 送到画布, the timeline from the impact report). */
+  openView?: (view: FilmView) => void
 }
 
 /**
  * The screenplay editor.
  * @param props - the workspace, its project and whether the tab shows.
  */
-export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewProps): ReactNode {
+export function ScreenwriterView({ cwd, project, visible, t, openView }: ScreenwriterViewProps): ReactNode {
   const api = useMemo(() => storyApi(cwd, project.id), [cwd, project.id])
   const store = useMemo(() => new StoryStore({ api, watch: onChange => watchStories(cwd, project.id, onChange) }), [api, cwd, project.id])
   useEffect(() => {
@@ -79,6 +96,9 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
   const [filter, setFilter] = useState<ObjectFilter>('active')
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [focus, setFocus] = useState<{ blockId: string; nonce: number } | null>(null)
+  const [sending, setSending] = useState(false)
+  const [openRequest, setOpenRequest] = useState<StoryOpenRequest | null>(() => takeStoryOpen(project.id) ?? null)
+  useEffect(() => onStoryOpen(project.id, setOpenRequest), [project.id])
   const labels = useMemo<MarkdownLabels>(() => ({ code: { copyLabel: t('sw.md.copy'), copiedLabel: t('sw.md.copied') }, footnotes: t('sw.md.footnotes') }), [t])
 
   const { document: doc, draft, saving, saveFailed, conflict, error } = state
@@ -94,6 +114,51 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
     setMode('edit')
     setFocus({ blockId, nonce: Date.now() })
   }, [])
+
+  /** Show a node on the storyboard: the canvas centres and selects it once its tab is showing. */
+  const showOnCanvas = useCallback((nodeId: string) => {
+    requestCanvasFocus(project.id, nodeId)
+    openView?.('board')
+  }, [openView, project.id])
+
+  /**
+   * Send a saved object to the film's board (Studio `sendToCanvas`), then show the node made.
+   * Only a saved screenplay is sent, so the card shows the text the person sees.
+   * @returns whether it was sent.
+   * @throws what the plugin refused; the caller shows it.
+   */
+  const sendToCanvas = async (objectId: string, scope?: StoryBindingScope, purpose?: StoryProductionPurpose): Promise<boolean> => {
+    const current = store.getState().document
+    if (current === null || !store.canMutate) return false
+    const result = await api.handoff(current.documentId, handoffRequest({ revision: current.revision, objectId, boardId: project.id, scope, purpose, requestId: () => crypto.randomUUID() }))
+    showOnCanvas(handoffFocusNode(result))
+    return true
+  }
+
+  // 返回编剧 on a storyboard source card: open the screenplay and the object (Studio's openRequest handling).
+  useEffect(() => {
+    if (openRequest === null || state.status !== 'ready') return
+    setOpenRequest(null)
+    if (store.dirty || state.saving) {
+      store.report(new Error(t('sw.dirtyHint')))
+      return
+    }
+    void (async () => {
+      if (store.getState().document?.documentId !== openRequest.documentId && !(await store.open(openRequest.documentId))) return
+      const current = store.getState().document
+      if (current === null || current.documentId !== openRequest.documentId) return
+      const entity = current.parsed.metadata?.entities.find(item => item.id === openRequest.objectId)
+      const shot = current.parsed.metadata?.shots.find(item => item.id === openRequest.objectId)
+      if (entity !== undefined || shot !== undefined) {
+        setView(entity?.kind ?? 'shots')
+        setDialog({ kind: 'card', target: { kind: entity !== undefined ? 'entity' : 'shot', id: openRequest.objectId } })
+        return
+      }
+      const scene = current.parsed.metadata?.scenes.find(item => item.id === openRequest.objectId)
+      if (scene !== undefined) focusBlock(scene.headingBlockId)
+      else store.report(new Error(t('sw.impact.status.source-missing')))
+    })()
+  }, [openRequest, state.status, state.saving, store, t, focusBlock])
 
   const apply = (operations: StoryOperation[]): Promise<boolean> => store.apply(operations)
   const context: CardViewContext | null = metadata === null ? null : {
@@ -148,8 +213,17 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
       void apply([{ kind: 'restoreObject', target }]).then((ok) => { if (ok) setFilter('active') })
     },
     onScenePlace: (scene: StoryScene, placeId) => { void apply([{ kind: 'upsertScene', scene: { ...scene, placeId } }]) },
-    onOpenCard: target => { setDialog({ kind: 'card', target }) },
+    onOpenCard: (target, options) => { setDialog({ kind: 'card', target, references: options?.references === true }) },
     onEditBlock: focusBlock,
+    coverUrl: (target) => {
+      const binding = coverBinding(metadata, target)
+      return binding === undefined || doc === null ? null : api.referenceUrl(doc.documentId, binding.assetId, binding.assetVersionId)
+    },
+    onSendScene: (sceneId) => {
+      setSending(true)
+      sendToCanvas(sceneId).catch((reason: unknown) => { store.report(reason) }).finally(() => { setSending(false) })
+    },
+    sending,
   }
 
   const status = saving ? t('sw.status.saving') : saveFailed ? t('sw.status.failed') : dirty ? t('sw.status.unsaved') : t('sw.status.saved')
@@ -179,6 +253,9 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
           {state.documents.map(item => <option key={item.documentId} value={item.documentId}>{item.title || t('sw.unnamed')}</option>)}
         </select>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDialog({ kind: 'new' }) }}>{t('sw.new')}</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDialog({ kind: 'import' }) }}>{t('sw.import')}</Button>
+        {doc !== null && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDialog({ kind: 'export' }) }}>{t('sw.export')}</Button>}
+        {doc !== null && <Button size="sm" variant="ghost" onClick={() => { setDialog({ kind: 'impact' }) }}>{t('sw.impact')}</Button>}
         {doc !== null && <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setDialog({ kind: 'history' }) }}>{t('sw.history')}</Button>}
         {doc !== null && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDialog({ kind: 'version' }) }}>{t('sw.saveVersion')}</Button>}
         {doc !== null && (
@@ -194,7 +271,10 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
             <div className={css.empty}>
               <h3 className={css.emptyTitle}>{t('sw.empty.title')}</h3>
               <p className={css.quiet}>{t('sw.empty.body')}</p>
-              <Button variant="primary" onClick={() => { setDialog({ kind: 'new' }) }}>{t('sw.new')}</Button>
+              <div className={css.actions}>
+                <Button variant="primary" onClick={() => { setDialog({ kind: 'new' }) }}>{t('sw.new')}</Button>
+                <Button variant="outline" onClick={() => { setDialog({ kind: 'import' }) }}>{t('sw.import.empty')}</Button>
+              </div>
             </div>
           )
         : (
@@ -301,10 +381,30 @@ export function ScreenwriterView({ cwd, project, visible, t }: ScreenwriterViewP
           api={api}
           store={store}
           canMutate={canMutate}
+          autoOpenReferences={dialog.references === true}
           t={t}
           onClose={() => { setDialog(null) }}
           onEditBlock={focusBlock}
           onDelete={(target) => { setDialog({ kind: 'delete', target }) }}
+          onSend={(target, scope, purpose) => sendToCanvas(target.id, scope, purpose)}
+        />
+      )}
+      {dialog?.kind === 'import' && (
+        <ImportDialog api={api} store={store} labels={labels} t={t} onClose={() => { setDialog(null) }} onImported={() => { setDialog(null); setFocus(null); setView('body'); setMode('read') }} />
+      )}
+      {dialog?.kind === 'export' && doc !== null && (
+        <ExportDialog document={doc} api={api} store={store} t={t} onClose={() => { setDialog(null) }} />
+      )}
+      {dialog?.kind === 'impact' && doc !== null && (
+        <ImpactDialog
+          api={api}
+          documentId={doc.documentId}
+          revision={doc.revision}
+          dirty={dirty}
+          t={t}
+          onClose={() => { setDialog(null) }}
+          onLocate={(nodeId) => { setDialog(null); showOnCanvas(nodeId) }}
+          onOpenTimeline={() => { setDialog(null); openView?.('timeline') }}
         />
       )}
     </section>
