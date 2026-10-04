@@ -162,6 +162,34 @@ if (existsSync(join(root, 'lib'))) {
   if (leaks.length > 0) problems.push(`${leaks.length} build file(s) contain an absolute path from the build machine, e.g. ${leaks[0]}; fix the build and run \`npm run build\`.`)
 }
 
+// eSpeak NG is GPL-3.0-or-later. The editor's VibeDev build leaves out the two speech
+// front ends that carry it (Kokoro through phonemizer, the vits-web Piper voices through
+// piper-phonemize) and its own build fails on these markers; this repeats the check on
+// what is about to ship, so an editor copied in from an older build cannot slip through.
+{
+  const MARKERS = ['espeak_EVENT_TYPE', 'espeak-ng-data', 'piper_phonemize', 'kokoro-js', 'KokoroTTS', '@diffusionstudio/vits-web']
+  const NAMES = /(^|[/\\])(kokoro|phonemizer|vits-web|espeak)[^/\\]*$/iu
+  // Licence texts and notices may name these packages; only code and data can carry them.
+  const DOCUMENT = /(\.(md|txt)|(^|[/\\])(LICEN[CS]E|NOTICE|COPYING)[^/\\]*)$/iu
+  const found = []
+  for (const app of ['canvas', 'editor']) {
+    const directory = join(root, 'apps', app)
+    if (!existsSync(directory)) continue
+    for (const file of walk(directory)) {
+      const path = toPosix(relative(root, file))
+      if (DOCUMENT.test(path)) continue
+      if (NAMES.test(path)) { found.push(`${path} (file name)`); continue }
+      const text = readFileSync(file).toString('latin1')
+      const marker = MARKERS.find(item => text.includes(item))
+      if (marker !== undefined) found.push(`${path} (${marker})`)
+    }
+  }
+  if (found.length > 0) {
+    problems.push(`${found.length} app file(s) carry GPL-3.0 eSpeak NG code, e.g. ${found[0]}: the editor copy predates the build that leaves it out; `
+      + 'rebuild with `node scripts/build-apps.mjs editor` from a video-editor checkout at or after a0282ca.')
+  }
+}
+
 // The Host routes app files by exact path; a name it cannot carry is skipped.
 for (const app of ['canvas', 'editor']) {
   const directory = join(root, 'apps', app)

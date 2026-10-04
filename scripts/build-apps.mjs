@@ -49,7 +49,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { APP_EXCLUDES, excludedFiles } from './app-excludes.mjs'
+import { APP_EXCLUDES, excludedFiles, leftOutRule } from './app-excludes.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const SEGMENT = /^[A-Za-z0-9_$.-]+$/
@@ -434,8 +434,10 @@ function packageEntry(item, extra = {}) {
 }
 
 function noticesText(name, app, appDirectory, { packages, counts }) {
-  const installed = packages.filter(item => item.installed)
-  const absent = packages.filter(item => !item.installed)
+  // Packages the VibeDev build leaves out on purpose are named apart, never as shipped code.
+  const leftOut = packages.filter(item => leftOutRule(name, item.name) !== undefined)
+  const installed = packages.filter(item => item.installed && leftOutRule(name, item.name) === undefined)
+  const absent = packages.filter(item => !item.installed && leftOutRule(name, item.name) === undefined)
   const width = Math.max(...counts.map(lockfile => lockfile.label.length))
   const title = `Third-party notices for apps/${name} of dsh-film`
   const preface = app.preface?.({ name, appDirectory, packages, source: app.source }) ?? []
@@ -456,7 +458,8 @@ function noticesText(name, app, appDirectory, { packages, counts }) {
       'LICENCE, COPYING and NOTICE files as installed in the checkout the bundle was',
       'built from.',
       '',
-      `${installed.length} package(s) below${absent.length > 0 ? `; ${absent.length} more listed at the end were not installed` : ''}.`,
+      `${installed.length} package(s) below${absent.length > 0 ? `; ${absent.length} more listed at the end were not installed` : ''}`
+        + `${leftOut.length > 0 ? `; ${leftOut.length} more listed at the end are left out of this build` : ''}.`,
       ...(preface.length > 0
         ? ['Before the list come the components whose terms need more than a licence text,', 'and the licence texts in licenses/ that their packages do not ship.']
         : []),
@@ -477,6 +480,20 @@ function noticesText(name, app, appDirectory, { packages, counts }) {
       '(optional packages for other platforms), so the bundle holds none of their code:',
       '',
       ...absent.map(item => `  ${item.name} ${item.version} (${item.licence ?? 'licence not declared'})`),
+      '',
+    ].join('\n'))
+  }
+  if (leftOut.length > 0) {
+    parts.push([
+      BANNER,
+      'Left out of this build',
+      BANNER,
+      '',
+      'These entries of the closure belong to features the VibeDev build turns off;',
+      'their imports are unreachable, the bundler drops them, and the build and',
+      'dsh-film\'s package check refuse a bundle that carries their code:',
+      '',
+      ...leftOut.map(item => `  ${item.name} ${item.version} (${item.licence ?? 'licence not declared'}): ${leftOutRule(name, item.name).why}`),
       '',
     ].join('\n'))
   }

@@ -56,6 +56,25 @@ export const APP_EXCLUDES = {
   editor: [],
 }
 
+/**
+ * npm packages of an app's lockfile closure whose code the VibeDev build leaves
+ * out on purpose: the editor's two eSpeak NG (GPL-3.0-or-later) speech front
+ * ends, switched off in vibedev-video-editor's vendor/ai-video-editor/src/config/vibedevFeatures.js
+ * and refused by its build and by scripts/check-package.mjs if they come back.
+ * The notices name them in a section of their own instead of among the shipped
+ * packages.
+ */
+export const PACKAGES_LEFT_OUT = {
+  canvas: [],
+  editor: [
+    { names: ['kokoro-js', 'phonemizer'], why: 'the Kokoro English voices (KOKORO_VOICES_ENABLED = false); phonemizer embeds eSpeak NG' },
+    { names: ['@diffusionstudio/vits-web'], why: 'the eSpeak-based Piper voices (ESPEAK_PIPER_VOICES_ENABLED = false); its piper-phonemize is eSpeak NG' },
+  ],
+}
+
+/** The left-out rule naming a package, if any. */
+export const leftOutRule = (app, name) => (PACKAGES_LEFT_OUT[app] ?? []).find(rule => rule.names.includes(name))
+
 function walk(directory) {
   const files = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
