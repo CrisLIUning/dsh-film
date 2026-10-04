@@ -64,7 +64,7 @@ function documentSummary(document: unknown): Record<string, unknown> | undefined
 }
 
 /** A write's answer; a dry run also shows the blocks it would change. */
-function mutationSummary(result: Record<string, unknown>, dryRun: boolean): Record<string, unknown> {
+export function mutationSummary(result: Record<string, unknown>, dryRun: boolean): Record<string, unknown> {
   const changedIds = Array.isArray(result.changedIds) ? result.changedIds.filter((id): id is string => typeof id === 'string') : undefined
   const summary: Record<string, unknown> = {
     changed: result.changed,

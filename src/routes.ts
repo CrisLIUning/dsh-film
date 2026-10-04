@@ -23,6 +23,7 @@ import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes, screenwriterServices } from './studio/screenwriter-routes.js'
+import { addStoryExchangeRoutes } from './studio/story-exchange-routes.js'
 import { addTextRoutes } from './studio/text-routes.js'
 import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
@@ -132,6 +133,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     onChange: (cwd, documentId, revision) => { events.emit(cwd, { type: 'story-changed', documentId, revision }) },
   })
   addScreenwriterRoutes(router, story)
+  addStoryExchangeRoutes(router, { story, events })
   addCanvasRoutes(router, events, options.boardAgent)
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)

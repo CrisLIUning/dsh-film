@@ -211,8 +211,11 @@ export class StudioRouter {
   }
 }
 
+/** The largest JSON body read: Studio's limit for screenplay calls, whose reference packages travel as base64. */
+export const JSON_BODY_LIMIT = 96 * 1024 * 1024
+
 async function readJson(request: Request): Promise<Record<string, unknown>> {
-  const text = await request.text()
+  const text = await bodyText(request)
   if (text.trim() === '') return {}
   const type = request.headers.get('content-type') ?? ''
   if (!/^application\/json\s*(;|$)/i.test(type)) throw new StudioApiError(415, 'BAD_REQUEST', 'The request body must be sent as application/json.')
@@ -224,4 +227,33 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new StudioApiError(400, 'BAD_REQUEST', 'The request body must be a JSON object.')
   return value as Record<string, unknown>
+}
+
+/**
+ * A request body as text: refused past {@link JSON_BODY_LIMIT} before it is
+ * buffered whole, and decoded strictly, so mis-encoded bytes are refused
+ * rather than saved as U+FFFD (Studio's `verifyUtf8JsonBody`).
+ * @param request - the request.
+ * @returns the text.
+ */
+async function bodyText(request: Request): Promise<string> {
+  const reader = request.body?.getReader()
+  if (reader === undefined) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > JSON_BODY_LIMIT) {
+      await reader.cancel().catch(() => {})
+      throw new StudioApiError(413, 'PAYLOAD_TOO_LARGE', 'The request body exceeds the 96 MiB limit.')
+    }
+    chunks.push(value)
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+  } catch {
+    throw new StudioApiError(400, 'BAD_REQUEST', 'The request body is not valid UTF-8.', { code: 'INVALID_UTF8_INPUT' })
+  }
 }
