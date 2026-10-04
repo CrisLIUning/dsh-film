@@ -75,7 +75,7 @@ describe('check-package', () => {
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/NOTICE is missing')
-    expect(result.output).toContain('Open AI Canvas, tigerowo')
+    expect(result.output).toContain('the projects it is based on or adapts code from')
     expect(result.output).toContain('node scripts/build-apps.mjs notices canvas')
   })
 
@@ -85,6 +85,20 @@ describe('check-package', () => {
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/NOTICE is empty')
+  })
+
+  it('refuses a NOTICE that still credits a source with no files ("(none yet)")', () => {
+    packageWith()
+    put('package/apps/canvas/NOTICE', 'Open AI Canvas\n\nPortions adapted from Open AI Canvas. Files:\n\n  (none yet)\n\ntigerowo\n\nFiles:\n\n  (none yet)\n')
+    const result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas/NOTICE still has 2 "(none yet)" file list(s)')
+  })
+
+  it('passes a NOTICE whose credited sources all list files', () => {
+    packageWith()
+    put('package/apps/canvas/NOTICE', 'Open AI Canvas\n\nPortions adapted from Open AI Canvas. Files:\n\n  web/src/a.ts (abc1234)\n')
+    expect(runScript('check-package.mjs').status).toBe(0)
   })
 })
 
@@ -116,9 +130,11 @@ describe('build-apps notices', () => {
     expect(readFileSync(join(app, 'LICENSE'), 'utf8')).toBe('MIT License\n\nCopyright (c) 2026 basketikun\n')
     const notices = readFileSync(join(app, 'THIRD-PARTY-NOTICES.txt'), 'utf8')
     expect(notices).toContain('Infinite Canvas by basketikun (MIT)')
-    expect(notices).toContain('Open AI Canvas (MIT, Copyright (c) 2026 ddcat and Open\nAI Canvas contributors)')
-    expect(notices).toContain('tigerowo/infinite-canvas (author TIGERQWQ,')
-    expect(notices).toContain('NOTICE in this folder')
+    expect(notices).toContain('NOTICE in this\nfolder')
+    expect(notices).toContain('is based on or adapts code from')
+    // The about text names no adapted source as present: whether one is, is NOTICE's to say.
+    expect(notices).not.toContain('Open AI Canvas')
+    expect(notices).not.toContain('tigerowo')
   })
 
   it('stops when the canvas checkout has no NOTICE', () => {

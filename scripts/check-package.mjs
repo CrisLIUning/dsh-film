@@ -13,7 +13,9 @@
  *   apps/editor) would ship and be routed.
  * - No top-level vendor/ or models/ (0.1's editor bridge and model lists).
  * - The licences and notices that must ship with bundled code, including the
- *   Apache License beside the director desk's glTF decoders when it has them.
+ *   Apache License beside the director desk's glTF decoders when it has them;
+ *   the canvas NOTICE lists files under every source it credits (no
+ *   "(none yet)" placeholder).
  * - None of the app files scripts/app-excludes.mjs removes is present.
  * - lib/ holds only output of a current src/ file (tsc never deletes stale
  *   output; a removed module once nearly shipped), and the entry files
@@ -43,7 +45,7 @@ const REQUIRED = [
   ['LICENSE', 'the package would ship without its own licence', 'restore it from git'],
   ['lib/director/vendor/director-math/LICENSE', 'the vendored director math would ship without its licence', 'run `npm run build`'],
   ['apps/canvas/LICENSE', 'the canvas would ship without its licence', REWRITE_NOTICES],
-  ['apps/canvas/NOTICE', 'the canvas would ship without its attributions (Open AI Canvas, tigerowo)', REWRITE_NOTICES],
+  ['apps/canvas/NOTICE', 'the canvas would ship without its attributions (the projects it is based on or adapts code from)', REWRITE_NOTICES],
   ['apps/canvas/THIRD-PARTY-NOTICES.txt', 'the canvas bundle would ship without its third-party notices', REWRITE_NOTICES],
   ['apps/canvas/director-desk/LICENSE', 'the director desk would ship without its licence', REWRITE_NOTICES],
   ['apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt', 'the director desk would ship without its third-party notices', REBUILD_APPS],
@@ -60,6 +62,19 @@ for (const [path, consequence, fix] of REQUIRED) {
   const info = fileAt(path)
   if (info?.isFile() !== true) problems.push(`${path} is missing: ${consequence}; ${fix}.`)
   else if (info.size === 0) problems.push(`${path} is empty: ${consequence}; ${fix}.`)
+}
+
+// The canvas NOTICE credits a source as adapted only once files derived from it are listed: a "(none yet)"
+// placeholder would ship a credit for code the package does not contain (e.g. a package cut before the
+// borrowed files landed).
+if (fileAt('apps/canvas/NOTICE')?.isFile() === true) {
+  const notice = readFileSync(join(root, 'apps', 'canvas', 'NOTICE'), 'utf8')
+  const placeholders = notice.split(/\r?\n/u).filter(line => line.trim() === '(none yet)').length
+  if (placeholders > 0) {
+    problems.push(`apps/canvas/NOTICE still has ${placeholders} "(none yet)" file list(s): it would credit a source as adapted with no file from it in the package; `
+      + 'in the canvas repository list the derived files under that source, or delete the source\'s section if nothing from it ships, '
+      + `then ${REWRITE_NOTICES}.`)
+  }
 }
 
 // apps/ holds the canvas only: anything else there would ship, and a folder with an index.html would be served.
