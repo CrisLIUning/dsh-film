@@ -94,7 +94,11 @@ describe('timeline_render', () => {
   it('renders and follows the task to its file over several waits', async () => {
     const { tool, revision } = await setUp({ render: slowRender(150) })
     const done = await tool.execute({ baseRevision: revision, fileName: '成片' }, exec()) as Record<string, any>
-    expect(done).toMatchObject({ status: 'done', progress: '完成', file: { name: 'canvas/renders/成片.mp4', kind: 'video', durationSeconds: 1 }, note: 'saved as film/canvas/renders/成片.mp4' })
+    // The film came with its board, so the render lands on it too.
+    expect(done).toMatchObject({
+      status: 'done', progress: '完成', file: { name: 'canvas/renders/成片.mp4', kind: 'video', durationSeconds: 1 },
+      note: expect.stringMatching(/^saved as film\/canvas\/renders\/成片\.mp4 and placed on the storyboard as node \S+$/u),
+    })
     expect(typeof done.taskId).toBe('string')
   })
 

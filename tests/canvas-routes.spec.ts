@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { CanvasDocumentStore, emptyFilmBoard } from '../src/canvas/documents.js'
 import { createStudioRouter } from '../src/routes.js'
 
 let cwd: string
@@ -78,9 +79,66 @@ describe('canvas documents', () => {
     expect(refused).toMatchObject({ status: 409, body: { code: 'CANVAS_DOCUMENT_DELETED' } })
   })
 
+  it('gives a film made without a board (0.1.0) its empty board when its own board is listed', async () => {
+    const film = { format: 'vibedev.film', version: 1, id: 'film-legacy', title: '旧片', aspectRatio: '4:3', createdAt: 'a', updatedAt: 'a' }
+    await mkdir(join(cwd, 'film'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'film.json'), JSON.stringify(film))
+    // Another project id, or none, is not this film's board: nothing is made.
+    expect((await call('/api/canvas/documents?project=other')).body.documents).toEqual([])
+    expect((await call('/api/canvas/documents')).body.documents).toEqual([])
+    await expect(readFile(join(cwd, 'film', 'canvas', 'document.json'))).rejects.toThrow()
+
+    const listed = await call('/api/canvas/documents?project=film-legacy')
+    expect(listed.body).toMatchObject({ documents: [{ id: 'film-legacy', projectId: 'film-legacy', title: '旧片' }], deleted: [] })
+    expect((await call('/api/canvas/documents/film-legacy?project=film-legacy')).body).toMatchObject({
+      id: 'film-legacy', title: '旧片', nodes: [], connections: [], chatSessions: [], activeChatId: null, backgroundMode: 'lines', showImageInfo: false, viewport: { x: 0, y: 0, k: 1 },
+    })
+  })
+
+  it('never makes a listed board over a saved, damaged or deleted one', async () => {
+    const film = { format: 'vibedev.film', version: 1, id: 'film-1', title: '雨夜来客', aspectRatio: '16:9', createdAt: 'a', updatedAt: 'a' }
+    await mkdir(join(cwd, 'film', 'canvas'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'film.json'), JSON.stringify(film))
+    await writeFile(join(cwd, 'film', 'canvas', 'document.json'), '{ damaged')
+    expect((await call('/api/canvas/documents?project=film-1')).body.documents).toEqual([])
+    expect(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8')).toBe('{ damaged')
+
+    await rm(join(cwd, 'film', 'canvas', 'document.json'))
+    await writeFile(join(cwd, 'film', 'canvas', 'document.deleted.json'), JSON.stringify({ id: 'film-1', deletedAt: 'z' }))
+    expect((await call('/api/canvas/documents?project=film-1')).body).toMatchObject({ documents: [], deleted: [{ id: 'film-1' }] })
+    await expect(readFile(join(cwd, 'film', 'canvas', 'document.json'))).rejects.toThrow()
+
+    await rm(join(cwd, 'film', 'canvas', 'document.deleted.json'))
+    const saved = await call('/api/canvas/documents/film-1/merge?project=film-1', { method: 'POST', json: { base: null, document: BOARD } })
+    expect(saved.status).toBe(200)
+    expect((await call('/api/canvas/documents?project=film-1')).body.documents).toMatchObject([{ id: 'film-1', title: '雨夜来客' }])
+    expect(JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8')).nodes).toEqual(BOARD.nodes)
+  })
+
+  it('lists normally beside a broken project file', async () => {
+    await mkdir(join(cwd, 'film'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'film.json'), 'not json')
+    expect(await call('/api/canvas/documents?project=film-1')).toMatchObject({ status: 200, body: { documents: [], deleted: [] } })
+  })
+
   it('rejects a draft that does not match the board', async () => {
     const result = await call('/api/canvas/documents/film-1/merge', { method: 'POST', json: { base: null, document: { ...BOARD, id: 'other' } } })
     expect(result).toMatchObject({ status: 400, body: { code: 'STORY_BOARD_INVALID' } })
+  })
+})
+
+describe('CanvasDocumentStore.create', () => {
+  it('saves a board only where there is none, and says what it found', async () => {
+    const store = new CanvasDocumentStore(cwd, 'film-1')
+    const results = await Promise.all([store.create(emptyFilmBoard('film-1', 'A')), store.create(emptyFilmBoard('film-1', 'B'))])
+    expect(results.sort()).toEqual(['created', 'exists'])
+    const saved = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8'))
+    expect(['A', 'B']).toContain(saved.title)
+    await store.remove('film-1')
+    expect(await store.create(emptyFilmBoard('film-1', 'C'))).toBe('deleted')
+    expect(await store.read('film-1')).toBeNull()
+    const { readdir } = await import('node:fs/promises')
+    expect((await readdir(join(cwd, 'film', 'canvas'))).filter(name => name.includes('.tmp'))).toEqual([])
   })
 })
 

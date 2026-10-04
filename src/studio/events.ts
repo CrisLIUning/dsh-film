@@ -1,13 +1,14 @@
 /**
  * Project events the hosted apps listen for on `/api/projects/:id/events`
- * (`file-changed`, `story-changed`, `story-canvas-changed`), per workspace.
+ * (`file-changed`, `story-changed`, `story-canvas-changed`, and
+ * `project-changed` with the film's new title or frame), per workspace.
  * @module dsh-film/studio/events
  */
 
 import { resolve } from 'node:path'
 
 export interface ProjectEvent {
-  type: 'file-changed' | 'story-changed' | 'story-canvas-changed'
+  type: 'file-changed' | 'story-changed' | 'story-canvas-changed' | 'project-changed'
   [key: string]: unknown
 }
 

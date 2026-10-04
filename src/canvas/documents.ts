@@ -12,8 +12,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { createExclusive, withFileLock } from '../file-writes.js'
 
 /** A board as the canvas saves it; only `id`, `nodes` and `connections` are relied on. */
 export interface CanvasDocument {
@@ -50,23 +51,47 @@ export class CanvasDocumentUpdateError extends Error {
   }
 }
 
-const locks = new Map<string, Promise<void>>()
+/** What {@link CanvasDocumentStore.create} found: it saved the board, or left the board (or its tombstone) that was there. */
+export type CanvasCreateResult = 'created' | 'exists' | 'deleted'
 
-async function withFileLock<T>(file: string, action: () => Promise<T>): Promise<T> {
-  const key = resolve(file)
-  const previous = locks.get(key) ?? Promise.resolve()
-  let release!: () => void
-  const pending = new Promise<void>((done) => { release = done })
-  const chained = previous.then(() => pending, () => pending)
-  locks.set(key, chained)
-  await previous.catch(() => undefined)
-  try {
-    return await action()
-  } finally {
-    release()
-    if (locks.get(key) === chained) locks.delete(key)
+/** Ids a board can have: what Studio and the canvas accept as a stable board id. */
+export const BOARD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+
+/**
+ * A film's new, empty board, as Studio starts one, named after the film. Every
+ * writer that starts a board starts it from this.
+ * @param id - the board's id (the film's).
+ * @param title - the film's title.
+ * @param now - the creation time.
+ * @returns the board.
+ */
+export function emptyFilmBoard(id: string, title: string, now: Date | string = new Date()): CanvasDocument {
+  const time = typeof now === 'string' ? now : now.toISOString()
+  return {
+    id, title, createdAt: time, updatedAt: time,
+    nodes: [], connections: [], chatSessions: [], activeChatId: null,
+    backgroundMode: 'lines', showImageInfo: false, viewport: { x: 0, y: 0, k: 1 },
   }
 }
+
+/**
+ * The id of the board saved in a workspace, when its file is a JSON object
+ * with an id a board can have (its nodes may still be damaged).
+ * @param cwd - the workspace directory.
+ * @returns the id, or `undefined` when there is no such board.
+ */
+export async function savedBoardId(cwd: string): Promise<string | undefined> {
+  let value: unknown
+  try {
+    value = JSON.parse(await readFile(join(cwd, ...CANVAS_DOCUMENT_FILE.split('/')), 'utf8'))
+  } catch {
+    return undefined
+  }
+  const id = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as { id?: unknown }).id : undefined
+  return typeof id === 'string' && BOARD_ID_PATTERN.test(id) ? id : undefined
+}
+
+const present = (path: string): Promise<boolean> => lstat(path).then(() => true, () => false)
 
 const isDocument = (value: unknown): value is CanvasDocument =>
   typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string'
@@ -140,6 +165,23 @@ export class CanvasDocumentStore {
 
   async write(id: string, document: CanvasDocument): Promise<CanvasDocumentSummary> {
     return withFileLock(this.file, () => this.writeFile({ ...document, id }))
+  }
+
+  /**
+   * Save a board only where there is none, under the board's lock. A board
+   * already saved — even one that cannot be read — and a deleted board (its
+   * tombstone) are left exactly as they are.
+   * @param document - the new board.
+   * @returns `created`, or what was there instead: `exists` or `deleted`.
+   */
+  async create(document: CanvasDocument): Promise<CanvasCreateResult> {
+    return withFileLock(this.file, async () => {
+      if (await present(this.file)) return 'exists'
+      if (await present(this.tombstone)) return 'deleted'
+      await mkdir(dirname(this.file), { recursive: true })
+      // Exclusive even under the lock: another process may be writing the same workspace.
+      return await createExclusive(this.file, `${JSON.stringify(document, null, 2)}\n`) ? 'created' : 'exists'
+    })
   }
 
   /**

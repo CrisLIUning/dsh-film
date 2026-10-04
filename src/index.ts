@@ -45,7 +45,7 @@ import { TimelineStore } from './timeline/store.js'
 
 export { FilmError } from './errors.js'
 export type { FilmErrorCode } from './errors.js'
-export type { AspectRatio, FilmProject } from './project.js'
+export type { AspectRatio, FilmProject, StoredAspectRatio } from './project.js'
 export type { MediaAsset, MediaKind } from './media.js'
 export { FilmToolError, filmAgentTools } from './agent/index.js'
 
@@ -109,7 +109,7 @@ export function apply(ctx: Context, config: Config): void {
 
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.
   ctx.inject(['connection'], (scoped) => {
-    const routes = filmRoutes(studio, (cwd) => { projectCreated(cwd) }, captionRunner)
+    const routes = filmRoutes(studio, (cwd) => { projectCreated(cwd) }, captionRunner, events)
     routes.push(...modelFileRoutes(models))
     for (const { app, directory } of findApps(appsRoot)) {
       const { files, skipped } = scanApp(app, directory)

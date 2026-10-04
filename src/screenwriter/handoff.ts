@@ -25,8 +25,7 @@ import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { resolveStoryReferences, storyEntityProductionText, storyProductionInstruction, STORY_PRODUCTION_PURPOSES } from './contracts/index.js'
 import type { StoryAdoption, StoryAdoptRequest, StoryBindingScope, StoryFieldAdoption, StoryHandoffRequest, StorySourcePreview } from './contracts/index.js'
-import { CanvasDocumentStore } from '../canvas/documents.js'
-import type { CanvasDocument } from '../canvas/documents.js'
+import { BOARD_ID_PATTERN, CanvasDocumentStore, emptyFilmBoard } from '../canvas/documents.js'
 import { filmWriteTarget } from '../film-files.js'
 import { readProject } from '../project.js'
 import type { FilmProject } from '../project.js'
@@ -63,7 +62,6 @@ export interface StoryAdoptResult {
   preview: StorySourcePreview
 }
 
-const BOARD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
@@ -74,7 +72,7 @@ const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
  */
 export async function filmProjectOf(cwd: string): Promise<FilmProject> {
   const project = await readProject(cwd)
-  if (project === null) throw new StoryError(404, 'PROJECT_NOT_FOUND', 'Project not found.')
+  if (project === null) throw new StoryError(404, 'PROJECT_NOT_FOUND', 'This workspace has no film yet. It is created when a film tab opens in the sidebar (or with film_project).')
   return project
 }
 
@@ -191,7 +189,7 @@ export class StoryHandoff {
     let sourceNode: StoryBoardNode | undefined
     await new CanvasDocumentStore(cwd, projectId).update((current) => {
       if (current && current.id !== request.boardId) throw new StoryError(409, 'STORY_BOARD_MISMATCH', 'This project has a different active canvas.')
-      const board = current ?? emptyBoard(request.boardId, film.title)
+      const board = current ?? emptyFilmBoard(request.boardId, film.title)
       const nodes = Array.isArray(board.nodes) ? board.nodes as StoryBoardNode[] : []
       sourceNode = !request.duplicate
         ? nodes.find((node) => {
@@ -334,13 +332,7 @@ export function storyReferenceUrl(projectId: string, documentId: string, assetId
 const sha256Json = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 function validateBoard(boardId: unknown): void {
-  if (typeof boardId !== 'string' || !BOARD_ID.test(boardId)) throw new StoryError(400, 'STORY_BOARD_ID_REQUIRED', 'A stable target board ID is required.')
-}
-
-/** A new board, as Studio starts one, named after the film. */
-function emptyBoard(id: string, title: string): CanvasDocument {
-  const now = new Date().toISOString()
-  return { id, title, createdAt: now, updatedAt: now, nodes: [], connections: [], chatSessions: [], activeChatId: null, backgroundMode: 'lines', showImageInfo: false, viewport: { x: 0, y: 0, k: 1 } }
+  if (typeof boardId !== 'string' || !BOARD_ID_PATTERN.test(boardId)) throw new StoryError(400, 'STORY_BOARD_ID_REQUIRED', 'A stable target board ID is required.')
 }
 
 /** Write a film file through a temporary file in the same, proven-inside, folder. */

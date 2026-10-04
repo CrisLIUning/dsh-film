@@ -1,6 +1,6 @@
 /** The routes as the connection service calls them, and the plugin loaded into a context. */
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -9,6 +9,8 @@ import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import * as Film from '../src/index.js'
 import { filmRoutes } from '../src/routes.js'
 import { packagedModelManifests } from '../src/models/service.js'
+import { ProjectEvents } from '../src/studio/events.js'
+import type { ProjectEvent } from '../src/studio/events.js'
 
 let cwd: string
 let routes: Map<string, ConnectionFetchRoute>
@@ -42,11 +44,67 @@ describe('/api/dsh-film/project', () => {
     expect(await call('/api/dsh-film/project', { cwd })).toMatchObject({ status: 200, body: { project: null } })
     const created = await call('/api/dsh-film/project', {}, post({ cwd, title: ' 雨夜来客 ', aspectRatio: '9:16' }))
     expect(created.status).toBe(201)
-    expect(created.body.project).toMatchObject({ title: '雨夜来客', aspectRatio: '9:16' })
+    expect(created.body).toMatchObject({ created: true, project: { title: '雨夜来客', aspectRatio: '9:16' } })
     const again = await call('/api/dsh-film/project', {}, post({ cwd, title: 'Other' }))
     expect(again.status).toBe(409)
     expect(again.body).toEqual({ error: { code: 'PROJECT_EXISTS', message: 'This workspace already has a film project.' }, project: created.body.project })
     expect(await call('/api/dsh-film/project', { cwd })).toMatchObject({ status: 200, body: { project: created.body.project } })
+  })
+
+  it('ensures a film with no form: named after the folder, 16:9, with its board, and answers an existing one as it is', async () => {
+    const folder = join(cwd, '短片计划')
+    await mkdir(folder)
+    const seen: string[] = []
+    routes = new Map(filmRoutes(undefined, (dir) => { seen.push(dir) }).map(route => [route.path, route]))
+    const first = await call('/api/dsh-film/project', {}, post({ cwd: folder, ensure: true }))
+    expect(first.status).toBe(201)
+    expect(first.body).toMatchObject({ created: true, project: { title: '短片计划', aspectRatio: '16:9' } })
+    const board = JSON.parse(await readFile(join(folder, 'film', 'canvas', 'document.json'), 'utf8'))
+    expect(board).toMatchObject({ id: first.body.project.id, title: '短片计划', nodes: [], connections: [], backgroundMode: 'lines' })
+    const second = await call('/api/dsh-film/project', {}, post({ cwd: folder, ensure: true, title: 'Other' }))
+    expect(second).toMatchObject({ status: 200, body: { created: false, project: first.body.project } })
+    // Told once: only the real creation installs the agent's film tools.
+    expect(seen).toEqual([folder])
+  })
+
+  it('never ensures over a broken project file', async () => {
+    await mkdir(join(cwd, 'film'))
+    await writeFile(join(cwd, 'film', 'film.json'), 'not json')
+    const result = await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))
+    expect(result).toMatchObject({ status: 422, body: { error: { code: 'PROJECT_INVALID' } } })
+    expect(await readFile(join(cwd, 'film', 'film.json'), 'utf8')).toBe('not json')
+  })
+
+  it('refuses an ensure flag that is not a boolean', async () => {
+    expect((await call('/api/dsh-film/project', {}, post({ cwd, ensure: 'yes' }))).body.error).toEqual({ code: 'BAD_REQUEST', message: 'ensure must be a boolean.' })
+  })
+
+  it('renames the film and changes its frame, and tells open pages', async () => {
+    const events = new ProjectEvents()
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    routes = new Map(filmRoutes(undefined, undefined, undefined, events).map(route => [route.path, route]))
+    const made = (await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))).body.project
+    const renamed = await call('/api/dsh-film/project/update', {}, post({ cwd, title: '  雨夜来客 ' }))
+    expect(renamed).toMatchObject({ status: 200, body: { project: { id: made.id, title: '雨夜来客', aspectRatio: '16:9' } } })
+    const reframed = await call('/api/dsh-film/project/update', {}, post({ cwd, aspectRatio: '2.39:1' }))
+    expect(reframed.body.project).toMatchObject({ title: '雨夜来客', aspectRatio: '2.39:1' })
+    expect(seen).toEqual([
+      { type: 'project-changed', projectId: made.id, project: renamed.body.project },
+      { type: 'project-changed', projectId: made.id, project: reframed.body.project },
+    ])
+    // An update that changes nothing is not announced.
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd, aspectRatio: '2.39:1' }))).status).toBe(200)
+    expect(seen).toHaveLength(2)
+  })
+
+  it('refuses an update with no film, nothing to change or a frame the editing desk lacks', async () => {
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd, title: 'x' }))).body.error.code).toBe('PROJECT_NOT_FOUND')
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd, title: 'x' }))).status).toBe(404)
+    await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd }))).status).toBe(400)
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd, aspectRatio: '4:3' }))).body.error.message).toMatch(/aspectRatio must be one of/)
+    expect((await call('/api/dsh-film/project/update', {}, post({ cwd, title: 'x' }, 'text/plain'))).status).toBe(400)
   })
 
   it('accepts only a JSON body', async () => {
@@ -112,6 +170,7 @@ describe('dsh-film plugin', () => {
     const isModelFile = (entry: string) => entry.includes('/api/dsh-film/models/')
     expect(registered.filter(entry => !isModelFile(entry))).toEqual([
       'GET,POST /api/dsh-film/project',
+      'POST /api/dsh-film/project/update',
       'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
       'GET,HEAD /api/dsh-film/studio',
@@ -130,9 +189,29 @@ describe('dsh-film plugin', () => {
       '/api/dsh-film/assets',
       '/api/dsh-film/caption-runner/claim', '/api/dsh-film/caption-runner/events', '/api/dsh-film/caption-runner/progress',
       '/api/dsh-film/caption-runner/result', '/api/dsh-film/caption-runner/source',
-      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
+      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/project/update', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
     ])
     expect(removed.filter(isModelFile)).toHaveLength(files.length)
+  })
+
+  it('announces a project change on the event stream the hosted pages read', async () => {
+    const served = new Map<string, ConnectionFetchRoute>()
+    const ctx = new Context()
+    ctx.provide('connection')
+    ctx.set('connection', { fetch: { register(route: ConnectionFetchRoute) { served.set(route.path, route); return async () => {} } } })
+    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
+    routes = served
+    const made = (await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))).body.project
+    const controller = new AbortController()
+    const stream = await call('/api/dsh-film/studio', { cwd, path: `/api/projects/${made.id}/events` }, { signal: controller.signal })
+    const reader = stream.response.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe('event: ready\ndata: {}\n\n')
+    await call('/api/dsh-film/project/update', {}, post({ cwd, title: '改过的片名' }))
+    const text = new TextDecoder().decode((await reader.read()).value)
+    expect(text.startsWith('event: project-changed\n')).toBe(true)
+    expect(JSON.parse(text.split('\n')[1]!.slice('data: '.length))).toMatchObject({ type: 'project-changed', projectId: made.id, project: { title: '改过的片名' } })
+    controller.abort()
+    await fiber.dispose()
   })
 
   it('loads without a connection service', async () => {

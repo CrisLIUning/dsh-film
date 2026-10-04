@@ -54,7 +54,7 @@ https://github.com/CrisLIUning/dsh-film/releases/download/v0.1.0/dsh-film-0.1.0.
 - 后台渲染用的 FFmpeg（GPL 版本，压缩包约 86 MB，86,333,540 字节）：只在 Windows x64 上、本机找不到 ffmpeg 时才会提出下载；其他系统请自行安装 ffmpeg；
 - 剪辑台的其他 AI 模型（配音、抠像等），见下文“剪辑台的 AI 模型”。
 
-装好后打开任意会话的右侧侧栏，在“开始”页点“剧本”等入口。会话需要有工作区。
+装好后打开任意会话的右侧侧栏，在“开始”页点“剧本”等入口。会话需要有工作区。第一次打开任一影视标签时，插件自动在工作区里建好影片（片名取工作区文件夹名，画幅 16:9，连同一张空白分镜画布），不用填表。片名和画幅在四个标签共用的标题栏里改：点片名直接改（最多 80 字，回车或点别处保存，Esc 取消）；画幅菜单列出剪辑台支持的 16:9、9:16、1:1、4:5、21:9、2.39:1，画幅用于新的剪辑，已有剪辑在剪辑台里改。0.1.0 建的 4:3 影片照旧保留并显示为 4:3。
 
 **升级**：插件页暂不支持自动更新，先卸载再按上面的方法装新版本。影片是工作区里 `film/` 下的文件，卸载插件不会动它们。
 
@@ -68,7 +68,7 @@ Requires DeepSeek Harness 0.2.x or VibeDev (VibeDev Next), which is built on it.
 - **dsh-media is optional**: only image and video generation on the storyboard needs [dsh-media](https://github.com/CrisLIUning/dsh-media). Everything else works without it.
 - **Downloads only after you agree**: the Whisper small and Silero speech-detection models for captions (about 254 MB together, 254,174,137 bytes); the FFmpeg renderer (GPL build, about 86 MB zipped, 86,333,540 bytes), offered only on Windows x64 when no ffmpeg is found — elsewhere install ffmpeg yourself; and the editing desk's other models.
 
-Then open the right sidebar of a session that has a workspace and pick a part on its start page. To upgrade, uninstall and install the new version; your film stays in the workspace's `film/` folder.
+Then open the right sidebar of a session that has a workspace and pick a part on its start page. The first time a film tab opens, the plugin creates the film — named after the workspace folder, 16:9, with an empty storyboard — with no form to fill in. Rename it and pick its frame in the header the four tabs share: click the title to edit it (up to 80 characters; Enter or clicking away saves, Esc cancels); the frame menu offers the editing desk's frames (16:9, 9:16, 1:1, 4:5, 21:9, 2.39:1) and applies to new cuts, while an existing cut's frame is changed in the editing desk. A 4:3 film made by 0.1.0 keeps and shows its frame. To upgrade, uninstall and install the new version; your film stays in the workspace's `film/` folder.
 
 ## 文件 · Files
 
@@ -83,11 +83,11 @@ Then open the right sidebar of a session that has a workspace and pick a part on
   media/                     dsh-media 生成的素材；剪辑台第一次用到时复制进 film/
 ```
 
-一个工作区放一部片。已有的 `film/film.json` 不会被覆盖。
+一个工作区放一部片。已有的 `film/film.json` 不会被覆盖；建影片时已有的画布（哪怕读不出来）和删除画布留下的记录也不会被覆盖，工作区里原有的画布会沿用它的 id。
 
 ## Agent 的影视工具 · Agent tools
 
-每个会话都有 `film_project`：查看工作区的影片项目，或在用户要做片时新建一个。工作区有影片项目的会话还会常驻 35 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
+每个会话都有 `film_project`：查看工作区的影片项目，在用户要做片时新建一个（用户打开影视标签时也会自动建好），或改片名和画幅（`update`）。工作区有影片项目的会话还会常驻 35 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
 
 - **剧本** `story_query` `story_asset_bindings` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。`story_asset_bindings` 给人物、地点、道具和镜头绑定参考图（只认选中的那份字节，五种解析结果分开报告），工作区 `media/` 下的图片先复制进影片再绑定。
 - **导入导出** `story_import` `story_export`：先预览再导入为新副本（从不覆盖）；导出完整 Markdown、仅正文，或连同参考图打成素材包存到 `film/story-exports/`。
@@ -101,7 +101,7 @@ Then open the right sidebar of a session that has a workspace and pick a part on
 
 工具名和参数沿用 VibeDev Studio 的影视工具；工作区就是项目，所以不再需要 `project` 参数。
 
-Every conversation has `film_project` (read or start the workspace's film). Conversations in a film workspace also carry 35 screenplay, storyboard, cut, caption and render tools, `film_tools` and guidance; the director desk's and the modeling tools are groups taken on when needed (the director group starts enabled when the board has a director node). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
+Every conversation has `film_project` (read or start the workspace's film — opening a film tab also starts it — or rename it and change its frame with `update`). Conversations in a film workspace also carry 35 screenplay, storyboard, cut, caption and render tools, `film_tools` and guidance; the director desk's and the modeling tools are groups taken on when needed (the director group starts enabled when the board has a director node). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
 
 ### 编剧技能 · Screenwriting skill
 

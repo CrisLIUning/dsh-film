@@ -114,6 +114,27 @@ describe('film_project', () => {
     await expect(run('story_query')).rejects.toThrow(/FILM_NO_PROJECT/)
     await expect(run('canvas_get_state')).rejects.toThrow(/FILM_NO_PROJECT/)
   })
+
+  it('creates the film with its empty board', async () => {
+    const made = await run('film_project', { action: 'create' })
+    expect(await savedBoard()).toMatchObject({ id: made.project.id, nodes: [], connections: [], chatSessions: [], activeChatId: null, viewport: { x: 0, y: 0, k: 1 } })
+  })
+
+  it('renames the film and changes its frame, announcing the change', async () => {
+    await expect(run('film_project', { action: 'update', title: '新名字' })).rejects.toThrow(/^PROJECT_NOT_FOUND: /u)
+    const made = (await run('film_project', { action: 'create', title: '雨夜来客' })).project
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    created.length = 0
+    const renamed = await run('film_project', { action: 'update', title: '修表铺', aspectRatio: '21:9' })
+    expect(renamed).toMatchObject({ changed: true, project: { id: made.id, title: '修表铺', aspectRatio: '21:9' } })
+    expect(seen).toEqual([{ type: 'project-changed', projectId: made.id, project: renamed.project }])
+    expect(created).toEqual([cwd])
+    expect(await run('film_project', { action: 'update', title: '修表铺' })).toMatchObject({ changed: false })
+    expect(seen).toHaveLength(1)
+    await expect(run('film_project', { action: 'update' })).rejects.toThrow(/^BAD_REQUEST: Give a title/u)
+    await expect(run('film_project', { action: 'update', title: '   ' })).rejects.toThrow(/BAD_REQUEST/)
+  })
 })
 
 describe('screenplay tools', () => {
@@ -414,7 +435,9 @@ describe('storyboard tools with no page open', () => {
     const film = await startFilm()
     const seen: ProjectEvent[] = []
     events.subscribe(cwd, (event) => { seen.push(event) })
-    expect(await run('canvas_get_state')).toMatchObject({ source: 'persisted', empty: true, nodes: [] })
+    // The film came with its empty board.
+    expect(await run('canvas_get_state')).toMatchObject({ source: 'persisted', nodes: [], connections: [] })
+    expect(await savedBoard()).toMatchObject({ id: film.id, title: '雨夜来客', nodes: [], connections: [], backgroundMode: 'lines', showImageInfo: false })
     expect(await run('canvas_list_clients')).toMatchObject({ boardId: film.id, clients: [], note: 'No storyboard page is open.' })
 
     const made = await run('canvas_create_text_nodes', { items: [{ text: '第一镜：雨夜门口', title: '镜 1' }, { text: '第二镜：来客进门' }] })
@@ -452,6 +475,16 @@ describe('storyboard tools with no page open', () => {
     expect(await run('canvas_get_document', { limit: 2 })).toMatchObject({ source: 'persisted', totalNodes: 4, nextOffset: 2 })
     expect((await run('canvas_delete_nodes', { ids: [second!.id] })).removedNodeIds).toEqual([second!.id])
     expect((await savedBoard()).nodes).toHaveLength(3)
+  })
+
+  it('starts the shared empty board for a film that has none (made by 0.1.0)', async () => {
+    const film = await startFilm()
+    await rm(join(cwd, 'film', 'canvas', 'document.json'))
+    expect(await run('canvas_get_state')).toMatchObject({ source: 'persisted', empty: true, nodes: [] })
+    await run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })
+    expect(await savedBoard()).toMatchObject({
+      id: film.id, title: '雨夜来客', chatSessions: [], activeChatId: null, backgroundMode: 'lines', showImageInfo: false, viewport: { x: 0, y: 0, k: 1 },
+    })
   })
 
   it('shortens long text and leaves out bulky metadata in what the model reads', async () => {
@@ -519,8 +552,8 @@ describe('storyboard tools with a page open', () => {
     expect(page.sent.find(item => item.event === 'tool_call')!.data).toMatchObject({
       target: page.target, name: 'canvas_apply_ops', input: { boardId: film.id, project: film.id, ops: [{ type: 'add_node', nodeType: 'text' }] },
     })
-    // The page saves its own board; the tool wrote nothing behind it.
-    await expect(readFile(join(cwd, 'film', 'canvas', 'document.json'))).rejects.toThrow()
+    // The page saves its own board; the tool wrote nothing behind it (the saved board is still the empty one the film came with).
+    expect((await savedBoard()).nodes).toEqual([])
     // The answer is the page's new board: reads see it straight away.
     expect(await run('canvas_get_state')).toMatchObject({ source: 'live', nodes: [{ metadata: { content: '镜 1' } }] })
     expect((await run('canvas_get_selection')).nodes).toEqual([expect.objectContaining({ metadata: expect.objectContaining({ content: '镜 1' }) })])

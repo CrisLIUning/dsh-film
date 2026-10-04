@@ -10,6 +10,7 @@
 export const FILM_GUIDANCE = [
   '## Film workbench',
   'This workspace is a film project (film/film.json). The person works on it in the 影视 sidebar: 剧本 (screenplays), 分镜 (the storyboard canvas), 剪辑 (the editing desk) and 导演 (the director desk). The story_*, canvas_* and timeline_* tools work on the same saved film; what they change is what the person sees.',
+  'The sidebar creates the film, named after the workspace folder and with its empty board, the first time one of its tabs opens; nobody fills in a form. The person renames it and picks its frame in the header the four tabs share, and film_project action "update" does the same. The frame applies to new cuts; an existing cut keeps its own until it is changed in the editing desk (timeline_edit project.set_ratio).',
   'film/ holds live stores: the screenplays (film/story/*.md), the board (film/canvas/document.json), the cut (film/canvas/timeline.json) and their version records. Never write or delete them with file or shell tools — that bypasses revisions and can discard what the person just did. Use the tools; reading media files under film/ is fine.',
   '',
   '### Screenplays',

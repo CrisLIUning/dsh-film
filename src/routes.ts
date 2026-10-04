@@ -3,8 +3,12 @@
  * already authenticated every request that reaches them.
  *
  * - `GET  /api/dsh-film/project?cwd=` — the workspace's project, or `null`.
- * - `POST /api/dsh-film/project` — `{ cwd, title, aspectRatio? }` starts one;
- *   an existing project is answered with 409 and left as it is.
+ * - `POST /api/dsh-film/project` — `{ cwd, title?, aspectRatio?, ensure? }`
+ *   starts one with its empty board (201 `{ project, created: true }`). An
+ *   existing project is left as it is: 200 `{ project, created: false }` with
+ *   `ensure: true` (what the workbench sends when a tab opens), 409 without.
+ * - `POST /api/dsh-film/project/update` — `{ cwd, title?, aspectRatio? }`
+ *   renames the film or changes its frame; announced as `project-changed`.
  * - `GET  /api/dsh-film/assets?cwd=` — media files under `media/` and `film/`.
  * - `GET|HEAD /api/dsh-film/media?path=` — one media file, with byte ranges.
  * - `/api/dsh-film/caption-runner/*` — the caption runner's windows (see captions/runner).
@@ -14,7 +18,7 @@
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { FilmError } from './errors.js'
 import { listAssets, serveMedia } from './media.js'
-import { createProject, parseNewProject, readProject, workspaceDirectory } from './project.js'
+import { createProject, parseNewProject, parseProjectChange, readProject, updateProject, workspaceDirectory } from './project.js'
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
@@ -93,18 +97,36 @@ async function jsonBody(request: Request): Promise<unknown> {
   }
 }
 
+/** A JSON object body and the workspace it names. */
+async function workspaceBody(request: Request): Promise<{ body: Record<string, unknown>; cwd: string }> {
+  const body = await jsonBody(request)
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new FilmError('BAD_REQUEST', 'The request body must be a JSON object.')
+  const record = body as Record<string, unknown>
+  return { body: record, cwd: await workspaceDirectory(typeof record.cwd === 'string' ? record.cwd : undefined) }
+}
+
 const projectRoute = (created: (cwd: string) => void) => async (request: Request): Promise<Response> => {
   if (request.method === 'POST') {
-    const body = await jsonBody(request)
-    const cwd = await workspaceDirectory(typeof body === 'object' && body !== null ? (body as { cwd?: string }).cwd : undefined)
-    const result = await createProject(cwd, parseNewProject(body))
-    if (result.created) created(cwd)
-    return result.created
-      ? json(201, { project: result.project })
+    const { body, cwd } = await workspaceBody(request)
+    if (body.ensure !== undefined && typeof body.ensure !== 'boolean') throw new FilmError('BAD_REQUEST', 'ensure must be a boolean.')
+    const result = await createProject(cwd, parseNewProject(body, cwd))
+    if (result.created) {
+      created(cwd)
+      return json(201, { project: result.project, created: true })
+    }
+    return body.ensure === true
+      ? json(200, { project: result.project, created: false })
       : json(409, { error: { code: 'PROJECT_EXISTS', message: 'This workspace already has a film project.' }, project: result.project })
   }
   const cwd = await workspaceDirectory(new URL(request.url).searchParams.get('cwd'))
   return json(200, { project: await readProject(cwd) })
+}
+
+const projectUpdateRoute = (events: ProjectEvents) => async (request: Request): Promise<Response> => {
+  const { body, cwd } = await workspaceBody(request)
+  const { project, changed } = await updateProject(cwd, parseProjectChange({ title: body.title, aspectRatio: body.aspectRatio }))
+  if (changed) events.emit(cwd, { type: 'project-changed', projectId: project.id, project })
+  return json(200, { project })
 }
 
 async function assets(request: Request): Promise<Response> {
@@ -117,11 +139,18 @@ async function assets(request: Request): Promise<Response> {
  * @param studio - the Studio-compatible API.
  * @param projectCreated - told when a workspace gets its film project (the agent's film tools come with it).
  * @param captionRunner - the caption runner, whose windows' routes are served too.
+ * @param events - the project event bus the Studio API announces on (project changes go to open pages through it).
  * @returns the route list.
  */
-export function filmRoutes(studio: StudioRouter = createStudioRouter(), projectCreated: (cwd: string) => void = () => {}, captionRunner?: CaptionRunnerHub): ConnectionFetchRoute[] {
+export function filmRoutes(
+  studio: StudioRouter = createStudioRouter(),
+  projectCreated: (cwd: string) => void = () => {},
+  captionRunner?: CaptionRunnerHub,
+  events: ProjectEvents = new ProjectEvents(),
+): ConnectionFetchRoute[] {
   return [
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(projectRoute(projectCreated)) },
+    { path: `${ROUTE_PREFIX}/project/update`, methods: ['POST'], requestBody: 'buffered', fetch: answering(projectUpdateRoute(events)) },
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
     // The Studio-compatible API on two routes: reads, and writes with streamed

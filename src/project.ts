@@ -1,15 +1,22 @@
 /**
  * The film project: one per workspace, described by `film/film.json`. The
  * project file names the film and its frame; the other parts (script,
- * storyboard, timeline, director scenes) live beside it under `film/` and
- * arrive in later versions.
+ * storyboard, timeline, director scenes) live beside it under `film/`.
+ *
+ * The workbench creates the film the first time one of its tabs is on screen,
+ * named after the workspace folder; the person renames it and picks its frame
+ * in the tabs' shared header.
  * @module dsh-film/project
  */
 
 import { randomUUID } from 'node:crypto'
-import { link, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, isAbsolute, join } from 'node:path'
+import { CanvasDocumentStore, emptyFilmBoard, savedBoardId } from './canvas/documents.js'
 import { FilmError } from './errors.js'
+import { createExclusive, withFileLock } from './file-writes.js'
+
+export { createExclusive } from './file-writes.js'
 
 /** The folder under the workspace that holds every film file. */
 export const FILM_DIR = 'film'
@@ -19,12 +26,29 @@ export const PROJECT_FILE = `${FILM_DIR}/film.json`
 export const PROJECT_FORMAT = 'vibedev.film'
 export const PROJECT_VERSION = 1
 
-/** Frame shapes a project can use. */
-export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '2.39:1'] as const
+/**
+ * Frames a film can be given: exactly the editing desk's own set (the video
+ * editor's `HOST_PROJECT_ASPECTS`), so a new cut opens in the film's frame.
+ */
+export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:5', '21:9', '2.39:1'] as const
 export type AspectRatio = typeof ASPECT_RATIOS[number]
+
+/**
+ * Frames earlier versions offered that the editing desk does not cut in. A
+ * film that has one keeps it and shows it as it is; it is never offered.
+ */
+export const LEGACY_ASPECT_RATIOS = ['4:3'] as const
+/** A frame a project file may hold. */
+export type StoredAspectRatio = AspectRatio | typeof LEGACY_ASPECT_RATIOS[number]
+
+/** The frame of a film nobody chose one for. */
+export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'
 
 /** The longest title, in characters. */
 export const TITLE_MAX = 80
+
+/** The title of a film whose workspace folder gives no name. */
+export const UNTITLED = 'Untitled film'
 
 /** The contents of `film/film.json`. */
 export interface FilmProject {
@@ -33,15 +57,21 @@ export interface FilmProject {
   /** Stable identity, kept when the folder is copied or renamed. */
   id: string
   title: string
-  aspectRatio: AspectRatio
+  aspectRatio: StoredAspectRatio
   /** ISO 8601 times. */
   createdAt: string
   updatedAt: string
 }
 
-/** What a new project needs from the user. */
+/** What a new project is made with. */
 export interface NewProject {
   title: string
+  aspectRatio: AspectRatio
+}
+
+/** A change to a project: a new title, a new frame, or both. */
+export interface ProjectChange {
+  title?: string
   aspectRatio?: AspectRatio
 }
 
@@ -50,6 +80,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isAspectRatio = (value: unknown): value is AspectRatio =>
   typeof value === 'string' && (ASPECT_RATIOS as readonly string[]).includes(value)
+
+const isStoredAspectRatio = (value: unknown): value is StoredAspectRatio =>
+  isAspectRatio(value) || (typeof value === 'string' && (LEGACY_ASPECT_RATIOS as readonly string[]).includes(value))
 
 /**
  * Clean a title the user typed: whitespace runs fold to one space, control
@@ -63,19 +96,53 @@ export function cleanTitle(title: string): string {
 }
 
 /**
- * Validate the input for a new project.
- * @param input - the request body.
+ * The title a film starts with: its workspace folder's name, cleaned.
+ * @param cwd - the workspace directory.
+ * @returns the folder name, or {@link UNTITLED} when it gives none.
+ */
+export function defaultTitle(cwd: string): string {
+  return cleanTitle(basename(cwd)) || UNTITLED
+}
+
+function parseAspectRatio(value: unknown): AspectRatio {
+  if (!isAspectRatio(value)) throw new FilmError('BAD_REQUEST', `aspectRatio must be one of ${ASPECT_RATIOS.join(', ')}.`)
+  return value
+}
+
+/**
+ * Validate the input for a new project. Everything is optional: no title (or
+ * a blank one) names the film after its folder, and the frame defaults to 16:9.
+ * @param input - the request body or tool arguments.
+ * @param cwd - the workspace directory, for the default title.
  * @returns the title and frame to create the project with.
  */
-export function parseNewProject(input: unknown): Required<NewProject> {
+export function parseNewProject(input: unknown, cwd: string): NewProject {
   if (!isRecord(input)) throw new FilmError('BAD_REQUEST', 'The request body must be a JSON object.')
+  if (input.title !== undefined && input.title !== null && typeof input.title !== 'string') throw new FilmError('BAD_REQUEST', 'title must be a string.')
   const title = typeof input.title === 'string' ? cleanTitle(input.title) : ''
-  if (title === '') throw new FilmError('BAD_REQUEST', 'A project needs a title.')
-  const aspectRatio = input.aspectRatio ?? '16:9'
-  if (!isAspectRatio(aspectRatio)) {
-    throw new FilmError('BAD_REQUEST', `aspectRatio must be one of ${ASPECT_RATIOS.join(', ')}.`)
+  return {
+    title: title === '' ? defaultTitle(cwd) : title,
+    aspectRatio: input.aspectRatio === undefined || input.aspectRatio === null ? DEFAULT_ASPECT_RATIO : parseAspectRatio(input.aspectRatio),
   }
-  return { title, aspectRatio }
+}
+
+/**
+ * Validate a change to a project: a non-blank title, a frame the editing desk
+ * cuts in, or both.
+ * @param input - the request body or tool arguments.
+ * @returns the change.
+ */
+export function parseProjectChange(input: unknown): ProjectChange {
+  if (!isRecord(input)) throw new FilmError('BAD_REQUEST', 'The request body must be a JSON object.')
+  const change: ProjectChange = {}
+  if (input.title !== undefined) {
+    const title = typeof input.title === 'string' ? cleanTitle(input.title) : ''
+    if (title === '') throw new FilmError('BAD_REQUEST', 'A title must have at least one visible character.')
+    change.title = title
+  }
+  if (input.aspectRatio !== undefined) change.aspectRatio = parseAspectRatio(input.aspectRatio)
+  if (change.title === undefined && change.aspectRatio === undefined) throw new FilmError('BAD_REQUEST', 'Give a title, an aspectRatio or both.')
+  return change
 }
 
 /**
@@ -100,7 +167,7 @@ export function parseProject(text: string): FilmProject {
   const { id, title, aspectRatio, createdAt, updatedAt } = value
   if (typeof id !== 'string' || id === '') throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} has no id.`)
   if (typeof title !== 'string') throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} has no title.`)
-  if (!isAspectRatio(aspectRatio)) throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} has an unknown aspectRatio.`)
+  if (!isStoredAspectRatio(aspectRatio)) throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} has an unknown aspectRatio.`)
   if (typeof createdAt !== 'string' || typeof updatedAt !== 'string') {
     throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} is missing its times.`)
   }
@@ -138,38 +205,10 @@ export async function readProject(cwd: string): Promise<FilmProject | null> {
 }
 
 /**
- * Write a file only if nothing is at its path yet. The content goes to a
- * temporary file first and is linked into place, so the final name never
- * holds a partial file; file systems without hard links fall back to an
- * exclusive create.
- * @param path - the final path.
- * @param data - the content.
- * @returns whether the file was created (`false`: something was already there).
- */
-export async function createExclusive(path: string, data: string): Promise<boolean> {
-  const temporary = `${path}.${randomUUID()}.tmp`
-  await writeFile(temporary, data, { flag: 'wx' })
-  try {
-    await link(temporary, path)
-    return true
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EEXIST') return false
-    if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'ENOSYS') throw error
-  } finally {
-    await rm(temporary, { force: true })
-  }
-  try {
-    await writeFile(path, data, { flag: 'wx' })
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
-    throw error
-  }
-}
-
-/**
- * Start a project in the workspace. An existing project is never replaced.
+ * Start a project in the workspace, with its empty storyboard. An existing
+ * project is never replaced, and neither is a board already saved (even a
+ * damaged one) or a deleted board's tombstone. A board saved before the film
+ * existed keeps its place: the film takes that board's id.
  * @param cwd - the workspace directory.
  * @param input - the title and frame.
  * @param now - the creation time.
@@ -177,24 +216,69 @@ export async function createExclusive(path: string, data: string): Promise<boole
  */
 export async function createProject(
   cwd: string,
-  input: Required<NewProject>,
+  input: NewProject,
   now: Date = new Date(),
 ): Promise<{ project: FilmProject; created: boolean }> {
   const time = now.toISOString()
+  await mkdir(join(cwd, FILM_DIR), { recursive: true })
   const project: FilmProject = {
     format: PROJECT_FORMAT,
     version: PROJECT_VERSION,
-    id: randomUUID(),
+    id: await savedBoardId(cwd) ?? randomUUID(),
     title: input.title,
     aspectRatio: input.aspectRatio,
     createdAt: time,
     updatedAt: time,
   }
-  await mkdir(join(cwd, FILM_DIR), { recursive: true })
   if (await createExclusive(join(cwd, PROJECT_FILE), `${JSON.stringify(project, null, 2)}\n`)) {
+    // The film exists either way: a board that could not be written now is
+    // made when the storyboard first lists its boards.
+    await new CanvasDocumentStore(cwd, project.id).create(emptyFilmBoard(project.id, project.title, time)).catch(() => undefined)
     return { project, created: true }
   }
   const existing = await readProject(cwd)
   if (existing === null) throw new FilmError('PROJECT_INVALID', `${PROJECT_FILE} disappeared while it was being created.`)
   return { project: existing, created: false }
+}
+
+/**
+ * Rename the film or change its frame. The file is replaced atomically under
+ * its lock, and fields this version does not know are kept. A frame applies to
+ * new cuts; an existing cut keeps its own until it is changed in the editing desk.
+ * @param cwd - the workspace directory.
+ * @param change - the new title and/or frame.
+ * @param now - the change time.
+ * @returns the project as saved, and whether anything changed.
+ */
+export async function updateProject(
+  cwd: string,
+  change: ProjectChange,
+  now: Date = new Date(),
+): Promise<{ project: FilmProject; changed: boolean }> {
+  const path = join(cwd, PROJECT_FILE)
+  return withFileLock(path, async () => {
+    let text: string
+    try {
+      text = await readFile(path, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new FilmError('PROJECT_NOT_FOUND', 'This workspace has no film yet; it is created when a film tab opens.')
+      }
+      throw error
+    }
+    const current = parseProject(text)
+    const title = change.title ?? current.title
+    const aspectRatio = change.aspectRatio ?? current.aspectRatio
+    if (title === current.title && aspectRatio === current.aspectRatio) return { project: current, changed: false }
+    const project: FilmProject = { ...current, title, aspectRatio, updatedAt: now.toISOString() }
+    const raw = JSON.parse(text) as Record<string, unknown>
+    const temporary = `${path}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify({ ...raw, ...project }, null, 2)}\n`, 'utf8')
+      await rename(temporary, path)
+    } finally {
+      await rm(temporary, { force: true })
+    }
+    return { project, changed: true }
+  })
 }

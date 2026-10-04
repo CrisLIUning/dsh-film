@@ -53,7 +53,9 @@ export function workspaceFolder(exec: ToolRunContext): string {
 export async function filmWorkspace(exec: ToolRunContext): Promise<FilmWorkspace> {
   const cwd = workspaceFolder(exec)
   const project = await readProject(cwd)
-  if (project === null) throw new FilmToolError('FILM_NO_PROJECT', 'This workspace has no film project. Create one with film_project (action "create").')
+  if (project === null) {
+    throw new FilmToolError('FILM_NO_PROJECT', 'This workspace has no film yet. It is created when the person opens a tab of the 影视 sidebar, or with film_project (action "create").')
+  }
   return { cwd, project, projectId: project.id, boardId: project.id }
 }
 

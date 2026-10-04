@@ -7,15 +7,17 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
-import { Button, Input, SegmentedControl, Tag, fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { KeyboardEvent, ReactNode } from 'react'
+import { Button, Input, Menu, fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilmView, Translate, WorkbenchProps } from '../types.ts'
-import { ASPECT_RATIOS, fetchAssets, mediaUrl } from './api.ts'
-import type { AspectRatio, FilmProject, MediaAsset } from './api.ts'
+import { ASPECT_RATIOS, TITLE_MAX, fetchAssets, mediaUrl } from './api.ts'
+import type { AspectRatio, FilmProject, MediaAsset, ProjectChange } from './api.ts'
 import { AppFrame } from './AppFrame.tsx'
 import type { FrameProtocol } from './AppFrame.tsx'
 import { canvasProtocol } from './canvas-protocol.ts'
-import { startProject, useProject } from './project-store.ts'
+import { changeProject, useProject } from './project-store.ts'
+import { titleKeyAction, titleToSave } from './project-title.ts'
 import { ScreenwriterView } from './story/ScreenwriterView.tsx'
 import css from './workbench.module.css'
 
@@ -38,20 +40,24 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
   if (state.status === 'loading') return <p className={css.notice} role="status">{t('project.loading')}</p>
   if (state.status === 'failed') {
     const explained = PROBLEMS[state.code]
+    const headline = explained !== undefined
+      ? t(explained)
+      : t(state.during === 'start' ? 'project.startFailed' : 'project.loadFailed', { message: state.message })
     return (
       <div className={css.notice} role="alert">
-        <p>{explained === undefined ? t('project.loadFailed', { message: state.message }) : t(explained)}</p>
+        <p>{headline}</p>
         {explained !== undefined && <p className={css.detail}>{state.message}</p>}
         <Button variant="outline" size="sm" onClick={reload}>{t('project.reload')}</Button>
       </div>
     )
   }
-  if (state.project === null) return <CreateProject cwd={cwd} t={t} />
+  // No film yet: the store is creating it (this part is on screen, or another is).
+  if (state.project === null) return <p className={css.notice} role="status">{t('project.starting')}</p>
   const hosted = hostedApp(view, state.project, cwd, openView)
   const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} project={state.project} />
   return (
     <div className={css.root}>
-      <ProjectHeader project={state.project} t={t} />
+      <ProjectHeader project={state.project} cwd={cwd} t={t} />
       {hosted === undefined
         ? <div className={css.body}>{native}</div>
         : (
@@ -106,70 +112,143 @@ function NativePart({ view, cwd, visible, t, openView, project }: WorkbenchProps
   }
 }
 
-function ProjectHeader({ project, t }: { project: FilmProject; t: Translate }): ReactNode {
+/** Saves one change to the film; a refusal is shown in the header. */
+type SaveChange = (change: ProjectChange) => Promise<void>
+
+/** The header the four parts share: the film's title (click to rename), its frame menu and its file. */
+function ProjectHeader({ project, cwd, t }: { project: FilmProject; cwd: string; t: Translate }): ReactNode {
+  const [error, setError] = useState<string | undefined>()
+  useEffect(() => { setError(undefined) }, [project.id])
+  const save: SaveChange = async (change) => {
+    setError(undefined)
+    try {
+      await changeProject(cwd, change)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
   return (
     <header className={css.header}>
-      <h2 className={css.title} title={project.title}>{project.title}</h2>
-      <Tag tone="neutral">{project.aspectRatio}</Tag>
-      <span className={css.file} title={t('project.file', { path: PROJECT_FILE })}>{PROJECT_FILE}</span>
+      <TitleEditor title={project.title} save={save} t={t} />
+      <AspectMenu aspectRatio={project.aspectRatio} save={save} t={t} />
+      {error !== undefined
+        ? <span className={css.headerError} role="alert" title={error}>{t('project.saveFailed', { message: error })}</span>
+        : <span className={css.file} title={t('project.file', { path: PROJECT_FILE })}>{PROJECT_FILE}</span>}
     </header>
   )
 }
 
-/** The last folder name of a workspace path: a starting title. */
-function folderName(cwd: string): string {
-  const parts = cwd.split(/[\\/]+/).filter(part => part !== '')
-  return parts[parts.length - 1] ?? ''
+/**
+ * The film's title: a button that turns into an input on click. Enter or
+ * leaving the input saves, Escape cancels; a blank or unchanged title saves nothing.
+ */
+function TitleEditor({ title, save, t }: { title: string; save: SaveChange; t: Translate }): ReactNode {
+  const [draft, setDraft] = useState<string | undefined>()
+  const [saving, setSaving] = useState<string | undefined>()
+  // The draft as typed, read synchronously: Escape and the blur that follows must not both finish the edit.
+  const editing = useRef<string | undefined>(undefined)
+  const input = useRef<HTMLInputElement | null>(null)
+  useEffect(() => {
+    if (draft !== undefined) input.current?.select()
+  }, [draft !== undefined])
+
+  const start = (): void => {
+    editing.current = title
+    setDraft(title)
+  }
+  const finish = (keep: boolean): void => {
+    const typed = editing.current
+    if (typed === undefined) return
+    editing.current = undefined
+    setDraft(undefined)
+    const next = keep ? titleToSave(typed, title) : undefined
+    if (next === undefined) return
+    setSaving(next)
+    void save({ title: next }).finally(() => { setSaving(undefined) })
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    const action = titleKeyAction(event.key, event.nativeEvent.isComposing || event.keyCode === 229)
+    if (action === undefined) return
+    event.preventDefault()
+    event.stopPropagation()
+    finish(action === 'save')
+  }
+
+  const shown = saving ?? title
+  return (
+    <h2 className={css.titleHeading}>
+      {draft !== undefined
+        ? (
+            <Input
+              ref={input}
+              className={css.titleInput}
+              value={draft}
+              maxLength={TITLE_MAX}
+              aria-label={t('project.title.label')}
+              autoFocus
+              onChange={(event) => {
+                editing.current = event.target.value
+                setDraft(event.target.value)
+              }}
+              onKeyDown={onKeyDown}
+              onBlur={() => { finish(true) }}
+            />
+          )
+        : (
+            <button type="button" className={css.title} title={t('project.title.edit')} aria-label={`${t('project.title.label')}: ${shown}`} disabled={saving !== undefined} onClick={start}>
+              {shown}
+            </button>
+          )}
+    </h2>
+  )
 }
 
-function CreateProject({ cwd, t }: { cwd: string; t: Translate }): ReactNode {
-  const [title, setTitle] = useState(() => folderName(cwd))
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | undefined>()
-  const submit = (event: FormEvent): void => {
-    event.preventDefault()
-    if (busy || title.trim() === '') return
-    setBusy(true)
-    setError(undefined)
-    startProject(cwd, title, aspectRatio)
-      .catch((reason: unknown) => {
-        setError(reason instanceof Error ? reason.message : String(reason))
-        setBusy(false)
-      })
+const isAspectRatio = (value: string): value is AspectRatio => (ASPECT_RATIOS as readonly string[]).includes(value)
+
+/**
+ * The film's frame: a menu of the frames the editing desk cuts in. A frame
+ * from an earlier version the desk lacks (4:3) is shown as it is, with no
+ * entry checked, until another is picked.
+ */
+function AspectMenu({ aspectRatio, save, t }: { aspectRatio: string; save: SaveChange; t: Translate }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState<AspectRatio | undefined>()
+  const shown = saving ?? aspectRatio
+  const items: MenuEntry[] = [
+    { type: 'label', id: 'aspect-label', text: t('project.aspect.label') },
+    ...ASPECT_RATIOS.map(value => ({ id: value, label: value })),
+  ]
+  const pick = (id: string): void => {
+    setOpen(false)
+    if (!isAspectRatio(id) || id === aspectRatio) return
+    setSaving(id)
+    void save({ aspectRatio: id }).finally(() => { setSaving(undefined) })
   }
   return (
-    <form className={css.create} onSubmit={submit}>
-      <h2 className={css.createTitle}>{t('project.empty.title')}</h2>
-      <p className={css.quiet}>{t('project.empty.body')}</p>
-      <label className={css.field}>
-        <span className={css.label}>{t('project.field.title')}</span>
-        <Input
-          value={title}
-          maxLength={80}
-          placeholder={t('project.field.titlePlaceholder')}
-          onChange={(event) => { setTitle(event.target.value) }}
-          disabled={busy}
-        />
-      </label>
-      <div className={css.field}>
-        <span className={css.label}>{t('project.field.aspect')}</span>
-        <SegmentedControl
-          id="dsh-film-aspect"
-          label={t('project.field.aspect')}
-          value={aspectRatio}
-          options={ASPECT_RATIOS.map(value => ({ value, label: value }))}
-          onChange={setAspectRatio}
-          disabled={busy}
-        />
-      </div>
-      {error !== undefined && <p className={css.error} role="alert">{t('project.createFailed', { message: error })}</p>}
-      <div>
-        <Button type="submit" variant="primary" disabled={busy || title.trim() === ''}>
-          {busy ? t('project.creating') : t('project.create')}
+    <Menu
+      open={open}
+      onClose={() => { setOpen(false) }}
+      anchor={(
+        <Button
+          variant="ghost"
+          size="sm"
+          className={css.aspect}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t('project.aspect.button', { value: shown })}
+          disabled={saving !== undefined}
+          onClick={() => { setOpen(value => !value) }}
+        >
+          {shown}
         </Button>
-      </div>
-    </form>
+      )}
+      items={items}
+      selectedId={shown}
+      onSelect={pick}
+      footer={[{ type: 'label', id: 'aspect-note', text: t('project.aspect.note') }]}
+      portal
+      dense
+    />
   )
 }
 

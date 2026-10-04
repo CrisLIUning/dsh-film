@@ -21,7 +21,7 @@ let projectId: string
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-review-'))
   outside = await mkdtemp(join(tmpdir(), 'dsh-film-outside-'))
-  projectId = (await createProject(cwd, parseNewProject({ title: '复查' }))).project.id
+  projectId = (await createProject(cwd, parseNewProject({ title: '复查' }, cwd))).project.id
 })
 
 afterEach(async () => {

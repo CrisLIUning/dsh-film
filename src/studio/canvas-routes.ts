@@ -9,9 +9,10 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CanvasBoardAgent, BoardAgentError, parseBoardTarget, parseLease } from '../canvas/board-agent.js'
-import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
+import { CanvasDocumentStore, CanvasDocumentUpdateError, emptyFilmBoard } from '../canvas/documents.js'
 import type { CanvasDocument } from '../canvas/documents.js'
 import { CanvasStoryMergeConflict, mergeStoryCanvas } from '../canvas/merge.js'
+import { readProject } from '../project.js'
 import { StudioApiError, StudioReply } from './router.js'
 import type { StudioRequest, StudioRouter } from './router.js'
 import type { ProjectEvents } from './events.js'
@@ -23,6 +24,23 @@ export const projectOf = (request: StudioRequest): string =>
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * Give a film made before films came with their board (dsh-film 0.1.0) its
+ * empty board, when the canvas lists the film's own board. Like a new film's,
+ * it never replaces a saved board, a damaged one or a deleted one's tombstone.
+ * The list is a read, so a board that cannot be made now is left for the next.
+ * @param request - the list request.
+ */
+async function ensureFilmBoard(request: StudioRequest): Promise<void> {
+  try {
+    const project = await readProject(request.cwd)
+    if (project === null || projectOf(request) !== project.id) return
+    await new CanvasDocumentStore(request.cwd, project.id).create(emptyFilmBoard(project.id, project.title))
+  } catch {
+    // A broken project file or an unwritable folder: the list answers what is there.
+  }
+}
 
 /**
  * Add the canvas routes to a router.
@@ -38,6 +56,7 @@ export function addCanvasRoutes(router: StudioRouter, events: ProjectEvents, age
   }
 
   router.add('GET', '/api/canvas/documents', async (request) => {
+    await ensureFilmBoard(request)
     const documents = store(request)
     const [list, deleted] = await Promise.all([documents.list(), documents.tombstones()])
     return { documents: list, deleted }

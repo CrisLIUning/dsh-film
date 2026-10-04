@@ -35,7 +35,7 @@ let seen: ProjectEvent[]
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-modeling-'))
   film = join(cwd, 'film')
-  projectId = (await createProject(cwd, parseNewProject({ title: '古堡' }))).project.id
+  projectId = (await createProject(cwd, parseNewProject({ title: '古堡' }, cwd))).project.id
   const events = new ProjectEvents()
   seen = []
   events.subscribe(cwd, (event) => { seen.push(event) })

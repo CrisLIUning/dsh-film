@@ -24,8 +24,7 @@ import {
   CanvasToolError, buildBoardOps, compactSnapshot, generationStatusPage, mutationReceipt, readNodeContent, savedCanvasPage, snapshotOfDocument,
 } from '../canvas/board-tools.js'
 import type { CanvasWriteTool } from '../canvas/board-tools.js'
-import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
-import type { CanvasDocument } from '../canvas/documents.js'
+import { CanvasDocumentStore, CanvasDocumentUpdateError, emptyFilmBoard } from '../canvas/documents.js'
 import { FILM_DIR } from '../project.js'
 import { FilmToolError, callStudio } from './studio-client.js'
 import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
@@ -91,12 +90,6 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** A new, empty board for a film whose storyboard has never been opened. */
-function emptyBoard(film: FilmWorkspace): CanvasDocument {
-  const now = new Date().toISOString()
-  return { id: film.boardId, title: film.project.title, createdAt: now, updatedAt: now, nodes: [], connections: [], chatSessions: [], activeChatId: null, viewport: { x: 0, y: 0, k: 1 } }
-}
-
 /** A project file path the board can hold: relative to `film/`, or a workspace path. */
 function cleanPath(film: FilmWorkspace, path: string): string {
   let clean = path.trim()
@@ -158,7 +151,8 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
       if (current !== null && current.id !== film.boardId) {
         throw new FilmToolError('CANVAS_BOARD_MISMATCH', `The saved board (${current.id}) is not this film's board (${film.boardId}); open the 分镜 tab to repair it.`)
       }
-      const base = current ?? emptyBoard(film)
+      // A film from before boards came with it may still have none.
+      const base = current ?? emptyFilmBoard(film.boardId, film.project.title)
       before = snapshotOfDocument(base)
       after = applyBoardOps(before, buildBoardOps(tool, args, before))
       return { ...base, nodes: after.nodes ?? [], connections: after.connections ?? [], viewport: after.viewport, updatedAt: new Date().toISOString() }

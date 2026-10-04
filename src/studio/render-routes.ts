@@ -185,7 +185,7 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
     const projectId = projectOf(request)
     const settings = normalizeRenderRequest(await request.json())
     const film = await readProject(request.cwd)
-    if (film === null) throw new TimelineRenderError(404, 'PROJECT_NOT_FOUND', '这个工作区还没有影视项目，没有可渲染的剪辑。')
+    if (film === null) throw new TimelineRenderError(404, 'PROJECT_NOT_FOUND', '这个工作区还没有影片（打开影视侧栏的任一标签就会建好），没有可渲染的剪辑。')
     const store = new TimelineStore(request.cwd)
     const state = await store.read()
     if (settings.baseRevision !== undefined && settings.baseRevision !== state.revision) {

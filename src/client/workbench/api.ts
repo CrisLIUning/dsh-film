@@ -4,9 +4,14 @@
  * and under a web client mounted below a path alike.
  */
 
-/** Frame shapes, mirroring the Host's project model. */
-export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '2.39:1'] as const
+/** Frames a film can be given, mirroring the Host's project model: the editing desk's own set. */
+export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:5', '21:9', '2.39:1'] as const
 export type AspectRatio = typeof ASPECT_RATIOS[number]
+/** A frame a project file may hold: one of {@link ASPECT_RATIOS}, or `4:3` kept from an earlier version. */
+export type StoredAspectRatio = AspectRatio | '4:3'
+
+/** The longest title, in characters, as the Host keeps it. */
+export const TITLE_MAX = 80
 
 /** `film/film.json`, as the Host returns it. */
 export interface FilmProject {
@@ -14,9 +19,15 @@ export interface FilmProject {
   version: 1
   id: string
   title: string
-  aspectRatio: AspectRatio
+  aspectRatio: StoredAspectRatio
   createdAt: string
   updatedAt: string
+}
+
+/** A change to the film: a new title, a new frame, or both. */
+export interface ProjectChange {
+  title?: string
+  aspectRatio?: AspectRatio
 }
 
 export type MediaKind = 'image' | 'video' | 'audio'
@@ -76,29 +87,31 @@ export async function fetchProject(cwd: string, signal?: AbortSignal): Promise<F
   return body.project
 }
 
+const postJson = (body: unknown): RequestInit => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
+
 /**
- * Start the workspace's project. When one already exists (another tab or the
- * agent got there first), that project is returned instead.
+ * Make sure the workspace has its film: the Host creates it (named after the
+ * folder, 16:9, with its empty board) unless one is already there (another
+ * tab or the agent got there first), which is returned as it is.
  * @param cwd - the workspace directory.
- * @param title - the film's title.
- * @param aspectRatio - the frame.
- * @returns the project now in the workspace.
+ * @returns the film, and whether this call created it.
  */
-export async function createProject(cwd: string, title: string, aspectRatio: AspectRatio): Promise<FilmProject> {
-  try {
-    const body = await call<{ project: FilmProject }>(endpoint('project'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, title, aspectRatio }),
-    })
-    return body.project
-  } catch (error) {
-    const existing = error instanceof FilmApiError && error.code === 'PROJECT_EXISTS'
-      ? (error.body as { project?: FilmProject } | undefined)?.project
-      : undefined
-    if (existing !== undefined) return existing
-    throw error
-  }
+export async function ensureProject(cwd: string): Promise<{ project: FilmProject; created: boolean }> {
+  return await call<{ project: FilmProject; created: boolean }>(endpoint('project'), postJson({ cwd, ensure: true }))
+}
+
+/**
+ * Rename the film or change its frame.
+ * @param cwd - the workspace directory.
+ * @param change - the new title and/or frame.
+ * @returns the film as saved.
+ */
+export async function updateProject(cwd: string, change: ProjectChange): Promise<FilmProject> {
+  return (await call<{ project: FilmProject }>(endpoint('project/update'), postJson({ cwd, ...change }))).project
 }
 
 /**
