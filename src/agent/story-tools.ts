@@ -231,7 +231,8 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
       description: 'Preview or atomically apply named screenplay operations, keeping Markdown, identities, relations and references in one saved version. Read the '
         + 'targets and revision first; prefer dryRun:true, then apply the same operations with the same expectedRevision and operationId. Operations use stable '
         + 'ids, never display numbers; give new objects fresh opaque ids and keep them on retries; keep dependent edits in one call. A conflict does not '
-        + 'authorize a whole-document overwrite. changed:false is not a new edit. Shapes:\n' + OPERATION_SHAPES,
+        + 'authorize a whole-document overwrite. changed:false is not a new edit. The film-screenwriting skill has tested batches for scenes, '
+        + 'dialogue links and production fields. Shapes:\n' + OPERATION_SHAPES,
       parameters: {
         documentId: { ...documentId, required: true },
         expectedRevision: { ...expectedRevision, required: true },

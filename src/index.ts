@@ -8,7 +8,8 @@
  * client connection service runs (the desktop app or the web client). It also
  * gives the agent its film tools — `film_project` everywhere, and the
  * screenplay, storyboard and cut tools in conversations whose workspace is a
- * film — through the same API the workbench's pages call.
+ * film — through the same API the workbench's pages call — and its skills
+ * (the screenwriting skill) wherever DSH's skill registry runs.
  *
  * ```yaml
  * - insert:
@@ -34,6 +35,7 @@ import { EditorModels, defaultModelsRoot } from './models/service.js'
 import { ProjectEvents } from './studio/events.js'
 import { modelFileRoutes } from './studio/model-routes.js'
 import { applyFilmAgentTools } from './agent/index.js'
+import { registerFilmSkills } from './skills.js'
 
 export { FilmError } from './errors.js'
 export type { FilmErrorCode } from './errors.js'
@@ -111,4 +113,7 @@ export function apply(ctx: Context, config: Config): void {
       if (projectCreated === install) projectCreated = () => {}
     }, 'dsh-film: project hook')
   })
+
+  // Nested as well: a profile without the skill registry still loads the plugin.
+  ctx.inject(['skills'], (scoped) => { registerFilmSkills(scoped) })
 }
