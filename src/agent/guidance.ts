@@ -20,4 +20,8 @@ export const FILM_GUIDANCE = [
   '',
   '### Cut',
   'timeline_query first: its revision is what timeline_edit quotes, and clip ids are real ids. Preview with dryRun:true, then apply with the same operationId. timeline_edit sound with script {storyDocumentId} turns a screenplay\'s dialogue into captions on the cut.',
+  '',
+  '### Spaces and models',
+  'A place for a scene (a room, a corridor, a building) is a plan you write in millimetres and compile with space_plan_compile: dryRun first, read the warnings and access issues, fix the plan, then write it. The GLB lands in film/spaces/ and the director desk\'s 空间库 lists it; say its size when you report it.',
+  'Procedural models belong to the project, not to a desk: model_brief prepares the task, and each model lives in film/models/<id>/. The one exception to the rule above: you may write a model\'s own source and evidence files (*.ts, specs, notes, reference images) under film/models/<id>/ with file tools. Never write or delete film/models/<id>/model.json or anything under its versions/ — the model_* tools and the 程序化模型 panel own the record. This workbench cannot run, photograph or export a model yet (there is no model_run, model_capture, model_export_glb or model_verify_glb): say what is written and what is unverified, and never present source that has not run as a usable GLB. model_report is the record (verdict incomplete is not a pass; capabilities are earned separately); file visual concerns with model_review and record the person\'s choice with model_adopt.',
 ].join('\n')

@@ -68,6 +68,7 @@ describe('the tool set', () => {
       'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
       'canvas_apply_ops', 'canvas_attach_media',
       'timeline_query', 'timeline_edit',
+      'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
     ])
     for (const tool of tools.values()) {
       expect(tool.parameters).toMatchObject({ type: 'object' })
@@ -422,7 +423,7 @@ describe('installing the tools into film conversations', () => {
     host.live.push(early)
     const refresh = installFilmAgentTools(host.ctx as never, { tools: () => filmAgentTools(services), guidance: 'film guidance' })
     await settle()
-    expect(early.tools.size).toBe(23)
+    expect(early.tools.size).toBe(30)
     expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
 
     const other = host.agent('other', plainFolder)
@@ -439,7 +440,7 @@ describe('installing the tools into film conversations', () => {
     // Refreshing again installs nothing twice.
     refresh(plainFolder)
     await settle()
-    expect(other.tools.size).toBe(23)
+    expect(other.tools.size).toBe(30)
 
     await host.emit('agent/disposed', early)
     expect(early.tools.size).toBe(0)

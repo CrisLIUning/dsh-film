@@ -38,10 +38,13 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 - **剧本** `story_query` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。
 - **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片）放进指定节点，不重复生成。
 - **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）和画布可用的素材、剧本；按版本号放素材、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
+- **空间与模型** `space_plan_compile` `model_brief` `model_review` `model_adopt` `model_status` `model_report` `model_cancel`：按毫米写平面，编译成 `film/spaces/` 下导演台能打开的 GLB（先 dryRun 看尺寸、警告和楼梯可达性）；为程序化模型准备建模任务，读 `film/models/<id>/model.json` 里的记录、写审阅、记录用户采用的版本。运行模型、拍检查图、导出和回读 GLB 需要无头浏览器，暂未接入。
 
 工具名和参数沿用 VibeDev Studio 的影视工具；工作区就是项目，所以不再需要 `project` 参数。
 
 Every conversation has `film_project` (read or start the workspace's film). Conversations in a film workspace also get 22 screenplay, storyboard and cut tools plus guidance; they go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
+
+The modeling tools compile a space plan (millimetres) into a GLB under `film/spaces/` that the director desk opens, prepare img2threejs modeling briefs, and read and annotate procedural model records under `film/models/`; running, capturing and exporting a model needs a headless browser and is not wired up yet.
 
 ## 剪辑台的 AI 模型 · Editor models
 

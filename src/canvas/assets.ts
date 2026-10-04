@@ -57,6 +57,14 @@ const MIME_BY_EXTENSION = new Map<string, string>([
 /** Folders a scan never enters: none hold a person's material. */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', '.od', 'dist', 'build', '.next', '.cache'])
 
+/**
+ * A procedural model's per-version outputs (`models/<id>/versions/`): every
+ * version files its own GLB, capture passes and readback images, dozens per
+ * run, which would bury the library. The adopted model reaches the desk
+ * through the model panel instead.
+ */
+const MODEL_VERSIONS = /^models\/[^/]+\/versions$/
+
 const extensionOf = (path: string): string => path.split('.').pop()?.toLowerCase() ?? ''
 
 /**
@@ -91,7 +99,7 @@ export async function scanMedia(directory: string): Promise<ScannedFile[]> {
       if (entry.name.startsWith('.')) continue
       const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`
       if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) await walk(join(folder, entry.name), relative)
+        if (!SKIPPED_DIRECTORIES.has(entry.name) && !MODEL_VERSIONS.test(relative)) await walk(join(folder, entry.name), relative)
         continue
       }
       if (!entry.isFile() || mediaKindFor(entry.name) === null) continue
