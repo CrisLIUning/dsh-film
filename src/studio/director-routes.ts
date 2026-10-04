@@ -5,7 +5,9 @@
  * plan, rendering and inspecting through the open desk, versioned reviews,
  * compiled motion and modeling briefs. The canvas's review panel and the
  * desk's 建模 button call these as they call Studio, and the agent's
- * director tools call them in-process. Errors answer in Studio's director
+ * director tools call them in-process. The stage route also takes the agent's
+ * place_model ops (src/director/model-placement.ts), which it expands into the
+ * desk's own import, calibrate, place and transform ops. Errors answer in Studio's director
  * shape, `{ error: <text>, code, ...details }`.
  *
  * Not offered: headless background rendering (`/api/projects/:id/director/renders`),
@@ -23,6 +25,8 @@ import { FilmError } from '../errors.js'
 import { FILM_DIR } from '../project.js'
 import { MotionCompileError, compileMotionIntoFilm } from '../director/authored-motion.js'
 import { verifyDirectorAssetSource } from '../director/asset-source.js'
+import { expandModelPlacements, isPlaceModel, prepareModelPlacements, withAgentOps } from '../director/model-placement.js'
+import type { PlacedModel } from '../director/model-placement.js'
 import type {
   DirectorInspectModelResponse, DirectorRenderResponse, DirectorRenderStatusResponse, DirectorReviewRequest, DirectorReviewSource,
   DirectorSceneResponse, DirectorSceneWriteResponse, DirectorStageResponse,
@@ -260,18 +264,29 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
 
   handle('POST', '/api/director/stage', async (request, film) => {
     const body = await request.json()
-    const plan = parseDirectorStagePlan(body.plan)
+    const dryRun = body.dryRun === true
+    // place_model ops (the agent's, C10) are expanded into the desk's own ops once the scene is read;
+    // until then the agent's other ops are checked on their own, under their own numbers.
+    const rawOps = isRecord(body.plan) && Array.isArray(body.plan.ops) ? body.plan.ops as unknown[] : undefined
+    const placing = rawOps !== undefined && rawOps.some(isPlaceModel)
+    const own = placing ? rawOps.flatMap((op, index) => isPlaceModel(op) ? [] : [{ op, index }]) : undefined
+    const ownIndex = (index: number): number => own?.[index]?.index ?? index
+    const plan = own === undefined
+      ? parseDirectorStagePlan(body.plan)
+      : own.length === 0 ? { ops: [] } : withAgentOps(() => parseDirectorStagePlan({ ops: own.map(entry => entry.op) }), own.map(entry => entry.index))
     const located = await locateDirectorScene(film.documents, body.source)
-    if (plan.ops.some(op => op.type === 'relink_asset' || op.type === 'import_asset' || op.type === 'import_animation')) {
-      if (located.boardId && body.dryRun !== true && !body.expectedFingerprint) throw new DirectorStageError('导入或重新关联前请读取场景并提供 expectedFingerprint')
+    if (placing || plan.ops.some(op => op.type === 'relink_asset' || op.type === 'import_asset' || op.type === 'import_animation')) {
+      if (located.boardId && !dryRun && !body.expectedFingerprint) throw new DirectorStageError('导入或重新关联前请读取场景并提供 expectedFingerprint')
       for (const [index, op] of plan.ops.entries()) {
         if (op.type !== 'relink_asset' && op.type !== 'import_asset' && op.type !== 'import_animation') continue
         const file = projectFileOfUrl(op.source.url)
-        if (!file || op.source.storageKey) throw new DirectorStageError('先上传模型或动作文件到影片项目，再使用项目 raw URL 导入或重新关联', index)
-        if (file.project !== film.projectId) throw new DirectorStageError('文件必须属于当前导演台所在项目', index)
-        await verifyDirectorAssetSource(film.root, file.path, op.source, index)
+        if (!file || op.source.storageKey) throw new DirectorStageError('先上传模型或动作文件到影片项目，再使用项目 raw URL 导入或重新关联', ownIndex(index))
+        if (file.project !== film.projectId) throw new DirectorStageError('文件必须属于当前导演台所在项目', ownIndex(index))
+        await verifyDirectorAssetSource(film.root, file.path, op.source, ownIndex(index))
       }
     }
+    // The placements' files are found, measured, hashed and (on apply) copied in before the scene is read.
+    const placements = placing ? await prepareModelPlacements(rawOps, { cwd: request.cwd, projectId: film.projectId }, { dryRun }) : undefined
     const address = addressOf(film, located)
     const current = await desks.currentScene(located, address, request.raw.signal)
     if (typeof body.expectedFingerprint === 'string' && current.fingerprint && body.expectedFingerprint !== current.fingerprint) {
@@ -279,8 +294,19 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
     }
     // A node never opened as a desk starts as an empty scene — the same one
     // the desk itself would start, so nothing about it says "the agent's".
-    const staged = stageDirectorScene(current.project ?? createEmptyDirectorProject(), plan)
-    const dryRun = body.dryRun === true
+    const base = current.project ?? createEmptyDirectorProject()
+    let staged: ReturnType<typeof stageDirectorScene>
+    let origin: number[] | undefined
+    let placed: PlacedModel[] | undefined
+    if (placements === undefined) {
+      staged = stageDirectorScene(base, plan)
+    } else {
+      // Synchronous from here to the write. The expanded imports were just hashed, so they skip verification.
+      const expanded = expandModelPlacements(rawOps!, placements, base, film.projectId)
+      origin = expanded.origin
+      staged = withAgentOps(() => stageDirectorScene(base, parseDirectorStagePlan({ ops: expanded.ops })), expanded.origin)
+      placed = expanded.placed
+    }
     const inline = address === null
     let fingerprint = getDirectorProjectFingerprint(staged.project)
     let desk = current.desk
@@ -291,15 +317,17 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
       desk = outcome.desk
     }
     const diagnostics = await directorDiagnostics(staged.project, { kind: 'diagnostics' }, located.echo)
-    const answer: DirectorStageResponse = {
+    const answer: DirectorStageResponse & { placed?: PlacedModel[] } = {
       written: !dryRun && !inline,
       source: located.echo,
       fingerprint,
-      applied: staged.applied,
+      // The agent's own op numbers, whatever its placements expanded into.
+      applied: origin === undefined ? staged.applied : staged.applied.map(entry => ({ ...entry, op: origin[entry.op] ?? entry.op })),
       warnings: staged.warnings,
       diagnostics,
       desk,
       ...(dryRun || inline || body.includeProject === true ? { project: staged.project } : {}),
+      ...(placed !== undefined ? { placed } : {}),
     }
     return answer
   })
