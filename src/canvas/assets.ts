@@ -14,7 +14,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { entryKind, listWorkspaceMedia, workspaceMediaUrl } from '../media.js'
+import type { WorkspaceModelFormat } from '../media.js'
 import { withoutImported } from '../media-imports.js'
+import { mapConcurrent, modelFacts } from '../model-files/facts.js'
+import type { ListingBudget } from '../model-files/facts.js'
+import type { ModelFacts } from '../model-files/types.js'
 
 export interface CanvasAsset {
   id: string
@@ -267,6 +271,58 @@ export async function workspaceAssetFiles(cwd: string): Promise<CanvasWorkspaceF
   })
 }
 
+/** A model file of the workspace outside `film/` (GLB, FBX or OBJ), offered to the desk's 空间库 until imported (C7). */
+export interface CanvasWorkspaceModel {
+  /** `workspace-model:<path>`. */
+  id: string
+  /** Relative to the workspace, with `/` separators. */
+  path: string
+  format: WorkspaceModelFormat
+  title: string
+  sizeBytes: number
+  /** ISO 8601. */
+  modifiedAt: string
+  model: ModelFacts
+}
+
+/** How many model files a listing measures at once. */
+const FACTS_AT_ONCE = 4
+
+/**
+ * The workspace's own model files the desk may import, newest first, from the
+ * shared workspace scan, with their facts. A file the film already imported
+ * and that has not changed since is left out: the library shows the film's copy.
+ * @param cwd - the workspace directory.
+ * @param budget - the listing's measuring budget.
+ * @returns the models.
+ */
+export async function workspaceModelFiles(cwd: string, budget: ListingBudget): Promise<CanvasWorkspaceModel[]> {
+  const { models } = await listWorkspaceMedia(cwd)
+  const offered = await withoutImported(cwd, models)
+  const facts = await mapConcurrent(offered, FACTS_AT_ONCE, file => modelFacts(join(cwd, ...file.path.split('/')), file.path, { listing: budget }).catch(() => undefined))
+  return offered.flatMap((file, index) => {
+    const model = facts[index]
+    if (model === undefined) return []
+    return [{ id: `workspace-model:${file.path}`, path: file.path, format: file.format, title: file.path.split('/').pop() || file.path, sizeBytes: file.bytes, modifiedAt: file.modifiedAt, model }]
+  })
+}
+
+/**
+ * The library's entries with the facts of every model file (read-only,
+ * measured at each listing and stripped again when the canvas saves).
+ * @param cwd - the workspace directory.
+ * @param assets - the library entries.
+ * @param budget - the listing's measuring budget.
+ * @returns the entries, models with `model`.
+ */
+export async function withModelFacts(cwd: string, assets: readonly CanvasAsset[], budget: ListingBudget): Promise<CanvasAsset[]> {
+  return mapConcurrent(assets, FACTS_AT_ONCE, async (asset) => {
+    if (asset.kind !== 'model' || asset.storage !== 'file' || typeof asset.filePath !== 'string' || asset.filePath === '') return asset
+    const model = await modelFacts(join(cwd, PROJECT_DIR, ...asset.filePath.split('/')), `${PROJECT_DIR}/${asset.filePath}`, { listing: budget }).catch(() => undefined)
+    return model === undefined ? asset : { ...asset, model }
+  })
+}
+
 /** The asset library of one workspace's board. */
 export class CanvasAssetStore {
   private readonly file: string
@@ -292,8 +348,10 @@ export class CanvasAssetStore {
    */
   async write(boardId: string, projectId: string, assets: readonly CanvasAsset[]): Promise<CanvasAssetLibrary> {
     const overlay = assets.map((asset) => {
-      if (asset.storage !== 'file') return asset
-      const { sizeBytes: _size, mimeType: _mime, ...rest } = asset
+      // Model facts are measured at every listing, never stored.
+      const { model: _model, ...known } = asset
+      if (known.storage !== 'file') return known as CanvasAsset
+      const { sizeBytes: _size, mimeType: _mime, ...rest } = known
       return rest as CanvasAsset
     })
     await updateLibrary(this.file, (state) => {

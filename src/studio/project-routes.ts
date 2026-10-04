@@ -10,9 +10,10 @@ import { randomUUID } from 'node:crypto'
 import { link, lstat, mkdir, open, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { appFileType } from '../apps.js'
-import { CanvasAssetStore, workspaceAssetFiles } from '../canvas/assets.js'
+import { CanvasAssetStore, withModelFacts, workspaceAssetFiles, workspaceModelFiles } from '../canvas/assets.js'
 import type { CanvasAsset } from '../canvas/assets.js'
 import { serveFile } from '../files.js'
+import { listingBudget } from '../model-files/facts.js'
 import type { ProjectEvents } from './events.js'
 import { StudioApiError } from './router.js'
 import type { StudioRouter } from './router.js'
@@ -180,13 +181,18 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
   })
 
   // The asset library: the project's media, wearing the overlay the canvas
-  // saves, and beside it the workspace's own media the board may import.
+  // saves, and beside it the workspace's own media and models the board may
+  // import. Model facts are measured here, not in the store: the story tools
+  // read the store too and need none. One measuring budget per listing.
   router.add('GET', '/api/canvas/assets/:boardId', async (request) => {
     const [library, workspaceFiles] = await Promise.all([
       new CanvasAssetStore(request.cwd).read(request.params.boardId!, projectOf(request)),
       workspaceAssetFiles(request.cwd),
     ])
-    return { ...library, workspaceFiles }
+    const budget = listingBudget()
+    const assets = await withModelFacts(request.cwd, library.assets, budget)
+    const workspaceModels = await workspaceModelFiles(request.cwd, budget)
+    return { ...library, assets, workspaceFiles, workspaceModels }
   })
   router.add('PUT', '/api/canvas/assets/:boardId', async (request) => {
     const body = await request.json()
