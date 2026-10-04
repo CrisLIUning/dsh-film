@@ -119,7 +119,8 @@ function ProjectPart({ view, cwd, visible, t, openView, banner, notice }: Workbe
                 title={t(`${view}.title`)}
                 t={t}
                 missing={<div className={css.body}>{native}</div>}
-                // The new app files have no routes until the Host restarts: say so instead of framing a page that cannot load.
+                // The new app files have no routes until the Host restarts: say so instead of framing a page that cannot load
+                // (a page already loaded stays, under the banner).
                 blocked={notice === null ? undefined : <p>{restartText(t, notice)}</p>}
               />
             </div>

@@ -41,8 +41,10 @@ export interface AppFrameProps {
   /** What to show when this build does not carry the app. */
   missing: ReactNode
   /**
-   * Shown instead of the app while set: a restart is pending, and the app's
-   * new files have no routes on the Host that runs the old version.
+   * Shown instead of an app that has not loaded yet while set: a restart is
+   * pending, and the app's new files have no routes on the Host that runs the
+   * old version. A page already loaded keeps working, and stays (with its
+   * unsaved work) under the workbench's restart banner.
    */
   blocked?: ReactNode
 }
@@ -58,18 +60,14 @@ const pageUrl = (app: string, query: Readonly<Record<string, string>> = {}): URL
 /**
  * Draw a hosted app, after checking this build carries it.
  * @param props - the app, its protocol and copy.
- * @returns the frame, the missing-app notice, or what blocks the app.
+ * @returns the frame, the missing-app notice, or what blocks an app not loaded yet.
  */
 export function AppFrame({ app, protocol, title, t, missing, blocked }: AppFrameProps): ReactNode {
-  if (blocked !== undefined && blocked !== null && blocked !== false) return <div className={css.notice} role="status">{blocked}</div>
-  return <HostedApp app={app} protocol={protocol} title={title} t={t} missing={missing} />
-}
-
-/** The app in its frame, once this build is known to carry it. */
-function HostedApp({ app, protocol, title, t, missing }: Omit<AppFrameProps, 'blocked'>): ReactNode {
   const frame = useRef<HTMLIFrameElement | null>(null)
   const [availability, setAvailability] = useState<Availability>('checking')
   const [attempt, setAttempt] = useState(0)
+  // The frame's page has loaded once: a restart notice no longer takes it away.
+  const [loaded, setLoaded] = useState(false)
   const current = useRef(protocol)
   current.current = protocol
   // The page URL is fixed when the frame mounts; later looks travel by message.
@@ -101,6 +99,7 @@ function HostedApp({ app, protocol, title, t, missing }: Omit<AppFrameProps, 'bl
     }
   }, [availability])
 
+  if (!loaded && blocked !== undefined && blocked !== null && blocked !== false) return <div className={css.notice} role="status">{blocked}</div>
   if (availability === 'checking') return <p className={css.notice} role="status">{t('app.loading')}</p>
   if (availability === 'missing') return <div className={css.notice}>{missing}</div>
   if (availability === 'failed') {
@@ -119,6 +118,7 @@ function HostedApp({ app, protocol, title, t, missing }: Omit<AppFrameProps, 'bl
       title={title}
       allow="fullscreen; clipboard-read; clipboard-write; autoplay"
       onLoad={() => {
+        setLoaded(true)
         current.current.sendTheme((message) => { frame.current?.contentWindow?.postMessage(message, location.origin) }, readHostTheme())
       }}
     />
