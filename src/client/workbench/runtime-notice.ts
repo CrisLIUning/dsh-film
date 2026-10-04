@@ -55,13 +55,13 @@ type Language = 'zh' | 'en'
 export const RUNTIME_FALLBACK: Readonly<Record<Language, Readonly<Record<string, string>>>> = {
   zh: {
     'runtime.restart': '影视工作台已更新：已安装 {installed}，正在运行 {running}。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。',
-    'runtime.older': '更早的版本',
+    'runtime.restartOlder': '影视工作台已更新：已安装 {installed}，但正在运行的还是更早的版本。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。',
     'runtime.unknown': '未知版本',
     'runtime.retiredView': '这个标签已不再提供。',
   },
   en: {
     'runtime.restart': 'The film workbench was updated: {installed} is installed, {running} is running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.',
-    'runtime.older': 'an earlier version',
+    'runtime.restartOlder': 'The film workbench was updated: {installed} is installed, but an earlier version is still running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.',
     'runtime.unknown': 'an unknown version',
     'runtime.retiredView': 'This tab is no longer offered.',
   },
@@ -100,10 +100,10 @@ export function runtimeText(t: Translate, key: string, params?: Record<string, s
  * @returns the text.
  */
 export function restartText(t: Translate, notice: RestartNotice, language: Language = pageLanguage()): string {
-  return runtimeText(t, 'runtime.restart', {
-    installed: notice.installed ?? runtimeText(t, 'runtime.unknown', undefined, language),
-    running: notice.running ?? runtimeText(t, 'runtime.older', undefined, language),
-  }, language)
+  const installed = notice.installed ?? runtimeText(t, 'runtime.unknown', undefined, language)
+  // A Host older than the runtime route cannot say its version, so that case is a sentence of its own.
+  if (notice.running === undefined) return runtimeText(t, 'runtime.restartOlder', { installed }, language)
+  return runtimeText(t, 'runtime.restart', { installed, running: notice.running }, language)
 }
 
 /** How often the route is asked at most, in milliseconds. */

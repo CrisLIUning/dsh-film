@@ -12,7 +12,7 @@ export const zh = {
   'app.loading': '正在打开…',
   'app.failed': '没能打开这个工作台。',
   'runtime.restart': '影视工作台已更新：已安装 {installed}，正在运行 {running}。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。',
-  'runtime.older': '更早的版本',
+  'runtime.restartOlder': '影视工作台已更新：已安装 {installed}，但正在运行的还是更早的版本。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。',
   'runtime.unknown': '未知版本',
   'runtime.retiredView': '这个标签已不再提供。',
 
@@ -301,7 +301,7 @@ export const en: Record<FilmKey, string> = {
   'app.loading': 'Opening…',
   'app.failed': 'This desk could not be opened.',
   'runtime.restart': 'The film workbench was updated: {installed} is installed, {running} is running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.',
-  'runtime.older': 'an earlier version',
+  'runtime.restartOlder': 'The film workbench was updated: {installed} is installed, but an earlier version is still running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.',
   'runtime.unknown': 'an unknown version',
   'runtime.retiredView': 'This tab is no longer offered.',
 

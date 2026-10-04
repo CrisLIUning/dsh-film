@@ -45,14 +45,14 @@ describe('restartText', () => {
   it('uses the dictionary when it has the keys', () => {
     const t = dictionary(zh)
     expect(restartText(t, { running: '0.1.2', installed: '0.2.0' }, 'en')).toBe(zh['runtime.restart'].replace('{installed}', '0.2.0').replace('{running}', '0.1.2'))
-    expect(restartText(t, { installed: '0.2.0' }, 'en')).toContain('正在运行 更早的版本')
+    expect(restartText(t, { installed: '0.2.0' }, 'en')).toContain('已安装 0.2.0，但正在运行的还是更早的版本。')
     expect(restartText(t, { running: '0.2.0' }, 'en')).toContain('已安装 未知版本')
   })
 
   it('falls back to its own copy when the dictionary in memory echoes the key', () => {
     const echo = (key: string) => key
     expect(restartText(echo, { running: '0.1.2', installed: '0.2.0' }, 'zh')).toBe('影视工作台已更新：已安装 0.2.0，正在运行 0.1.2。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。')
-    expect(restartText(echo, { installed: '0.2.0' }, 'en')).toBe('The film workbench was updated: 0.2.0 is installed, an earlier version is running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.')
+    expect(restartText(echo, { installed: '0.2.0' }, 'en')).toBe('The film workbench was updated: 0.2.0 is installed, but an earlier version is still running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.')
     expect(runtimeText(echo, 'runtime.retiredView', undefined, 'zh')).toBe('这个标签已不再提供。')
   })
 
