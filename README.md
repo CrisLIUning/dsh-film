@@ -40,7 +40,7 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 - **剧本到分镜** `story_source` `story_handoff` `story_adopt` `story_impact` `story_director_links`：把保存的人物、场景、道具、场次或镜头读成制作素材，送到画布成为独立的剧本来源卡（可同时准备一个连好线、只待确认提示词的图片节点，不会自动生成）；按节点保存的字段显式采用描述或参考图（参考图另存一份字节快照）；剧本改动后查看影响了哪些采用、产物、导演镜头和剪辑片段；给导演台已保存的机位记下剧本来源。分镜标签不开也能用。
 - **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片）放进指定节点，不重复生成。
 - **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）和画布可用的素材、剧本；按版本号放素材、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
-- **原声字幕** `timeline_transcribe` `timeline_apply_captions` `media_get_task` `media_cancel_task`：识别剪辑里的原声对白，后台任务产出待审的字幕草稿（按句分页读），审过后先 dryRun 再写入，只改识别范围内的字幕，人工和已审过的字幕不动。两个引擎、不会互相替补：`whisper`（默认，免费，在打开的 VibeDev/DSH 窗口里的隐藏页面运行，需同意下载模型）和 `gateway`（VibeDev 网关转写，只支持普通话，按分钟计费，音频会上传）。`timeline_query` 的 `caption-tasks` 列出最近的识别和是否已写入。
+- **原声字幕** `timeline_transcribe` `timeline_apply_captions` `media_get_task` `media_cancel_task`：识别剪辑里的原声对白，后台任务产出待审的字幕草稿（按句分页读），审过后先 dryRun 再写入，只改识别范围内的字幕，人工和已审过的字幕不动。识别用剪辑台自带的 Whisper：免费、不出本机，在打开的 VibeDev/DSH 窗口里的隐藏页面运行，需同意下载模型。`timeline_query` 的 `caption-tasks` 列出最近的识别和是否已写入。
 - **渲染** `timeline_render`：先 `check` 看能不能渲、出什么样的文件，再按版本号在本机把剪辑渲染成 MP4（见下文“后台渲染”），最多等 4 分钟，没完成就交回任务号接着等或取消。
 - **导演组（按需）** `director_query` `director_stage` `director_render` `director_render_status` `director_render_cancel` `director_inspect_model` `director_review` `director_compile_motion` `director_modeling_brief`：读导演台场景（结构、采样、事件、诊断、动作），按指纹分步调度（先 dryRun），编译动作，管理审阅版本。查询和调度在导演标签关着时作用于保存的节点，开着时作用于桌面上的实时场景；渲染、检视模型和审阅版本要导演标签开着。后台无头渲染暂未接入。
 - **建模组（按需）** `space_plan_compile` `model_brief` `model_review` `model_adopt` `model_status` `model_report` `model_cancel`：按毫米写平面，编译成 `film/spaces/` 下导演台能打开的 GLB（先 dryRun 看尺寸、警告和楼梯可达性）；为程序化模型准备建模任务，读 `film/models/<id>/model.json` 里的记录、写审阅、记录用户采用的版本。运行模型、拍检查图、导出和回读 GLB 需要无头浏览器，暂未接入。
@@ -65,14 +65,11 @@ The editing desk downloads its models only after the person agrees, verifies eve
 
 ## 原声字幕 · Original-audio captions
 
-识别原声对白有两个引擎，设置项 `captionEngine` 选默认的一个（`whisper`），每次识别也可以单独指定；一个引擎跑不了就报错，不会换另一个。
-
-- `whisper`：剪辑台自带的 Whisper small（q8）加 Silero 语音检测，免费、不出本机，要先同意下载这两个模型。宿主没有浏览器，识别在打开的 VibeDev/DSH 窗口里的一个隐藏页面中运行（`apps/editor/caption-runner.html`）；没有窗口开着时会直接说明。
-- `gateway`：VibeDev 网关转写，只支持普通话，约 ¥0.05/分钟，音频会上传到第三方转写服务，需要 dsh-media 0.1.3 以上并登录。网关目前不返回时间，所以先在窗口里按 Silero 检测到的语音分段，每段单独转写、按段的起止给时间（标记 `region-timing`），从不编造时间；网关返回分句时间时改用它的。取消只能停止等待，已提交的段仍会计费；但每段按音频内容去重，同一段音频再识别（失败、取消或宿主重启之后）由网关的幂等记录直接回答，不会再扣一次。Agent 发起的网关识别，若 dsh-media 开了“付费前先询问”，会在任务开始前按整次预估问一次。剪辑台可以先只要预估（`estimateOnly: true`），不建任务、不复制素材、不扣费。
+原声对白用剪辑台自带的 Whisper small（q8）加 Silero 语音检测识别：免费、不出本机，要先同意下载这两个模型。宿主没有浏览器，识别在打开的 VibeDev/DSH 窗口里的一个隐藏页面中运行（`apps/editor/caption-runner.html`）；没同意下载模型、或没有窗口开着时，会在建任务之前直接说明。
 
 识别是后台任务（`film/.tasks/`），结果是待审草稿；写入剪辑前要按原声核对，只改识别范围内的字幕。
 
-Captions come from one of two engines with no fallback between them: `whisper` (free, local, run in a hidden page of an open window) or `gateway` (VibeDev's ASR through dsh-media: Mandarin only, paid per minute, timed by speech regions until the gateway returns timings). The plugin setting `captionEngine` picks the default.
+Captions are recognised by the editing desk's own Whisper small (q8) with Silero speech detection: free and local, after the person agrees to download both models. The Host has no browser, so recognition runs in a hidden page of an open VibeDev/DSH window; a recognition is a background task whose result is a draft to review before it reaches the cut.
 
 ## 后台渲染 · Background render
 

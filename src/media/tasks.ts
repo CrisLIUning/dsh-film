@@ -41,50 +41,6 @@ export interface MediaServiceLike {
   startVideo(request: VideoServiceRequest, target: MediaTarget, signal: AbortSignal): Promise<MediaTaskLike>
   task(id: string): Promise<MediaTaskLike | undefined>
   onTask(id: string, listener: (task: MediaTaskLike) => void): () => void
-  /** Transcribe one recording through the gateway (dsh-media 0.1.3+; feature-detect it). */
-  transcribe?(request: TranscribeServiceRequest, target: { cwd: string }, signal: AbortSignal, spending?: TranscribeSpending): Promise<TranscribeServiceResult>
-  /**
-   * Ask once, as dsh-media's spending setting asks before generation, for the
-   * cost of a transcription sent in several parts; then send each part with
-   * `{ confirmed: true }` (newer dsh-media; feature-detect it). A no-op when
-   * the setting is off or `spending.confirmed` is true; throws `SPENDING_DECLINED`,
-   * `SPENDING_CONFIRMATION_UNAVAILABLE` or `ABORTED`.
-   */
-  confirmSpending?(request: { seconds: number; amountCny?: number }, spending?: TranscribeSpending, signal?: AbortSignal): Promise<void>
-}
-
-/** One transcription (dsh-media's `TranscribeRequest`). */
-export interface TranscribeServiceRequest {
-  file?: string
-  data?: Uint8Array
-  mimeType?: string
-  name?: string
-  language?: string
-  model?: string
-  /** The same key with the same file name and bytes answers with the same gateway task (no second charge). */
-  idempotencyKey?: string
-  background?: boolean
-  timestamps?: boolean
-}
-
-/** Whether the cost was confirmed, or the agent tool call dsh-media's setting asks through (dsh-media's `HostSpending`). */
-export interface TranscribeSpending {
-  confirmed?: boolean
-  agent?: unknown
-  callId?: string
-}
-
-/** A finished transcription (dsh-media's `TranscribeResult`); `segments` only when the gateway returns timings. */
-export interface TranscribeServiceResult {
-  model: string
-  text: string
-  language: string
-  name: string
-  seconds?: number
-  segments?: readonly { start: number; end: number; text: string }[]
-  taskId?: string
-  estimatedCny?: string
-  chargedCny?: string
 }
 
 export interface MediaTarget { cwd: string; folder: string; stem: string }
@@ -327,7 +283,7 @@ function errorOf(error: unknown): FilmTaskError {
 function localErrorOf(error: unknown): FilmTaskError {
   const status = (error as { status?: unknown } | undefined)?.status
   const base = errorOf(error)
-  // A local task's own error already says what happened (what a recognition had charged before it failed, say):
+  // A local task's own error already says what happened (why a recognition or a render stopped, say):
   // keep its words instead of the generic dsh-media message for the same code.
   return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600
     ? { ...base, ...(error instanceof Error ? { message: base.code !== undefined && error.message.startsWith(`${base.code}: `) ? error.message.slice(base.code.length + 2) : error.message } : {}), status }

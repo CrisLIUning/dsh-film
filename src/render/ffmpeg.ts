@@ -1,8 +1,8 @@
 /**
- * Finding and running ffmpeg for the Host's own media work: rendering the cut
- * and preparing audio for the gateway's speech recognition. Ported from
- * Studio's apps/daemon/src/ffmpeg-binaries.ts, system-ffmpeg.ts
- * (`ffmpegFilterNames`) and canvas-timeline-render.ts (`runFfmpeg`).
+ * Finding and running ffmpeg for the Host's own media work: rendering the
+ * cut. Ported from Studio's apps/daemon/src/ffmpeg-binaries.ts,
+ * system-ffmpeg.ts (`ffmpegFilterNames`) and canvas-timeline-render.ts
+ * (`runFfmpeg`).
  *
  * ffmpeg runs as a separate program the person already has or downloaded on
  * consent; nothing of it is part of this plugin. Resolution, first hit wins:

@@ -10,8 +10,8 @@
  * screenplay, storyboard and cut tools in conversations whose workspace is a
  * film — through the same API the workbench's pages call — and its skills
  * (the screenwriting skill) wherever DSH's skill registry runs. Original-audio
- * captions are recognised in a hidden page of an open window (the Host has no
- * browser) or at the VibeDev gateway, as the `captionEngine` setting says.
+ * captions are recognised by the editing desk's Whisper in a hidden page of
+ * an open window (the Host has no browser).
  *
  * ```yaml
  * - insert:
@@ -41,8 +41,6 @@ import { registerFilmSkills } from './skills.js'
 import { CaptionRunnerHub } from './captions/runner.js'
 import { CaptionService } from './captions/service.js'
 import { whisperEngine } from './captions/engines.js'
-import { gatewayEngine } from './captions/gateway.js'
-import type { CaptionEngine } from './captions/contracts.js'
 import { TimelineStore } from './timeline/store.js'
 
 export { FilmError } from './errors.js'
@@ -61,8 +59,6 @@ export interface Config {
   appsDir: string
   /** Where the editing desk's AI models are kept; empty for `$DSH_HOME/cache/dsh-film/video-editor-models`. */
   modelsDir: string
-  /** Who recognises speech for captions when a request does not say: the desk's Whisper (free, local) or the VibeDev gateway (paid, Mandarin). Never a fallback. */
-  captionEngine?: CaptionEngine
   /** The ffmpeg the background render runs; empty to find one (the downloaded renderer, VibeDev Studio's, PATH...). */
   ffmpegPath?: string
 }
@@ -70,7 +66,6 @@ export interface Config {
 export const Config: Schema<Config> = Schema.object({
   appsDir: Schema.string().default(''),
   modelsDir: Schema.string().default(''),
-  captionEngine: Schema.union(['whisper', 'gateway'] as const).default('whisper'),
   ffmpegPath: Schema.string().default(''),
 })
 
@@ -100,15 +95,14 @@ export function apply(ctx: Context, config: Config): void {
   // One API for the pages and the agent: the agent's edits reach open pages as the pages' own do.
   const events = new ProjectEvents()
   const boardAgent = new CanvasBoardAgent()
-  // Captions: recognition runs in a hidden page of an open window (the Host has no browser), or at the gateway.
+  // Captions: Whisper runs in a hidden page of an open window (the Host has no browser).
   const appsRoot = config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim()
   const captionRunner = new CaptionRunnerHub({ pageAvailable: () => existsSync(join(appsRoot, 'editor', 'caption-runner.html')) })
   ctx.effect(() => () => { captionRunner.dispose() }, 'dsh-film: caption runner')
   const captions = new CaptionService({
     tasks,
-    engines: { whisper: whisperEngine({ models, runner: captionRunner }), gateway: gatewayEngine({ media, models, runner: captionRunner }) },
+    engine: whisperEngine({ models, runner: captionRunner }),
     timelines: (cwd, projectId) => new TimelineStore(cwd, (path) => { events.emit(cwd, { type: 'file-changed', projectId, path }) }),
-    defaultEngine: () => config.captionEngine ?? 'whisper',
   })
   const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent, captions, ffmpegPath: config.ffmpegPath ?? '' })
   let projectCreated: (cwd: string) => void = () => {}

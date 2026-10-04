@@ -92,7 +92,7 @@ describe('caption runner (client)', () => {
     expect(frames[0]!.removed).toBe(false)
     source.emit('done', { jobId: 'j1' })
     expect(frames[0]!.removed).toBe(true)
-    source.emit('job', { jobId: 'j2', kind: 'extract' })
+    source.emit('job', { jobId: 'j2', kind: 'whisper' })
     source.emit('claimed', { jobId: 'j2', runnerId: 'someone-else' })
     expect(frames[1]!.removed).toBe(true)
     stop()

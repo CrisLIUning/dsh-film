@@ -105,16 +105,30 @@ describe('native transcription source plan', () => {
 
 describe('parseTranscribeRequest', () => {
   it('keeps Studio\'s checks and normalises the range', () => {
-    expect(parseTranscribeRequest({ baseRevision: 2, requestId: 'r', range: { start: 1, end: 2, extra: true }, language: 'zh-CN', engine: 'gateway', spendingConfirmed: true }))
-      .toEqual({ baseRevision: 2, requestId: 'r', range: { start: 1, end: 2 }, language: 'zh-CN', engine: 'gateway', spendingConfirmed: true })
-    expect(parseTranscribeRequest({ baseRevision: 0, requestId: 'r', spendingConfirmed: false })).toEqual({ baseRevision: 0, requestId: 'r' })
+    expect(parseTranscribeRequest({ baseRevision: 2, requestId: 'r', range: { start: 1, end: 2, extra: true }, language: 'zh-CN', engine: 'whisper' }))
+      .toEqual({ baseRevision: 2, requestId: 'r', range: { start: 1, end: 2 }, language: 'zh-CN' })
+    expect(parseTranscribeRequest({ baseRevision: 0, requestId: 'r' })).toEqual({ baseRevision: 0, requestId: 'r' })
     for (const body of [
       {}, { baseRevision: -1, requestId: 'r' }, { baseRevision: 1.5, requestId: 'r' }, { baseRevision: 1, requestId: ' ' }, { baseRevision: 1, requestId: 'x'.repeat(161) },
       { baseRevision: 1, requestId: 'r', clipIds: [] }, { baseRevision: 1, requestId: 'r', clipIds: ['a', 'a'] },
       { baseRevision: 1, requestId: 'r', range: { start: 2, end: 2 } }, { baseRevision: 1, requestId: 'r', language: 'Chinese' },
-      { baseRevision: 1, requestId: 'r', engine: 'sensevoice' }, { baseRevision: 1, requestId: 'r', spendingConfirmed: 'yes' },
+      { baseRevision: 1, requestId: 'r', engine: 'sensevoice' },
     ]) {
       expect(() => parseTranscribeRequest(body)).toThrow(/CAPTION_REQUEST_INVALID/)
+    }
+  })
+
+  it('refuses a request for the gateway\'s transcription, whatever else it says', () => {
+    const refusal = (body: unknown): unknown => {
+      try {
+        parseTranscribeRequest(body)
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+    for (const body of [{ baseRevision: 1, requestId: 'r', engine: 'gateway' }, { engine: 'gateway' }]) {
+      expect(refusal(body)).toMatchObject({ code: 'CAPTION_ENGINE_UNSUPPORTED', status: 400, message: 'CAPTION_ENGINE_UNSUPPORTED: 网关转写不再提供字幕识别；字幕用本机 Whisper 识别。' })
     }
   })
 

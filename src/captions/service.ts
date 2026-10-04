@@ -6,23 +6,21 @@
  * listed again later with whether each was applied.
  *
  * What is Studio's and kept exactly: the same requestId with the same inputs
- * is the same task (the engine is part of the inputs here); sources are
- * snapshotted and hashed before recognition, and an apply refuses a source
- * whose bytes changed since; progress is 0–20 % for models and 20–99 % for
- * recognition; a failure is recorded only while the task still runs, so a
- * cancel stays a cancel; and a draft that does not fit the task (512 KiB)
- * keeps its full evidence in a file (`film/.tasks/caption-evidence/<taskId>.json`).
+ * is the same task; sources are snapshotted and hashed before recognition,
+ * and an apply refuses a source whose bytes changed since; progress is 0–20 %
+ * for models and 20–99 % for recognition; a failure is recorded only while
+ * the task still runs, so a cancel stays a cancel; and a draft that does not
+ * fit the task (512 KiB) keeps its full evidence in a file
+ * (`film/.tasks/caption-evidence/<taskId>.json`).
  *
- * What differs: missing model consent and a missing runner are refused before
- * a task exists (Studio failed the task afterwards); there are two engines
- * (`engines.ts`, `gateway.ts`) with no fallback between them; a request may
- * ask for the estimate only (`estimateOnly`), which starts nothing; and the
- * snapshots a stopped Host left are swept when a workspace's recognitions are
- * first listed and before each new run.
+ * What differs: Whisper runs in a hidden page of an open window
+ * (`engines.ts`, `runner.ts`), and missing model consent and a missing
+ * window are refused before a task exists (Studio failed the task
+ * afterwards); and the snapshots a stopped Host left are swept when a
+ * workspace's recognitions are first listed and before each new run.
  * @module dsh-film/captions/service
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
@@ -34,26 +32,15 @@ import type { TimelineCommandResult } from '../timeline/commands.js'
 import { TimelineConflictError } from '../timeline/store.js'
 import type { TimelineStore } from '../timeline/store.js'
 import type {
-  CaptionCaller,
   CaptionEngine,
-  CaptionEstimate,
   TimelineCaptionApplyRequest,
   TimelineCaptionDraft,
   TimelineCaptionTaskSummary,
-  TimelineTranscribeEstimate,
   TimelineTranscribeRequest,
 } from './contracts.js'
 import type { CaptionEngineDriver } from './engines.js'
 import { mapCaptionRecognition } from './map.js'
 import { TimelineCaptionError, captionApplyPlan, planTimelineTranscription } from './plan.js'
-
-/**
- * Who is asking, for the gateway's spending confirmation: an agent tool call
- * reaches the routes in-process through the same router the pages use, and
- * this carries its agent and call id along that path without a parameter on
- * every route.
- */
-export const captionCaller = new AsyncLocalStorage<CaptionCaller>()
 
 /** The project folder inside a workspace. */
 const PROJECT_DIR = 'film'
@@ -111,17 +98,14 @@ export interface CaptionStartResult {
   duplicate: boolean
   engine: CaptionEngine
   model: string
-  estimate?: CaptionEstimate
 }
 
 export interface CaptionServiceOptions {
   tasks: FilmMediaTasks
-  /** The engines this Host offers. */
-  engines: Partial<Record<CaptionEngine, CaptionEngineDriver>>
+  /** The recognition engine (the desk's Whisper). */
+  engine: CaptionEngineDriver
   /** The cut's store for a workspace (announcing its writes to open pages). */
   timelines: (cwd: string, projectId: string) => TimelineStore
-  /** The plugin setting `captionEngine`, read at each request. */
-  defaultEngine?: () => CaptionEngine
 }
 
 export class CaptionService {
@@ -142,14 +126,6 @@ export class CaptionService {
     return this.options.timelines(cwd, projectId)
   }
 
-  /** The engine a request runs on: its own, else the setting. */
-  private engineOf(request: TimelineTranscribeRequest): CaptionEngineDriver {
-    const id = request.engine ?? this.options.defaultEngine?.() ?? 'whisper'
-    const driver = this.options.engines[id]
-    if (driver === undefined) throw new TimelineCaptionError(id === 'gateway' ? 'CAPTION_ENGINE_UNAVAILABLE' : 'CAPTION_RUNTIME_UNAVAILABLE', `这个环境没有 ${id} 识别引擎。`, 503)
-    return driver
-  }
-
   /** One start at a time per workspace: the duplicate check and the task's creation must not interleave. */
   private serial<T>(cwd: string, run: () => Promise<T>): Promise<T> {
     const key = resolve(cwd)
@@ -164,18 +140,18 @@ export class CaptionService {
    * @param cwd - the workspace.
    * @param projectId - the film's project id (also its board's).
    * @param request - the checked request.
-   * @param caller - the agent tool call asking, for the gateway's spending confirmation.
    * @returns the task.
    */
-  start(cwd: string, projectId: string, request: TimelineTranscribeRequest, caller: CaptionCaller = captionCaller.getStore() ?? {}, signal?: AbortSignal): Promise<CaptionStartResult> {
+  start(cwd: string, projectId: string, request: TimelineTranscribeRequest): Promise<CaptionStartResult> {
     return this.serial(cwd, async () => {
-      const driver = this.engineOf(request)
+      const driver = this.options.engine
       const identity = JSON.stringify({
         baseRevision: request.baseRevision,
         requestId: request.requestId,
         clipIds: request.clipIds,
         range: request.range,
         language: request.language,
+        // Kept in the identity: the retry of a request an earlier build recorded still finds its task.
         engine: driver.id,
       })
       const previous = (await this.options.tasks.list(cwd)).find(task => isRecognition(task, projectId) && task.request?.requestId === request.requestId)
@@ -187,9 +163,7 @@ export class CaptionService {
       const state = await store.read()
       if (state.revision !== request.baseRevision) throw new TimelineConflictError(state.revision, request.baseRevision)
       const plan = planTimelineTranscription(state.document, request, projectId)
-      // A paid engine may ask an agent's person to confirm the cost here, once, while the tool call waits.
-      const { model, estimate, spendingConfirmed } = await driver.preflight({ cwd, request, plan, caller, ...(signal !== undefined ? { signal } : {}) })
-      const spending = { confirmed: request.spendingConfirmed === true || spendingConfirmed === true, ...caller }
+      const { model } = await driver.preflight({ cwd, request, plan })
       const language = request.language ?? 'zh'
       // Snapshots a stopped Host left behind are cleared before this run makes its own.
       await this.sweepRuns(cwd)
@@ -227,17 +201,15 @@ export class CaptionService {
           signal.throwIfAborted()
           report(20, '识别中')
           const output = await driver.recognize({
-            taskId, cwd, sources, artifacts, language, signal, spending, model,
+            taskId, sources, artifacts, language, signal, model,
             onProgress: (update) => { report(20 + update.progress * 79, update.phase) },
           })
           signal.throwIfAborted()
-          // An engine may report the model that actually ran (the gateway's may be pinned in dsh-media).
-          const ran = output.map(result => result.diagnostics?.model).find((value): value is string => typeof value === 'string')
           const draft: TimelineCaptionDraft = {
             schemaVersion: 1,
             kind: 'timeline-caption-draft',
             baseRevision: request.baseRevision,
-            model: ran !== undefined && driver.id === 'gateway' ? `gateway:${ran}` : model,
+            model,
             engine: driver.id,
             reviewStatus: 'unreviewed',
             ...plan,
@@ -245,8 +217,7 @@ export class CaptionService {
             segments: mapCaptionRecognition(output, plan.sources, taskId),
           }
           if (Buffer.byteLength(JSON.stringify(draft), 'utf8') > EVIDENCE_AT) {
-            const { spendingConfirmed: _spending, ...asked } = request
-            const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, taskId, request: asked, raw: output, mapped: draft }), 'utf8')
+            const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, taskId, request, raw: output, mapped: draft }), 'utf8')
             const name = `${EVIDENCE_DIR}/${taskId}.json`
             const file = join(projectRoot, ...name.split('/'))
             await mkdir(join(projectRoot, ...EVIDENCE_DIR.split('/')), { recursive: true })
@@ -270,34 +241,8 @@ export class CaptionService {
         finished()
         throw error
       })
-      return { taskId: started.taskId, status: started.status, duplicate: false, engine: driver.id, model, ...(estimate !== undefined ? { estimate } : {}) }
+      return { taskId: started.taskId, status: started.status, duplicate: false, engine: driver.id, model }
     })
-  }
-
-  /**
-   * What a recognition would send and cost — after planning and the engine's
-   * own checks, so it refuses what a start would — with no task, nothing
-   * copied and nothing charged.
-   * @param cwd - the workspace.
-   * @param projectId - the film's project id.
-   * @param request - the checked request (`estimateOnly`; its requestId, if any, is ignored).
-   * @param signal - the request's lifetime.
-   * @returns the source seconds the engine would be sent, their price and the engine.
-   */
-  async estimate(cwd: string, projectId: string, request: TimelineTranscribeRequest, signal?: AbortSignal): Promise<TimelineTranscribeEstimate> {
-    const driver = this.engineOf(request)
-    const state = await this.options.timelines(cwd, projectId).read()
-    if (state.revision !== request.baseRevision) throw new TimelineConflictError(state.revision, request.baseRevision)
-    const plan = planTimelineTranscription(state.document, request, projectId)
-    // Never with a caller: an estimate asks nobody to confirm anything.
-    const { estimate } = await driver.preflight({ cwd, request: { ...request, estimateOnly: true }, plan, ...(signal !== undefined ? { signal } : {}) })
-    const seconds = Math.round(plan.sources.reduce((total, source) => total + source.sourceOut - source.sourceIn, 0) * 10) / 10
-    return {
-      estimate: estimate?.amountCny !== undefined
-        ? { seconds: estimate.seconds, amountCny: estimate.amountCny, basis: estimate.basis }
-        : { seconds, amountCny: 0, basis: 'recognised on this machine (Whisper): free' },
-      engine: driver.id,
-    }
   }
 
   /**
@@ -372,7 +317,7 @@ export class CaptionService {
         return {
           taskId: task.taskId,
           status: task.status,
-          engine: engine === 'gateway' ? 'gateway' : 'whisper',
+          engine: typeof engine === 'string' ? engine : 'whisper',
           model: draft?.model ?? task.model,
           startedAt: task.startedAt,
           endedAt: task.endedAt,
@@ -387,17 +332,12 @@ export class CaptionService {
   }
 
   /**
-   * The engines, whether each can run now, and the default.
-   * @param signal - the request's lifetime.
+   * The engine, whether it can run now (consent, download size, an open window), as the desk shows it.
    * @returns the engines route's answer.
    */
-  async engines(signal?: AbortSignal): Promise<{ default: CaptionEngine; engines: Record<string, unknown>[] }> {
-    const engines: Record<string, unknown>[] = []
-    for (const id of ['whisper', 'gateway'] as const) {
-      const driver = this.options.engines[id]
-      engines.push(driver === undefined ? { id, available: false, reason: `这个环境没有 ${id} 识别引擎。` } : await driver.describe(signal))
-    }
-    return { default: this.options.defaultEngine?.() ?? 'whisper', engines }
+  async engines(): Promise<{ default: CaptionEngine; engines: Record<string, unknown>[] }> {
+    const driver = this.options.engine
+    return { default: driver.id, engines: [await driver.describe()] }
   }
 
   /** Settles when no recognition is running and every task save has landed. */

@@ -10,7 +10,6 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { captionCaller } from '../captions/service.js'
 import { callStudio } from './studio-client.js'
 import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices } from './context.js'
@@ -91,12 +90,9 @@ export function captionTools(services: FilmToolServices): ToolDefinition[] {
         + 'By default it hears the audible video clips\' own sound; clipIds may name separated original-audio clips; range is in timeline seconds; trims, '
         + 'offsets and speed are honoured and the cut is never edited. Returns a film taskId: read it with media_get_task, cancel with media_cancel_task. A '
         + 'done task holds an unreviewed draft (file.documentResult) with original-source timestamps; apply it only through timeline_apply_captions. '
-        + 'engine: whisper (default setting; free, local, runs in a hidden page of an open VibeDev/DSH window, needs the person\'s consent to download its '
-        + 'models) or gateway (VibeDev\'s ASR: Mandarin only, paid at about ¥0.05 per minute of speech, the audio is uploaded to a third-party service, '
-        + 'cancelling only stops waiting, and timings come from speech regions; if dsh-media is set to confirm spending, the person is asked once for the '
-        + 'whole estimate before the task starts, and SPENDING_DECLINED means they said no). There is no fallback: if the chosen engine cannot run, the call fails — '
-        + 'report it, do not switch engines without the person. Never infer dialogue from a script or image; missing consent or no open window is an '
-        + 'explicit failure to report, not something to work around.',
+        + 'Recognition is the editing desk\'s Whisper: free and local, it runs in a hidden page of an open VibeDev/DSH window and needs the person\'s '
+        + 'consent to download its models. If it cannot run, the call fails — report it. Never infer dialogue from a script or image; missing consent or '
+        + 'no open window is an explicit failure to report, not something to work around.',
       parameters: {
         baseRevision: { type: 'integer', required: true, description: 'The cut\'s revision from timeline_query.' },
         requestId: { type: 'string', required: true, description: 'Names this request; repeating it with the same inputs returns the same task, never a second recognition.' },
@@ -107,23 +103,19 @@ export function captionTools(services: FilmToolServices): ToolDefinition[] {
           additionalProperties: false,
           description: 'Timeline seconds.',
         },
-        language: { type: 'string', description: 'Speech language hint, e.g. zh (Whisper detects the language itself; the gateway takes zh only).' },
-        engine: { type: 'string', enum: ['whisper', 'gateway'], description: 'The recognition engine; the plugin setting when omitted.' },
+        language: { type: 'string', description: 'Speech language hint, e.g. zh (Whisper detects the language itself).' },
       },
       output: jsonOutput,
       async execute(args, exec) {
         const film = await filmWorkspace(exec)
-        const { baseRevision, requestId, clipIds, range, language, engine } = args
+        const { baseRevision, requestId, clipIds, range, language } = args
         const body = {
           baseRevision, requestId,
           ...(clipIds !== undefined ? { clipIds } : {}),
           ...(range !== undefined ? { range } : {}),
           ...(language !== undefined ? { language } : {}),
-          ...(engine !== undefined ? { engine } : {}),
         }
-        // The gateway's spending confirmation asks through this tool call, once, before the task starts (dsh-media's setting decides).
-        const started = await captionCaller.run({ agent: exec.agent, callId: exec.callId }, () =>
-          callStudio(services.studio, film.cwd, { method: 'POST', path: timelinePath(film.boardId, film.projectId, 'transcribe'), body }, exec.signal))
+        const started = await callStudio(services.studio, film.cwd, { method: 'POST', path: timelinePath(film.boardId, film.projectId, 'transcribe'), body }, exec.signal)
         return plain({ ...started, note: 'Recognition runs in the background. Poll media_get_task with this taskId; a done task is a draft to review, not applied captions.' })
       },
     }),
@@ -168,7 +160,7 @@ export function captionTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'media_cancel_task',
       description: 'Cancel one film task by its taskId (a caption recognition, a render, a storyboard generation of this workbench); a finished task is left '
-        + 'as it is. A gateway recognition already submitted is still charged — cancelling only stops waiting. Film tasks only, not dsh-media\'s media_tasks.',
+        + 'as it is. Film tasks only, not dsh-media\'s media_tasks.',
       parameters: {
         taskId: { type: 'string', required: true },
       },

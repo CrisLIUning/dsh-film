@@ -64,12 +64,10 @@ describe('original sound → persisted draft → native caption-only commit', ()
   })
 
   it('refuses a stale revision, changed original bytes, request reuse and a foreign task ID', async () => {
-    const h = await setup({ whisper: fakeEngine(), gateway: fakeEngine(undefined, 'gateway') })
+    const h = await setup()
     const a = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r' })
     await h.service.whenIdle()
     await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r', clipIds: ['b'] })).rejects.toThrow(/REQUEST_CONFLICT/)
-    // The engine is part of the inputs.
-    await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r', engine: 'gateway' })).rejects.toThrow(/REQUEST_CONFLICT/)
     await expect(h.service.apply(h.cwd, 'foreign', { taskId: a.taskId, reviewed: true, dryRun: false })).rejects.toThrow(/TASK_NOT_FOUND/)
     await expect(h.service.apply(h.cwd, PROJECT, { taskId: 'agent-run-not-media', reviewed: true, dryRun: false })).rejects.toThrow(/TASK_NOT_FOUND/)
     await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 0, requestId: 'stale' })).rejects.toThrow(/timeline has moved on/)
@@ -83,7 +81,7 @@ describe('original sound → persisted draft → native caption-only commit', ()
     let finish!: (result: CaptionRecognition[]) => void
     let entered!: () => void
     const ready = new Promise<void>((resolve) => { entered = resolve })
-    const h = await setup({ whisper: fakeEngine(async () => { entered(); return new Promise((resolve) => { finish = resolve }) }) })
+    const h = await setup(fakeEngine(async () => { entered(); return new Promise((resolve) => { finish = resolve }) }))
     const a = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r' })
     await ready
     await h.tasks.cancel(h.cwd, a.taskId)
@@ -97,7 +95,7 @@ describe('original sound → persisted draft → native caption-only commit', ()
   })
 
   it('empty output and outside-project links fail closed without timeline writes', async () => {
-    const h = await setup({ whisper: fakeEngine(async () => []) })
+    const h = await setup(fakeEngine(async () => []))
     const a = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'empty' })
     await h.service.whenIdle()
     expect((await h.tasks.record(h.cwd, a.taskId))?.error).toMatchObject({ code: 'CAPTION_NO_SPEECH', status: 422 })
@@ -115,7 +113,7 @@ describe('original sound → persisted draft → native caption-only commit', ()
   })
 
   it('records an engine failure with its code, and an unexpected one as CAPTION_RECOGNITION_FAILED', async () => {
-    const h = await setup({ whisper: fakeEngine(async () => { throw new Error('worker crashed') }) })
+    const h = await setup(fakeEngine(async () => { throw new Error('worker crashed') }))
     const a = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'crash' })
     await h.service.whenIdle()
     expect((await h.tasks.record(h.cwd, a.taskId))?.error).toMatchObject({ code: 'CAPTION_RECOGNITION_FAILED', status: 422, message: expect.stringContaining('worker crashed') })
@@ -135,9 +133,7 @@ it('preserves reviewed/manual captions and all non-caption tracks on an explicit
 })
 
 it('keeps large raw evidence on disk without overflowing the bounded task receipt', async () => {
-  const h = await setup({
-    whisper: fakeEngine(async input => input.sources.map(source => ({ sourceClipId: source.clipId, segments: [{ text: 'spoken', start: 0, end: 0.5 }], diagnostics: { raw: 'x'.repeat(500_000) } }))),
-  })
+  const h = await setup(fakeEngine(async input => input.sources.map(source => ({ sourceClipId: source.clipId, segments: [{ text: 'spoken', start: 0, end: 0.5 }], diagnostics: { raw: 'x'.repeat(500_000) } }))))
   const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'large-evidence' })
   await h.service.whenIdle()
   const task = await h.tasks.record(h.cwd, started.taskId)
@@ -160,22 +156,39 @@ it('rediscovers durable drafts after a restart and exposes applied state without
   const { FilmMediaTasks } = await import('../../src/media/tasks.js')
   // A fresh store and service read the tasks from disk, as after a restart of the Host.
   const tasks = new FilmMediaTasks(() => undefined)
-  const fresh = new CaptionService({ tasks, engines: { whisper: fakeEngine() }, timelines: dir => new TimelineStore(dir) })
+  const fresh = new CaptionService({ tasks, engine: fakeEngine(), timelines: dir => new TimelineStore(dir) })
   expect((await fresh.list(h.cwd, PROJECT)).tasks).toMatchObject([{ taskId: started.taskId, status: 'done', applied: false, engine: 'whisper', model: 'whisper-small-q8', segments: 2, ranges: [{ start: 0, end: 7 }] }])
   expect((await fresh.list(h.cwd, 'foreign')).tasks).toEqual([])
   await fresh.apply(h.cwd, PROJECT, { taskId: started.taskId, reviewed: true, dryRun: false })
   expect((await fresh.list(h.cwd, PROJECT)).tasks).toMatchObject([{ taskId: started.taskId, applied: true }])
 })
 
+it('reads the recognitions an earlier build recorded: its Whisper requests keep their identity, another engine\'s task is listed as recorded', async () => {
+  const h = await setup()
+  const record = (taskId: string, startedAt: number, engine: string, requestId: string, identity: string, model: string): Promise<void> => writeFile(join(h.cwd, 'film', '.tasks', `${taskId}.json`), JSON.stringify({
+    taskId, projectId: PROJECT, surface: 'video-editor', model, status: 'done', startedAt, endedAt: startedAt + 1, progress: ['完成'], kind: 'local',
+    request: { capability: 'transcribe', requestId, parameters: { nativeTimeline: true, identity, baseRevision: 1, engine } },
+    file: { name: `.tasks/${taskId}.json`, size: 1, kind: 'caption-draft', mime: 'application/json', documentResult: { kind: 'timeline-caption-draft', engine, model, segments: [{ id: 'x' }], ranges: [{ start: 0, end: 1 }] } },
+  }))
+  await mkdir(join(h.cwd, 'film', '.tasks'), { recursive: true })
+  await record('earlier-whisper', 3, 'whisper', 'kept', '{"baseRevision":1,"requestId":"kept","engine":"whisper"}', 'whisper-small-q8')
+  await record('earlier-other', 1, 'gateway', 'other', '{"baseRevision":1,"requestId":"other","engine":"gateway"}', 'gateway:asr')
+  expect((await h.service.list(h.cwd, PROJECT)).tasks).toMatchObject([
+    { taskId: 'earlier-whisper', status: 'done', engine: 'whisper', model: 'whisper-small-q8', segments: 1 },
+    { taskId: 'earlier-other', status: 'done', engine: 'gateway', model: 'gateway:asr', segments: 1, applied: false },
+  ])
+  // A retry of the Whisper request is the same task; the other engine's requestId names other inputs now.
+  expect(await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'kept' })).toMatchObject({ taskId: 'earlier-whisper', duplicate: true, engine: 'whisper' })
+  await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'other' })).rejects.toThrow(/REQUEST_CONFLICT/)
+})
+
 it('a running recognition does not survive a restart of the Host', async () => {
   let entered!: () => void
   const ready = new Promise<void>((resolve) => { entered = resolve })
-  const h = await setup({
-    whisper: fakeEngine(async (input) => {
-      entered()
-      return new Promise((_resolve, reject) => { input.signal.addEventListener('abort', () => { reject(input.signal.reason) }) })
-    }),
-  })
+  const h = await setup(fakeEngine(async (input) => {
+    entered()
+    return new Promise((_resolve, reject) => { input.signal.addEventListener('abort', () => { reject(input.signal.reason) }) })
+  }))
   const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'restart' })
   await ready
   await h.tasks.settled()
@@ -190,13 +203,11 @@ it('sweeps the snapshots a stopped Host left, and never those of a recognition s
   let entered!: () => void
   const ready = new Promise<void>((resolve) => { entered = resolve })
   let blocking = true
-  const h = await setup({
-    whisper: fakeEngine(async (input) => {
-      if (!blocking) return input.sources.map(source => ({ sourceClipId: source.clipId, segments: [{ text: 'x', start: 0, end: 0.5 }] }))
-      entered()
-      return new Promise((_resolve, reject) => { input.signal.addEventListener('abort', () => { reject(input.signal.reason) }) })
-    }),
-  })
+  const h = await setup(fakeEngine(async (input) => {
+    if (!blocking) return input.sources.map(source => ({ sourceClipId: source.clipId, segments: [{ text: 'x', start: 0, end: 0.5 }] }))
+    entered()
+    return new Promise((_resolve, reject) => { input.signal.addEventListener('abort', () => { reject(input.signal.reason) }) })
+  }))
   const runs = join(h.cwd, 'film', '.tasks', 'caption-runs')
   // A crashed Host's run: its task file says running, but nothing runs it any more; and a folder with no task at all.
   const crashed = '0b7c2a4e-dead-4bee-9a11-000000000001'
@@ -229,17 +240,9 @@ it('sweeps leftovers the first time a fresh service lists a workspace\'s recogni
   await mkdir(join(runs, 'left-by-a-crash'), { recursive: true })
   await writeFile(join(runs, 'left-by-a-crash', '0.mp4'), 'stale')
   const { CaptionService } = await import('../../src/captions/service.js')
-  const fresh = new CaptionService({ tasks: h.tasks, engines: { whisper: fakeEngine() }, timelines: dir => new TimelineStore(dir) })
+  const fresh = new CaptionService({ tasks: h.tasks, engine: fakeEngine(), timelines: dir => new TimelineStore(dir) })
   await fresh.list(h.cwd, PROJECT)
   expect(await readdir(runs)).toEqual([])
-})
-
-it('estimates a recognition without a task or a copy: Whisper is free', async () => {
-  const h = await setup()
-  expect(await h.service.estimate(h.cwd, PROJECT, { baseRevision: 1, requestId: '', estimateOnly: true, range: { start: 1, end: 6 } }))
-    .toEqual({ estimate: { seconds: 8, amountCny: 0, basis: expect.stringContaining('free') }, engine: 'whisper' })
-  await expect(h.service.estimate(h.cwd, PROJECT, { baseRevision: 0, requestId: '', estimateOnly: true })).rejects.toThrow(/timeline has moved on/)
-  expect(await h.tasks.list(h.cwd)).toEqual([])
 })
 
 it('reports progress lines as Studio does: models 0–20 %, recognition 20–99 %', async () => {
@@ -251,7 +254,7 @@ it('reports progress lines as Studio does: models 0–20 %, recognition 20–99 
     context.onProgress({ progress: 0.5, phase: '正在下载 Whisper' })
     return {}
   }
-  const h = await setup({ whisper: engine })
+  const h = await setup(engine)
   const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'progress' })
   await h.service.whenIdle()
   expect((await h.tasks.record(h.cwd, started.taskId))?.progress).toEqual(['0% · 已提交', '10% · 正在下载 Whisper', '20% · 识别中', '60% · 识别第 1 段', '完成'])
@@ -281,7 +284,7 @@ describe('mapCaptionRecognition', () => {
 it('creates no task when the engine refuses before starting', async () => {
   const engine = fakeEngine()
   engine.preflight = async () => { throw Object.assign(new (await import('../../src/captions/plan.js')).TimelineCaptionError('VIDEO_EDITOR_MODEL_CONSENT_REQUIRED', 'consent', 409, { modelIds: ['silero-vad'] })) }
-  const h = await setup({ whisper: engine })
+  const h = await setup(engine)
   await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'consent' })).rejects.toMatchObject({ code: 'VIDEO_EDITOR_MODEL_CONSENT_REQUIRED', status: 409, extra: { modelIds: ['silero-vad'] } })
   expect(await h.tasks.list(h.cwd)).toEqual([])
   await mkdir(join(h.cwd, 'film', '.tasks'), { recursive: true })

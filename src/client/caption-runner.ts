@@ -1,12 +1,11 @@
 /**
  * This window as a caption runner: the Host has no browser, so the editing
- * desk's speech recognition (Whisper, and the speech regions the gateway
- * engine needs) runs here, in a hidden frame, whatever tab is open. The
- * window keeps one event stream to the Host's runner hub; when a job is
- * offered it loads `apps/editor/caption-runner.html` in a hidden same-origin
- * frame, which claims the job (the first window to claim wins), does it and
- * posts the result itself. The frame is removed when the job ends, which
- * frees the model's memory.
+ * desk's speech recognition (Whisper) runs here, in a hidden frame, whatever
+ * tab is open. The window keeps one event stream to the Host's runner hub;
+ * when a job is offered it loads `apps/editor/caption-runner.html` in a
+ * hidden same-origin frame, which claims the job (the first window to claim
+ * wins), does it and posts the result itself. The frame is removed when the
+ * job ends, which frees the model's memory.
  *
  * The stream ends when the plugin restarts (a settings change makes a new
  * hub); the browser reconnects on its own, and when it gives up — the route

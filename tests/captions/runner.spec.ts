@@ -211,7 +211,7 @@ describe('whisper engine', () => {
 
   it('refuses before a task without consent or without a window, and names what is missing', async () => {
     const engine = whisperEngine({ models, runner: hub })
-    const h = await workspace({ whisper: engine })
+    const h = await workspace(engine)
     try {
       await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r' })).rejects.toMatchObject({
         code: 'VIDEO_EDITOR_MODEL_CONSENT_REQUIRED', status: 409, extra: { modelIds: ['whisper-small-q8', 'silero-vad'] },
@@ -222,6 +222,11 @@ describe('whisper engine', () => {
       await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r' })).rejects.toMatchObject({ code: 'CAPTION_RUNTIME_UNAVAILABLE', status: 503 })
       expect(await h.tasks.list(h.cwd)).toEqual([])
       expect(await engine.describe()).toMatchObject({ id: 'whisper', available: false, consent: { 'whisper-small-q8': true, 'silero-vad': true }, runner: 'none' })
+      // The engines route's answer, as the desk reads it for its status.
+      expect(await h.service.engines()).toEqual({
+        default: 'whisper',
+        engines: [{ id: 'whisper', available: false, reason: expect.stringContaining('没有打开的'), consent: { 'whisper-small-q8': true, 'silero-vad': true }, downloadBytes: expect.any(Number), runner: 'none' }],
+      })
     } finally {
       await h.cleanup()
     }
@@ -231,10 +236,11 @@ describe('whisper engine', () => {
     await models.setConsent('whisper-small-q8', true)
     await models.setConsent('silero-vad', true)
     const engine = whisperEngine({ models, runner: hub, pollMs: 5 })
-    const h = await workspace({ whisper: engine })
+    const h = await workspace(engine)
     try {
       const window = await open()
       expect(await engine.describe()).toMatchObject({ available: true, runner: 'connected', downloadBytes: expect.any(Number) })
+      expect((await h.service.engines()).engines).toEqual([{ id: 'whisper', available: true, consent: { 'whisper-small-q8': true, 'silero-vad': true }, downloadBytes: expect.any(Number), runner: 'connected' }])
       const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'r', range: { start: 1, end: 6 }, language: 'zh' })
       expect(started).toMatchObject({ status: 'running', engine: 'whisper', model: 'whisper-small-q8' })
       const job = await window.next('job', 5000)
@@ -274,7 +280,7 @@ describe('whisper engine', () => {
   it('cancelling the task tells the page and leaves the task interrupted', async () => {
     await models.setConsent('whisper-small-q8', true)
     await models.setConsent('silero-vad', true)
-    const h = await workspace({ whisper: whisperEngine({ models, runner: hub, pollMs: 5 }) })
+    const h = await workspace(whisperEngine({ models, runner: hub, pollMs: 5 }))
     try {
       const window = await open()
       const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'cancel' })
@@ -292,7 +298,7 @@ describe('whisper engine', () => {
   it('fails the task when the page returns a malformed result', async () => {
     await models.setConsent('whisper-small-q8', true)
     await models.setConsent('silero-vad', true)
-    const h = await workspace({ whisper: whisperEngine({ models, runner: hub, pollMs: 5 }) })
+    const h = await workspace(whisperEngine({ models, runner: hub, pollMs: 5 }))
     try {
       const window = await open()
       const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'bad' })

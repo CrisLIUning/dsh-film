@@ -21,7 +21,7 @@ beforeEach(async () => {
     sourceClipId: source.clipId,
     segments: Array.from({ length: 3 }, (_, index) => ({ text: `${source.clipId} 第 ${index + 1} 句`, start: index * 0.5, end: index * 0.5 + 0.4, ...(index === 2 ? { warnings: ['weak-speech-evidence'] } : {}) })),
   })))
-  h = await workspace({ whisper: engine })
+  h = await workspace(engine)
   agent.session.header.cwd = h.cwd
   const events = new ProjectEvents()
   const boardAgent = new CanvasBoardAgent()
@@ -50,11 +50,12 @@ async function run(name: string, args: Record<string, unknown> = {}): Promise<an
 
 describe('caption tools', () => {
   it('transcribe → media_get_task (paged draft) → apply dry run → apply → caption-tasks', async () => {
+    // Whisper is the only engine: the agent names none.
+    expect(Object.keys((tools.get('timeline_transcribe')!.parameters as { properties: Record<string, unknown> }).properties)).toEqual(['baseRevision', 'requestId', 'clipIds', 'range', 'language'])
     const started = await run('timeline_transcribe', { baseRevision: 1, requestId: 'agent-1', range: { start: 1, end: 6 } })
     expect(started).toMatchObject({ status: 'running', engine: 'whisper', duplicate: false, note: expect.stringContaining('media_get_task') })
     await h.service.whenIdle()
-    // The agent's tool call travels with the request, for the gateway's spending confirmation.
-    expect(engine.inputs[0]!.spending).toEqual({ confirmed: false, agent, callId: 'call-9' })
+    expect(engine.inputs).toHaveLength(1)
     const first = await run('media_get_task', { taskId: started.taskId, limit: 4 })
     expect(first).toMatchObject({ taskId: started.taskId, status: 'done', progress: '完成', draft: { kind: 'timeline-caption-draft', engine: 'whisper', segmentCount: 6, offset: 0, nextOffset: 4 } })
     expect(first.draft.segments).toHaveLength(4)

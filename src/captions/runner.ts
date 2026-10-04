@@ -35,8 +35,8 @@ import { TimelineCaptionError } from './plan.js'
 /** Where the runner routes live. */
 export const RUNNER_PREFIX = '/api/dsh-film/caption-runner'
 
-/** What a page is asked to do: recognise speech with Whisper, or cut speech regions for the gateway. */
-export type RunnerJobKind = 'whisper' | 'extract'
+/** What a page is asked to do: recognise speech with Whisper. */
+export type RunnerJobKind = 'whisper'
 
 /** One job's inputs. */
 export interface RunnerJobSpec {
@@ -311,7 +311,7 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
   headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
 })
 
-/** The largest result a page may post: an hour of 16 kHz speech as base64 WAV fits. */
+/** The largest result a page may post: a recognition's lines with their raw output and diagnostics. */
 const RESULT_LIMIT = 256 * 1024 * 1024
 
 /** A JSON body, refused past `limit` before it is buffered whole; the JSON type keeps plain form posts out. */
@@ -381,7 +381,7 @@ export function captionRunnerRoutes(hub: CaptionRunnerHub): ConnectionFetchRoute
       }),
     },
     {
-      // Streamed: a region extraction's WAV bytes exceed the Host's buffered JSON cap.
+      // Streamed: the body is read in chunks and refused past RESULT_LIMIT before it is held whole.
       path: `${RUNNER_PREFIX}/result`, methods: ['POST'], requestBody: 'streaming',
       fetch: answering(async (request) => {
         hub.result(await jsonBody(request, RESULT_LIMIT))

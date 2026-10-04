@@ -11,8 +11,7 @@ import { getNativeTimelineFfmpegMediaRequirements, getTimelineSourceTime } from 
 import type { JsonObject, VideoEditorCommandPlan } from '../../vendor/video-editor-bridge.mjs'
 import { isTimelineArchive } from '../timeline/archive.js'
 import { CANVAS_FILE_VERSION_PREFIX } from '../timeline/commands.js'
-import { CAPTION_ENGINES } from './contracts.js'
-import type { CaptionEngine, TimelineCaptionDraft, TimelineCaptionSource, TimelineTranscribeRequest } from './contracts.js'
+import type { TimelineCaptionDraft, TimelineCaptionSource, TimelineTranscribeRequest } from './contracts.js'
 
 /**
  * A refused or failed caption request. The message leads with the code, as
@@ -48,17 +47,17 @@ function positive(value: unknown, key: string): number {
 /**
  * Check a transcribe body. `range` is copied as `{start, end}` so that extra
  * keys cannot enter the request's identity (Studio kept the raw object).
+ * Recognition is Whisper's: `engine` may only name it, and a request that
+ * still names `gateway` (an older desk or agent) is refused with
+ * `CAPTION_ENGINE_UNSUPPORTED`.
  * @param value - the JSON body.
  * @returns the request.
  */
 export function parseTranscribeRequest(value: unknown): TimelineTranscribeRequest {
   const r = obj(value)
-  if (r.estimateOnly !== undefined && typeof r.estimateOnly !== 'boolean') fail('CAPTION_REQUEST_INVALID', 'estimateOnly must be true or false')
-  // An estimate starts nothing, so it needs no requestId (one that is given is still checked).
-  const estimateOnly = r.estimateOnly === true
-  const requestMissing = !(estimateOnly && r.requestId === undefined)
-    && (typeof r.requestId !== 'string' || r.requestId.trim() === '' || r.requestId.length > 160)
-  if (!Number.isSafeInteger(r.baseRevision) || Number(r.baseRevision) < 0 || requestMissing) {
+  if (r.engine === 'gateway') fail('CAPTION_ENGINE_UNSUPPORTED', '网关转写不再提供字幕识别；字幕用本机 Whisper 识别。')
+  if (r.engine !== undefined && r.engine !== 'whisper') fail('CAPTION_REQUEST_INVALID', 'engine must be whisper')
+  if (!Number.isSafeInteger(r.baseRevision) || Number(r.baseRevision) < 0 || typeof r.requestId !== 'string' || r.requestId.trim() === '' || r.requestId.length > 160) {
     fail('CAPTION_REQUEST_INVALID', 'baseRevision and requestId are required')
   }
   if (r.clipIds !== undefined && (
@@ -75,17 +74,12 @@ export function parseTranscribeRequest(value: unknown): TimelineTranscribeReques
     range = { start: given.start as number, end: given.end as number }
   }
   if (r.language !== undefined && (typeof r.language !== 'string' || !/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(r.language))) fail('CAPTION_REQUEST_INVALID', 'invalid language')
-  if (r.engine !== undefined && !CAPTION_ENGINES.includes(r.engine as CaptionEngine)) fail('CAPTION_REQUEST_INVALID', 'engine must be whisper or gateway')
-  if (r.spendingConfirmed !== undefined && typeof r.spendingConfirmed !== 'boolean') fail('CAPTION_REQUEST_INVALID', 'spendingConfirmed must be true or false')
   return {
     baseRevision: Number(r.baseRevision),
-    requestId: typeof r.requestId === 'string' ? r.requestId : '',
+    requestId: String(r.requestId),
     ...(r.clipIds !== undefined ? { clipIds: [...r.clipIds as string[]] } : {}),
     ...(range !== undefined ? { range } : {}),
     ...(r.language !== undefined ? { language: String(r.language) } : {}),
-    ...(r.engine !== undefined ? { engine: r.engine as CaptionEngine } : {}),
-    ...(r.spendingConfirmed === true ? { spendingConfirmed: true } : {}),
-    ...(estimateOnly ? { estimateOnly: true } : {}),
   }
 }
 

@@ -1,38 +1,32 @@
 /**
- * Recognition engines behind one seam (Studio's `recognize` dependency): what
- * each refuses before a task exists, which model files it prepares, and how
- * it recognises the snapshots. The `whisper` engine is Studio's — the editing
+ * The recognition engine behind one seam (Studio's `recognize` dependency):
+ * what it refuses before a task exists, which model files it prepares, and
+ * how it recognises the snapshots. The engine is Studio's — the editing
  * desk's Whisper small q8 with Silero VAD — run in a page through the caption
- * runner; the gateway engine is in `gateway.ts`. There is never a fallback
- * from one to the other: a request names one engine (or the setting does) and
- * fails when that engine cannot run.
+ * runner; when it cannot run, a recognition fails and says why.
  * @module dsh-film/captions/engines
  */
 
 import type { EditorModels } from '../models/service.js'
 import { modelFileRoute } from '../studio/model-routes.js'
-import type { CaptionCaller, CaptionEngine, CaptionEstimate, CaptionRecognition, CaptionRecognizerInput, TimelineTranscribeRequest } from './contracts.js'
+import type { CaptionEngine, CaptionRecognition, CaptionRecognizerInput, TimelineTranscribeRequest } from './contracts.js'
 import { TimelineCaptionError } from './plan.js'
 import type { TranscriptionPlan } from './plan.js'
 import type { CaptionRunnerHub } from './runner.js'
 
 /** The desk's recognition model, as Studio names it. */
 export const WHISPER_MODEL = 'whisper-small-q8'
-/** The speech detector the Whisper worker and the region cutter both use. */
+/** The speech detector the Whisper worker uses. */
 export const VAD_MODEL = 'silero-vad'
 
-/** One recognition engine. */
+/** The recognition engine. */
 export interface CaptionEngineDriver {
   readonly id: CaptionEngine
   /**
-   * Refuse, before a task exists, what cannot run now (missing consent, no
-   * window, no service, a language the engine does not take). A paid engine
-   * asked by an agent's tool call may confirm the cost here, once, while the
-   * call still waits — never for an estimate (`request.estimateOnly`).
-   * @returns the model the draft will name, an estimate when the engine costs
-   *   money, and whether the cost is now confirmed for the whole recognition.
+   * Refuse, before a task exists, what cannot run now (missing consent, no window).
+   * @returns the model the draft will name.
    */
-  preflight(input: { cwd: string; request: TimelineTranscribeRequest; plan: TranscriptionPlan; caller?: CaptionCaller; signal?: AbortSignal }): Promise<{ model: string; estimate?: CaptionEstimate; spendingConfirmed?: boolean }>
+  preflight(input: { cwd: string; request: TimelineTranscribeRequest; plan: TranscriptionPlan }): Promise<{ model: string }>
   /**
    * Get the model files ready (verified, downloaded if needed).
    * @returns their URLs by artifact id.
@@ -41,7 +35,7 @@ export interface CaptionEngineDriver {
   /** Recognise the snapshots; segment times are seconds from each source's `sourceIn`. */
   recognize(input: CaptionRecognizerInput & { model: string }): Promise<CaptionRecognition[]>
   /** What the engines route says about this engine. */
-  describe(signal?: AbortSignal): Promise<Record<string, unknown>>
+  describe(): Promise<Record<string, unknown>>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -167,7 +161,7 @@ export function whisperEngine(options: { models?: EditorModels; runner?: Caption
       if (models === undefined || runner === undefined) throw unavailable()
       await requireConsents(models, modelIds)
       const availability = runner.availability()
-      if (!availability.available) throw new TimelineCaptionError('CAPTION_RUNTIME_UNAVAILABLE', `${availability.reason}（或改用 engine:'gateway'）`, 503)
+      if (!availability.available) throw new TimelineCaptionError('CAPTION_RUNTIME_UNAVAILABLE', availability.reason, 503)
       return { model: WHISPER_MODEL }
     },
     async prepare(context) {

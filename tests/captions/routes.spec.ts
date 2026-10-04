@@ -11,18 +11,13 @@ let h: Workspace
 let router: StudioRouter
 
 beforeEach(async () => {
-  const gateway = fakeEngine(undefined, 'gateway')
-  gateway.preflight = async ({ request }) => {
-    if (request.language === 'en') throw new TimelineCaptionError('CAPTION_ENGINE_LANGUAGE_UNSUPPORTED', 'zh only', 400)
-    if (request.requestId === 'no-media') throw new TimelineCaptionError('CAPTION_ENGINE_UNAVAILABLE', 'install dsh-media', 503, { cause: 'MEDIA_SERVICE_UNAVAILABLE' })
-    return { model: 'gateway:asr', estimate: { seconds: 11, amountCny: 0.01, basis: 'retail' } }
-  }
   const whisper = fakeEngine()
   whisper.preflight = async ({ request }) => {
     if (request.requestId === 'consent') throw new TimelineCaptionError('VIDEO_EDITOR_MODEL_CONSENT_REQUIRED', 'consent first', 409, { modelIds: ['whisper-small-q8', 'silero-vad'] })
+    if (request.requestId === 'no-window') throw new TimelineCaptionError('CAPTION_RUNTIME_UNAVAILABLE', 'open a window', 503)
     return { model: 'whisper-small-q8' }
   }
-  h = await workspace({ whisper, gateway })
+  h = await workspace(whisper)
   router = createStudioRouter({ tasks: h.tasks, captions: h.service })
 })
 
@@ -56,10 +51,22 @@ describe('caption routes', () => {
     expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'consent' })).toEqual({
       status: 409, body: { code: 'VIDEO_EDITOR_MODEL_CONSENT_REQUIRED', error: 'VIDEO_EDITOR_MODEL_CONSENT_REQUIRED: consent first', modelIds: ['whisper-small-q8', 'silero-vad'] },
     })
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'en', engine: 'gateway', language: 'en' })).toMatchObject({ status: 400, body: { code: 'CAPTION_ENGINE_LANGUAGE_UNSUPPORTED' } })
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'no-media', engine: 'gateway' })).toMatchObject({ status: 503, body: { code: 'CAPTION_ENGINE_UNAVAILABLE', cause: 'MEDIA_SERVICE_UNAVAILABLE' } })
-    const paid = await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'paid', engine: 'gateway', spendingConfirmed: true })
-    expect(paid).toMatchObject({ status: 202, body: { engine: 'gateway', model: 'gateway:asr', estimate: { seconds: 11, amountCny: 0.01 } } })
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'no-window' })).toMatchObject({ status: 503, body: { code: 'CAPTION_RUNTIME_UNAVAILABLE' } })
+    expect(await h.tasks.list(h.cwd)).toEqual([])
+  })
+
+  it('takes engine whisper, refuses the gateway\'s transcription with CAPTION_ENGINE_UNSUPPORTED, and answers no estimate', async () => {
+    const refused = await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'old-desk', engine: 'gateway', range: { start: 1, end: 6 } })
+    expect(refused).toEqual({ status: 400, body: { code: 'CAPTION_ENGINE_UNSUPPORTED', error: 'CAPTION_ENGINE_UNSUPPORTED: 网关转写不再提供字幕识别；字幕用本机 Whisper 识别。' } })
+    // Whatever else the body says.
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, engine: 'gateway' })).toMatchObject({ status: 400, body: { code: 'CAPTION_ENGINE_UNSUPPORTED' } })
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'other', engine: 'sensevoice' })).toMatchObject({ status: 400, body: { code: 'CAPTION_REQUEST_INVALID' } })
+    expect(await h.tasks.list(h.cwd)).toEqual([])
+    const named = await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'named', engine: 'whisper', range: { start: 1, end: 6 } })
+    expect(named).toMatchObject({ status: 202, body: { status: 'running', duplicate: false, engine: 'whisper', model: 'whisper-small-q8' } })
+    expect(Object.keys(named.body).sort()).toEqual(['duplicate', 'engine', 'model', 'status', 'taskId'])
+    // Naming the engine or not is the same request.
+    expect((await call('POST', `${base}/transcribe`, { baseRevision: 1, requestId: 'named', range: { start: 1, end: 6 } })).body).toMatchObject({ taskId: named.body.taskId, duplicate: true })
   })
 
   it('reads the draft through the task routes, applies it reviewed, and lists it as applied', async () => {
@@ -89,7 +96,7 @@ describe('caption routes', () => {
       input.signal.throwIfAborted()
       return []
     })
-    const slow = await workspace({ whisper: engine })
+    const slow = await workspace(engine)
     try {
       const slowRouter = createStudioRouter({ tasks: slow.tasks, captions: slow.service })
       const url = (path: string): URL => {
@@ -113,21 +120,7 @@ describe('caption routes', () => {
     }
   })
 
-  it('answers an estimate with 200 and starts, copies and charges nothing', async () => {
-    const free = await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: true, range: { start: 1, end: 6 } })
-    expect(free).toEqual({ status: 200, body: { estimate: { seconds: 8, amountCny: 0, basis: expect.any(String) }, engine: 'whisper' } })
-    const paid = await call('POST', `${base}/transcribe?project=${PROJECT}`, { baseRevision: 1, requestId: 'ignored', engine: 'gateway', estimateOnly: true })
-    expect(paid).toEqual({ status: 200, body: { estimate: { seconds: 11, amountCny: 0.01, basis: 'retail' }, engine: 'gateway' } })
-    // The same refusals as a start.
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 0, estimateOnly: true })).toMatchObject({ status: 409, body: { code: 'CANVAS_TIMELINE_CONFLICT', current: { revision: 1 } } })
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: true, engine: 'gateway', language: 'en' })).toMatchObject({ status: 400, body: { code: 'CAPTION_ENGINE_LANGUAGE_UNSUPPORTED' } })
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: 'yes' })).toMatchObject({ status: 400, body: { code: 'CAPTION_REQUEST_INVALID' } })
-    // Without estimateOnly a requestId is still required.
-    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1 })).toMatchObject({ status: 400, body: { code: 'CAPTION_REQUEST_INVALID' } })
-    expect(await h.tasks.list(h.cwd)).toEqual([])
-  })
-
-  it('lists the engines with the default', async () => {
-    expect((await call('GET', `${base}/captions/engines`)).body).toEqual({ default: 'whisper', engines: [{ id: 'whisper', available: true }, { id: 'gateway', available: true }] })
+  it('lists the engine with the default', async () => {
+    expect((await call('GET', `${base}/captions/engines`)).body).toEqual({ default: 'whisper', engines: [{ id: 'whisper', available: true }] })
   })
 })

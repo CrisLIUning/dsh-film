@@ -1,16 +1,15 @@
 /**
  * Studio's original-audio caption endpoints (`routes/timeline-captions.ts`)
- * over the film's cut, plus the engine listing the desk's engine choice reads:
+ * over the film's cut, plus the engine status the desk shows:
  *
  * - `POST /api/canvas/timelines/:boardId/transcribe` — 202 with the task;
- *   `{ baseRevision, requestId, clipIds?, range?, language?, engine?, spendingConfirmed? }`.
- *   With `estimateOnly: true` (requestId optional) it answers 200
- *   `{ estimate: { seconds, amountCny, basis }, engine }` after the same
- *   planning and engine checks, and starts, copies and charges nothing.
+ *   `{ baseRevision, requestId, clipIds?, range?, language? }`. `engine` may
+ *   only be `whisper`; `gateway` is refused with 400 `CAPTION_ENGINE_UNSUPPORTED`.
  * - `POST /api/canvas/timelines/:boardId/captions/apply` — `{ taskId, reviewed, dryRun, excludeSegmentIds? }`
  *   → `{ result }`, the command's result without the two whole cuts.
  * - `GET  /api/canvas/timelines/:boardId/captions/tasks` — the latest 20 recognitions.
- * - `GET  /api/canvas/timelines/:boardId/captions/engines` — whisper and gateway, and the default.
+ * - `GET  /api/canvas/timelines/:boardId/captions/engines` — `{ default: 'whisper', engines: [whisper] }`:
+ *   whether Whisper can run now, its models' consent, their download size and the window runner.
  *
  * The board is the project here: `?project=` naming another is refused with
  * 409 `CAPTION_CONTEXT_MISMATCH`. Errors answer `{ error, code, ...extra }`.
@@ -57,13 +56,8 @@ export function addCaptionRoutes(router: StudioRouter, captions: CaptionService)
   router.add('POST', '/api/canvas/timelines/:boardId/transcribe', async (request) => {
     const projectId = projectFor(request)
     const body = await request.json()
-    const answer = await answering(request, projectId, async () => {
-      const parsed = parseTranscribeRequest(body)
-      if (parsed.estimateOnly === true) return { status: 200, body: await captions.estimate(request.cwd, projectId, parsed, request.raw.signal) }
-      // The request's lifetime withdraws a spending question the engine is still asking.
-      return { status: 202, body: await captions.start(request.cwd, projectId, parsed, undefined, request.raw.signal) }
-    })
-    return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } })
+    const started = await answering(request, projectId, async () => captions.start(request.cwd, projectId, parseTranscribeRequest(body)))
+    return new Response(JSON.stringify(started), { status: 202, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } })
   })
 
   router.add('POST', '/api/canvas/timelines/:boardId/captions/apply', async (request) => {
@@ -93,6 +87,6 @@ export function addCaptionRoutes(router: StudioRouter, captions: CaptionService)
 
   router.add('GET', '/api/canvas/timelines/:boardId/captions/engines', async (request) => {
     projectFor(request)
-    return captions.engines(request.raw.signal)
+    return captions.engines()
   })
 }

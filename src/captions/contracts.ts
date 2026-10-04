@@ -1,39 +1,23 @@
 /**
  * The shapes of original-audio captions, as Studio's contracts define them
  * (`packages/contracts/src/api/timeline-captions.ts`), plus what dsh-film
- * adds: the recognition engine on the request and the draft, and the input
- * and output of an engine. All times are seconds; a `taskId` is a film task
+ * adds: the engine named on the draft and the task rows, and the input and
+ * output of the engine. All times are seconds; a `taskId` is a film task
  * (`film/.tasks/<id>.json`), never an agent run.
  * @module dsh-film/captions/contracts
  */
 
-/** Who recognises the speech: the editing desk's Whisper in a hidden page, or the VibeDev gateway's ASR (paid, Mandarin). */
-export type CaptionEngine = 'whisper' | 'gateway'
-
-export const CAPTION_ENGINES: readonly CaptionEngine[] = ['whisper', 'gateway']
+/** Who recognises the speech: the editing desk's Whisper, in a hidden page of an open window. */
+export type CaptionEngine = 'whisper'
 
 /** `POST /api/canvas/timelines/:boardId/transcribe`. */
 export interface TimelineTranscribeRequest {
   baseRevision: number
-  /** Empty only for an estimate, which needs none. */
   requestId: string
   clipIds?: string[]
   /** Timeline seconds. */
   range?: { start: number; end: number }
   language?: string
-  /** The engine; the plugin setting `captionEngine` when omitted. Part of the request's identity. */
-  engine?: CaptionEngine
-  /** The desk showed the gateway price and the person went ahead (not part of the identity). */
-  spendingConfirmed?: boolean
-  /** Only answer what the recognition would send and cost: no task, nothing copied, nothing charged. */
-  estimateOnly?: boolean
-}
-
-/** What an estimate answers (200). */
-export interface TimelineTranscribeEstimate {
-  /** Source seconds the engine would be sent, and their price (0 for Whisper). */
-  estimate: Required<CaptionEstimate>
-  engine: CaptionEngine
 }
 
 /** One recognised source: a clip's audible stretch inside the requested range. */
@@ -84,7 +68,7 @@ export interface TimelineCaptionDraft {
   kind: 'timeline-caption-draft'
   schemaVersion: 1
   baseRevision: number
-  /** `whisper-small-q8`, or `gateway:<model id>`. */
+  /** The recognition model (`whisper-small-q8`). */
   model: string
   engine: CaptionEngine
   diagnostics?: Array<{ sourceClipId: string; evidence: Record<string, unknown> }>
@@ -110,7 +94,8 @@ export interface TimelineCaptionApplyRequest {
 export interface TimelineCaptionTaskSummary {
   taskId: string
   status: 'queued' | 'running' | 'done' | 'failed' | 'interrupted'
-  engine: CaptionEngine
+  /** As the task recorded it: `whisper`, or another engine an earlier build ran. */
+  engine: string
   model: string
   startedAt: number
   endedAt: number | null
@@ -130,17 +115,9 @@ export interface CaptionRecognition {
   segments: Array<{ text: string; start: number; end: number; warnings?: string[] }>
 }
 
-/** Who asked, for the gateway's spending confirmation. */
-export interface CaptionCaller {
-  /** The agent whose tool call started the recognition. */
-  agent?: unknown
-  callId?: string
-}
-
-/** What an engine recognises from. */
+/** What the engine recognises from. */
 export interface CaptionRecognizerInput {
   taskId: string
-  cwd: string
   /** Snapshots of the plan's sources (absolute paths). */
   sources: Array<{ clipId: string; file: string; sourceIn: number; sourceOut: number }>
   /** The model files the engine prepared, by artifact id. */
@@ -149,14 +126,4 @@ export interface CaptionRecognizerInput {
   signal: AbortSignal
   /** Recognition progress, 0..1. */
   onProgress(update: { progress: number; phase: string }): void
-  /** Whether the person confirmed the cost, and who asked. */
-  spending: { confirmed: boolean } & CaptionCaller
-}
-
-/** An estimate of a paid recognition. */
-export interface CaptionEstimate {
-  /** Source seconds sent at most (only speech is sent, so usually less). */
-  seconds: number
-  amountCny?: number
-  basis: string
 }
