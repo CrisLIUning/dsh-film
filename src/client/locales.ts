@@ -6,11 +6,15 @@
 
 export const zh = {
   'tab.loading': '正在打开影视工作台…',
-  'tab.loadFailed': '影视工作台没能加载：{message}',
+  'tab.loadFailed': '影视工作台没能加载：{message} 如果刚更新过影视工作台，请先重启 DeepSeek Harness / VibeDev。',
   'tab.retry': '重试',
   'tab.noWorkspace': '这个会话没有工作区。影视项目存成工作区里的文件，请在有工作区的会话里打开。',
   'app.loading': '正在打开…',
   'app.failed': '没能打开这个工作台。',
+  'runtime.restart': '影视工作台已更新：已安装 {installed}，正在运行 {running}。请重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前这里的页面无法使用。',
+  'runtime.older': '更早的版本',
+  'runtime.unknown': '未知版本',
+  'runtime.retiredView': '这个标签已不再提供。',
 
   'story.title': '剧本',
   'story.guide.description': '分场大纲、角色和版本，写好交给分镜画布',
@@ -309,11 +313,15 @@ export type FilmKey = keyof typeof zh
 
 export const en: Record<FilmKey, string> = {
   'tab.loading': 'Opening the film workbench…',
-  'tab.loadFailed': 'The film workbench could not load: {message}',
+  'tab.loadFailed': 'The film workbench could not load: {message} If you just updated the film workbench, restart DeepSeek Harness / VibeDev first.',
   'tab.retry': 'Retry',
   'tab.noWorkspace': 'This session has no workspace. Film projects are files in a workspace; open the workbench from a session that has one.',
   'app.loading': 'Opening…',
   'app.failed': 'This desk could not be opened.',
+  'runtime.restart': 'The film workbench was updated: {installed} is installed, {running} is running. Restart DeepSeek Harness / VibeDev for the new version to take effect; until then the pages here cannot be used.',
+  'runtime.older': 'an earlier version',
+  'runtime.unknown': 'an unknown version',
+  'runtime.retiredView': 'This tab is no longer offered.',
 
   'story.title': 'Script',
   'story.guide.description': 'Scene outline, characters and versions, handed to the storyboard when ready',

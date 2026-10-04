@@ -21,7 +21,7 @@
  * @module dsh-film
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -49,8 +49,8 @@ export type { AspectRatio, FilmProject, StoredAspectRatio } from './project.js'
 export type { MediaAsset, MediaKind } from './media.js'
 export { FilmToolError, filmAgentTools } from './agent/index.js'
 
-/** The package version. */
-export const version: string = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
+/** The package version (the one this Host process loaded). */
+export { version } from './runtime.js'
 
 export const name = 'dsh-film'
 

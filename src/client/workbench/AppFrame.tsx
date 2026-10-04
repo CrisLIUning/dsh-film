@@ -40,6 +40,11 @@ export interface AppFrameProps {
   t: Translate
   /** What to show when this build does not carry the app. */
   missing: ReactNode
+  /**
+   * Shown instead of the app while set: a restart is pending, and the app's
+   * new files have no routes on the Host that runs the old version.
+   */
+  blocked?: ReactNode
 }
 
 type Availability = 'checking' | 'present' | 'missing' | 'failed'
@@ -53,9 +58,15 @@ const pageUrl = (app: string, query: Readonly<Record<string, string>> = {}): URL
 /**
  * Draw a hosted app, after checking this build carries it.
  * @param props - the app, its protocol and copy.
- * @returns the frame, or the missing-app notice.
+ * @returns the frame, the missing-app notice, or what blocks the app.
  */
-export function AppFrame({ app, protocol, title, t, missing }: AppFrameProps): ReactNode {
+export function AppFrame({ app, protocol, title, t, missing, blocked }: AppFrameProps): ReactNode {
+  if (blocked !== undefined && blocked !== null && blocked !== false) return <div className={css.notice} role="status">{blocked}</div>
+  return <HostedApp app={app} protocol={protocol} title={title} t={t} missing={missing} />
+}
+
+/** The app in its frame, once this build is known to carry it. */
+function HostedApp({ app, protocol, title, t, missing }: Omit<AppFrameProps, 'blocked'>): ReactNode {
   const frame = useRef<HTMLIFrameElement | null>(null)
   const [availability, setAvailability] = useState<Availability>('checking')
   const [attempt, setAttempt] = useState(0)

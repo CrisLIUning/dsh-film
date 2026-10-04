@@ -198,6 +198,7 @@ describe('dsh-film plugin', () => {
     expect(registered.filter(entry => !isModelFile(entry))).toEqual([
       'GET,POST /api/dsh-film/project',
       'POST /api/dsh-film/project/update',
+      'GET /api/dsh-film/runtime',
       'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
       'GET,HEAD /api/dsh-film/studio',
@@ -216,7 +217,7 @@ describe('dsh-film plugin', () => {
       '/api/dsh-film/assets',
       '/api/dsh-film/caption-runner/claim', '/api/dsh-film/caption-runner/events', '/api/dsh-film/caption-runner/progress',
       '/api/dsh-film/caption-runner/result', '/api/dsh-film/caption-runner/source',
-      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/project/update', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
+      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/project/update', '/api/dsh-film/runtime', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
     ])
     expect(removed.filter(isModelFile)).toHaveLength(files.length)
   })

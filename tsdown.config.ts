@@ -13,6 +13,7 @@
  *
  * scripts/check-client.mjs then verifies the files the Host will load.
  */
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { transform } from 'lightningcss'
@@ -20,6 +21,9 @@ import { defineConfig } from 'tsdown'
 import type { TsdownPlugin } from 'tsdown'
 
 const id = 'dsh-film'
+
+/** The package version, compiled into the bundle as `__DSH_FILM_VERSION__` (the workbench's restart banner compares it with the Host's). */
+const packageVersion = (JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version
 
 /** Modules the Host's module table provides; a `require` it cannot answer throws at load. */
 const CLIENT_EXTERNALS = ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives']
@@ -129,6 +133,7 @@ export default defineConfig({
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
+    '__DSH_FILM_VERSION__': JSON.stringify(packageVersion),
   },
   plugins: [asyncChunkRequire(), cssModules()],
   outputOptions: {

@@ -18,6 +18,8 @@ import type { FrameProtocol } from './AppFrame.tsx'
 import { canvasProtocol } from './canvas-protocol.ts'
 import { changeProject, useProject } from './project-store.ts'
 import { titleKeyAction, titleToSave } from './project-title.ts'
+import { restartText, runtimeText, useRestartNotice } from './runtime-notice.ts'
+import type { RestartNotice } from './runtime-notice.ts'
 import { ScreenwriterView } from './story/ScreenwriterView.tsx'
 import css from './workbench.module.css'
 
@@ -32,32 +34,79 @@ const PROBLEMS: Readonly<Record<string, string>> = {
 }
 
 /**
+ * The parts this build draws. An older entry still in memory (a restart is
+ * pending) may hand over a part this build no longer has.
+ */
+const VIEWS = { story: true, board: true, timeline: true, director: true } as const satisfies Record<FilmView, true>
+
+const isKnownView = (view: string): view is FilmView => Object.hasOwn(VIEWS, view)
+
+/** The restart banner, at the top of whatever the part shows. */
+function RestartBanner({ notice, t }: { notice: RestartNotice | null; t: Translate }): ReactNode {
+  if (notice === null) return null
+  return <p className={css.restartBanner} role="alert">{restartText(t, notice)}</p>
+}
+
+/**
  * Draw one part of the workspace's film project.
  * @param props - the part, the workspace and the entry's helpers.
  * @returns the workbench.
  */
-export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): ReactNode {
+export function Workbench(props: WorkbenchProps): ReactNode {
+  const notice = useRestartNotice(props.visible)
+  const banner = <RestartBanner notice={notice} t={props.t} />
+  if (!isKnownView(props.view)) {
+    return (
+      <div className={css.root}>
+        {banner}
+        <p className={css.notice}>{runtimeText(props.t, 'runtime.retiredView')}</p>
+      </div>
+    )
+  }
+  return <ProjectPart {...props} banner={banner} notice={notice} />
+}
+
+/** A part this build draws, under the restart banner. */
+function ProjectPart({ view, cwd, visible, t, openView, banner, notice }: WorkbenchProps & { banner: ReactNode; notice: RestartNotice | null }): ReactNode {
   const { state, reload } = useProject(cwd, visible)
-  if (state.status === 'loading') return <p className={css.notice} role="status">{t('project.loading')}</p>
+  if (state.status === 'loading') {
+    return (
+      <div className={css.root}>
+        {banner}
+        <p className={css.notice} role="status">{t('project.loading')}</p>
+      </div>
+    )
+  }
   if (state.status === 'failed') {
     const explained = PROBLEMS[state.code]
     const headline = explained !== undefined
       ? t(explained)
       : t(state.during === 'start' ? 'project.startFailed' : 'project.loadFailed', { message: state.message })
     return (
-      <div className={css.notice} role="alert">
-        <p>{headline}</p>
-        {explained !== undefined && <p className={css.detail}>{state.message}</p>}
-        <Button variant="outline" size="sm" onClick={reload}>{t('project.reload')}</Button>
+      <div className={css.root}>
+        {banner}
+        <div className={css.notice} role="alert">
+          <p>{headline}</p>
+          {explained !== undefined && <p className={css.detail}>{state.message}</p>}
+          <Button variant="outline" size="sm" onClick={reload}>{t('project.reload')}</Button>
+        </div>
       </div>
     )
   }
   // No film yet: the store is creating it (this part is on screen, or another is).
-  if (state.project === null) return <p className={css.notice} role="status">{t('project.starting')}</p>
+  if (state.project === null) {
+    return (
+      <div className={css.root}>
+        {banner}
+        <p className={css.notice} role="status">{t('project.starting')}</p>
+      </div>
+    )
+  }
   const hosted = hostedApp(view, state.project, cwd, openView)
   const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} project={state.project} />
   return (
     <div className={css.root}>
+      {banner}
       <ProjectHeader project={state.project} cwd={cwd} t={t} />
       {hosted === undefined
         ? <div className={css.body}>{native}</div>
@@ -70,6 +119,8 @@ export function Workbench({ view, cwd, visible, t, openView }: WorkbenchProps): 
                 title={t(`${view}.title`)}
                 t={t}
                 missing={<div className={css.body}>{native}</div>}
+                // The new app files have no routes until the Host restarts: say so instead of framing a page that cannot load.
+                blocked={notice === null ? undefined : <p>{restartText(t, notice)}</p>}
               />
             </div>
           )}

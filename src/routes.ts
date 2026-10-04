@@ -9,6 +9,8 @@
  *   `ensure: true` (what the workbench sends when a tab opens), 409 without.
  * - `POST /api/dsh-film/project/update` — `{ cwd, title?, aspectRatio? }`
  *   renames the film or changes its frame; announced as `project-changed`.
+ * - `GET  /api/dsh-film/runtime` — the version this Host runs and the one installed
+ *   now (no `cwd`); a workbench page shows a restart banner when they differ.
  * - `GET  /api/dsh-film/assets?cwd=` — the workspace's media files, the film's and its own.
  * - `GET|HEAD /api/dsh-film/media?cwd=&path=` — one media file of the workspace
  *   (`path` relative to it), with byte ranges.
@@ -18,6 +20,7 @@
 
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { FilmError } from './errors.js'
+import { runtimeRoute } from './runtime.js'
 import { listAssets, serveMedia } from './media.js'
 import { createProject, parseNewProject, parseProjectChange, readProject, updateProject, workspaceDirectory } from './project.js'
 import { FilmMediaTasks } from './media/tasks.js'
@@ -152,6 +155,7 @@ export function filmRoutes(
   return [
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(projectRoute(projectCreated)) },
     { path: `${ROUTE_PREFIX}/project/update`, methods: ['POST'], requestBody: 'buffered', fetch: answering(projectUpdateRoute(events)) },
+    runtimeRoute(),
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
     // The Studio-compatible API on two routes: reads, and writes with streamed
