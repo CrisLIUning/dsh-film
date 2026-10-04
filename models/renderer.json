@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "note": "Programs the Host runs itself, downloaded only after the person agrees. The FFmpeg build is the one VibeDev Studio's Windows package ships (tools/pack/src/win/ffmpeg.ts): one pinned zip, extracted with Windows' tar.exe, and only the listed files kept, each checked against its size and SHA-256.",
+  "models": [
+    {
+      "id": "ffmpeg-win64-gpl-shared-9.0",
+      "label": "FFmpeg 9.0 渲染器（独立程序）",
+      "capability": "renderer",
+      "revision": "n9.0.2-22-g46d8f462ee",
+      "platforms": ["win32-x64"],
+      "license": {
+        "name": "GPL-2.0-or-later",
+        "notice": "FFmpeg 是独立的开源程序，不属于影视工作台；工作台只在本机调用它把剪辑渲染成 MP4。这一版按 GNU GPL 2.0 或更高版本发布（含 libx264、libass），许可证全文随程序保存为 LICENSE.txt。下载 82.3 MB 的压缩包，解压后保留约 182 MB。来源：BtbN/FFmpeg-Builds 的 autobuild-2026-10-01-13-06，由 FFmpeg 提交 46d8f462ee（release/9.0 分支，https://git.ffmpeg.org/ffmpeg.git）构建；SOURCE.txt 记着这些。",
+        "url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
+      },
+      "artifacts": [
+        {
+          "id": "archive",
+          "fileName": "ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0.zip",
+          "bytes": 86333540,
+          "sha256": "64f7d1460ce986804386582eeec3bd95117a4e84f7567ad416dd33f434fe8286",
+          "sources": [
+            "https://vibedev.jzsaas.com/marketplace/v2/blobs/sha256/64f7d1460ce986804386582eeec3bd95117a4e84f7567ad416dd33f434fe8286",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-01-13-06/ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0.zip"
+          ]
+        }
+      ],
+      "archive": {
+        "root": "ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0",
+        "program": "ffmpeg.exe",
+        "files": [
+          { "path": "bin/ffmpeg.exe", "fileName": "ffmpeg.exe", "bytes": 540160, "sha256": "45674e8d691c502275ac7a25ebae7390d77bf36e3a6e28e69910387ab37af8a1" },
+          { "path": "bin/avcodec-63.dll", "fileName": "avcodec-63.dll", "bytes": 119112704, "sha256": "c87d35123120063609c981b1817eddd1dc55a49ed4738c54ba79894a07aa8f7c" },
+          { "path": "bin/avdevice-63.dll", "fileName": "avdevice-63.dll", "bytes": 4948480, "sha256": "aabf0ab411b5daa650ee83637b1fe3dda57b49ad37a8cb9d255b1735430f11ec" },
+          { "path": "bin/avfilter-12.dll", "fileName": "avfilter-12.dll", "bytes": 37007360, "sha256": "5f4a0adfa86ee7838f2ca21d7706d216a6481d42f85bf952e1f618f442cfbb12" },
+          { "path": "bin/avformat-63.dll", "fileName": "avformat-63.dll", "bytes": 23009792, "sha256": "34b7c59aa08ea91132a2afb1d0f1963fd62b881680f298f87f935f47c69379d0" },
+          { "path": "bin/avutil-61.dll", "fileName": "avutil-61.dll", "bytes": 3016704, "sha256": "3d6012bdb033b00bdb360e507750ff57b112b7b637d6b8d3339806a079331831" },
+          { "path": "bin/swresample-7.dll", "fileName": "swresample-7.dll", "bytes": 734720, "sha256": "12ad6049592cb7f0ca13d9d8b3fa901a2ba94fe81ce1b083524af70350a7a0aa" },
+          { "path": "bin/swscale-10.dll", "fileName": "swscale-10.dll", "bytes": 2332160, "sha256": "745672f775070fdef273e652b94fe28908272c91d085b511211beb752e1f2272" },
+          { "path": "LICENSE.txt", "fileName": "LICENSE.txt", "bytes": 35147, "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903" }
+        ],
+        "sourceNote": [
+          "FFmpeg ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0",
+          "",
+          "Built by BtbN/FFmpeg-Builds (https://github.com/BtbN/FFmpeg-Builds), release autobuild-2026-10-01-13-06,",
+          "from FFmpeg commit 46d8f462ee on the release/9.0 branch of https://git.ffmpeg.org/ffmpeg.git.",
+          "That release's build scripts name the source of every library linked in.",
+          "Archive ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0.zip: 86333540 bytes, sha256 64f7d1460ce986804386582eeec3bd95117a4e84f7567ad416dd33f434fe8286.",
+          "Licensed under the GNU General Public License; see LICENSE.txt.",
+          "Downloaded by dsh-film (the VibeDev film workbench) after the person agreed; it runs ffmpeg as a separate program.",
+          ""
+        ]
+      }
+    }
+  ]
+}

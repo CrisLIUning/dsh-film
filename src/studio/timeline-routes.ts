@@ -9,7 +9,6 @@
  * - `POST /api/canvas/timelines/:boardId/commands` — a command plan (placements).
  * - `GET /api/canvas/timelines/:boardId/material` — the film's media as the
  *   editor's authorized assets, and the workspace's `media/` as files it may import.
- * - `GET /api/canvas/timelines/:boardId/renders` — exported cuts, newest first.
  * - `POST /api/canvas/timelines/:boardId/import` — copy a workspace media file into the film.
  * - `GET /api/canvas/timelines/:boardId/media` — the board's media nodes;
  *   `POST .../media` lands a film file on the board (an exported cut);
@@ -19,6 +18,7 @@
  * - `POST /api/canvas/timelines/:boardId/sound` — lines, effects and music on
  *   the cut's shots; a script becomes one caption per line.
  *
+ * Rendering the cut and listing the renders are in `render-routes.ts`.
  * Errors answer `{ error: <text>, code }` like Studio's canvas routes.
  * @module dsh-film/studio/timeline-routes
  */
@@ -47,8 +47,6 @@ import type { StudioRequest, StudioRouter } from './router.js'
 
 /** Media the editor can place: Studio's list for a board. */
 const EDITOR_MEDIA = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'wav', 'm4a', 'mp4', 'webm', 'mov'])
-/** Where exported cuts are kept, relative to `film/`. */
-export const RENDER_DIR = 'canvas/renders'
 /** Where imported and generated material is kept, relative to `film/`. */
 export const MATERIAL_DIR = 'canvas/media'
 /** How many files the material listing reads. */
@@ -384,14 +382,6 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
   // The editor's library asks Studio's community catalogue first; there is
   // none under DSH, and an empty list leaves the panel to its other sources.
   router.add('GET', '/api/community/media', async () => ({ items: [] }))
-
-  router.add('GET', '/api/canvas/timelines/:boardId/renders', async (request) => {
-    const { assets } = await timelineMaterial(request.cwd, projectOf(request))
-    const renders = assets
-      .filter(asset => asset.versionId.startsWith(`${CANVAS_FILE_VERSION_PREFIX}${RENDER_DIR}/`))
-      .map(asset => ({ path: asset.versionId.slice(CANVAS_FILE_VERSION_PREFIX.length), name: asset.name, kind: asset.kind, size: asset.sizeBytes ?? 0 }))
-    return { renders }
-  })
 
   router.add('POST', '/api/canvas/timelines/:boardId/import', async (request) => {
     const body = await request.json()

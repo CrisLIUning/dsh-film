@@ -149,6 +149,8 @@ export interface FilmTask {
   request?: { capability: string; requestId?: string; parameters?: Record<string, unknown> }
   /** What a restart of the Host leaves a running local task as. */
   interruption?: FilmTaskError
+  /** What a cancel leaves a local task as. */
+  cancellation?: FilmTaskError
 }
 
 /** A local task to start. */
@@ -162,6 +164,8 @@ export interface LocalTaskSpec {
   started?: string
   /** What a restart of the Host leaves the task as (default: a generic interruption). */
   interruption?: FilmTaskError
+  /** What a cancel leaves the task as (default: `MEDIA_TASK_CANCELED`). */
+  cancellation?: FilmTaskError
 }
 
 /** What a local task's body works with. */
@@ -315,6 +319,11 @@ function localErrorOf(error: unknown): FilmTaskError {
   const status = (error as { status?: unknown } | undefined)?.status
   const base = errorOf(error)
   return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600 ? { ...base, status } : base
+}
+
+/** What a cancelled local task reports: its own cancellation, or the generic one. */
+function canceledError(task: FilmTask): FilmTaskError {
+  return task.cancellation ?? { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 }
 }
 
 /** The screenplay services a task resolves bound references with, when none are given. */
@@ -639,7 +648,7 @@ export class FilmMediaTasks {
     this.running.get(this.key(cwd, taskId))?.abort(new Error('cancelled'))
     // A local task stops here and now; its body's late end changes nothing.
     if (task?.kind === 'local' && !TERMINAL.has(task.status)) {
-      this.change(cwd, task, { status: 'interrupted', error: { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 } }, '已取消')
+      this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
     }
   }
 
@@ -659,6 +668,7 @@ export class FilmMediaTasks {
       progress: [spec.started ?? '已开始'], error: null, kind: 'local',
       request: { capability: spec.capability, ...(spec.requestId !== undefined ? { requestId: spec.requestId } : {}), ...(spec.parameters !== undefined ? { parameters: spec.parameters } : {}) },
       ...(spec.interruption !== undefined ? { interruption: spec.interruption } : {}),
+      ...(spec.cancellation !== undefined ? { cancellation: spec.cancellation } : {}),
     }
     const key = this.key(cwd, taskId)
     this.tasks.set(key, task)
@@ -671,7 +681,7 @@ export class FilmMediaTasks {
         const file = await run(context)
         this.change(cwd, task, { status: 'done', file }, '完成')
       } catch (error) {
-        if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 } }, '已取消')
+        if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
         else this.change(cwd, task, { status: 'failed', error: localErrorOf(error) }, '失败')
       } finally {
         if (this.running.get(key) === controller) this.running.delete(key)

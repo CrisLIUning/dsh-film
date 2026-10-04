@@ -30,6 +30,8 @@ import { addTextRoutes } from './studio/text-routes.js'
 import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
 import { addTimelineRoutes } from './studio/timeline-routes.js'
+import { addRenderRoutes } from './studio/render-routes.js'
+import type { RenderRouteOptions } from './studio/render-routes.js'
 import { addModelRoutes } from './studio/model-routes.js'
 import { addDirectorRoutes } from './studio/director-routes.js'
 import type { EditorModels } from './models/service.js'
@@ -150,9 +152,11 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addStoryProductionRoutes(router, { story, events, boardAgent })
   addCanvasRoutes(router, events, boardAgent)
   addDirectorRoutes(router, { events, boardAgent })
-  addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
+  const tasks = options.tasks ?? new FilmMediaTasks(media)
+  addMediaRoutes(router, tasks, media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)
+  addRenderRoutes(router, events, { ...options.renderer, tasks, models: options.models, ffmpegPath: options.ffmpegPath })
   addTextRoutes(router, new CanvasTextModels(options.text ?? (() => ({}))), async (model) => {
     const video = (await media()?.models())?.find(entry => entry.id === model)?.video
     return video?.nativeAudio
@@ -180,4 +184,8 @@ export interface StudioRouterOptions {
   modelEnvironment?: () => Promise<ModelEnvironment>
   /** Original-audio captions; without it the caption endpoints are not offered. */
   captions?: CaptionService
+  /** The plugin setting naming the ffmpeg the background render runs. */
+  ffmpegPath?: string
+  /** The background render's seams (tests replace finding and running ffmpeg). */
+  renderer?: Omit<RenderRouteOptions, 'tasks' | 'models' | 'ffmpegPath'>
 }

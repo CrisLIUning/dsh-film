@@ -63,12 +63,15 @@ export interface Config {
   modelsDir: string
   /** Who recognises speech for captions when a request does not say: the desk's Whisper (free, local) or the VibeDev gateway (paid, Mandarin). Never a fallback. */
   captionEngine?: CaptionEngine
+  /** The ffmpeg the background render runs; empty to find one (the downloaded renderer, VibeDev Studio's, PATH...). */
+  ffmpegPath?: string
 }
 
 export const Config: Schema<Config> = Schema.object({
   appsDir: Schema.string().default(''),
   modelsDir: Schema.string().default(''),
   captionEngine: Schema.union(['whisper', 'gateway'] as const).default('whisper'),
+  ffmpegPath: Schema.string().default(''),
 })
 
 /** The package's built apps. */
@@ -107,7 +110,7 @@ export function apply(ctx: Context, config: Config): void {
     timelines: (cwd, projectId) => new TimelineStore(cwd, (path) => { events.emit(cwd, { type: 'file-changed', projectId, path }) }),
     defaultEngine: () => config.captionEngine ?? 'whisper',
   })
-  const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent, captions })
+  const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent, captions, ffmpegPath: config.ffmpegPath ?? '' })
   let projectCreated: (cwd: string) => void = () => {}
 
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.

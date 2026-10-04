@@ -74,6 +74,7 @@ describe('the tool set', () => {
       'canvas_apply_ops', 'canvas_attach_media',
       'timeline_query', 'timeline_edit',
       'timeline_transcribe', 'timeline_apply_captions', 'media_get_task', 'media_cancel_task',
+      'timeline_render',
       'director_query', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
     ])

@@ -33,7 +33,7 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 
 ## Agent 的影视工具 · Agent tools
 
-每个会话都有 `film_project`：查看工作区的影片项目，或在用户要做片时新建一个。工作区有影片项目的会话还会常驻 34 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
+每个会话都有 `film_project`：查看工作区的影片项目，或在用户要做片时新建一个。工作区有影片项目的会话还会常驻 35 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
 
 - **剧本** `story_query` `story_asset_bindings` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。`story_asset_bindings` 给人物、地点、道具和镜头绑定参考图（只认选中的那份字节，五种解析结果分开报告），工作区 `media/` 下的图片先复制进影片再绑定。
 - **导入导出** `story_import` `story_export`：先预览再导入为新副本（从不覆盖）；导出完整 Markdown、仅正文，或连同参考图打成素材包存到 `film/story-exports/`。
@@ -41,12 +41,13 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 - **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片）放进指定节点，不重复生成。
 - **剪辑台** `timeline_query` `timeline_edit`：读剪辑（版本号、各轨道片段）和画布可用的素材、剧本；按版本号放素材、放台词字幕和音效配乐、换镜头的候选版本，或执行原始命令。
 - **原声字幕** `timeline_transcribe` `timeline_apply_captions` `media_get_task` `media_cancel_task`：识别剪辑里的原声对白，后台任务产出待审的字幕草稿（按句分页读），审过后先 dryRun 再写入，只改识别范围内的字幕，人工和已审过的字幕不动。两个引擎、不会互相替补：`whisper`（默认，免费，在打开的 VibeDev/DSH 窗口里的隐藏页面运行，需同意下载模型）和 `gateway`（VibeDev 网关转写，只支持普通话，按分钟计费，音频会上传）。`timeline_query` 的 `caption-tasks` 列出最近的识别和是否已写入。
+- **渲染** `timeline_render`：先 `check` 看能不能渲、出什么样的文件，再按版本号在本机把剪辑渲染成 MP4（见下文“后台渲染”），最多等 4 分钟，没完成就交回任务号接着等或取消。
 - **导演组（按需）** `director_query` `director_stage` `director_render` `director_render_status` `director_render_cancel` `director_inspect_model` `director_review` `director_compile_motion` `director_modeling_brief`：读导演台场景（结构、采样、事件、诊断、动作），按指纹分步调度（先 dryRun），编译动作，管理审阅版本。查询和调度在导演标签关着时作用于保存的节点，开着时作用于桌面上的实时场景；渲染、检视模型和审阅版本要导演标签开着。后台无头渲染暂未接入。
 - **建模组（按需）** `space_plan_compile` `model_brief` `model_review` `model_adopt` `model_status` `model_report` `model_cancel`：按毫米写平面，编译成 `film/spaces/` 下导演台能打开的 GLB（先 dryRun 看尺寸、警告和楼梯可达性）；为程序化模型准备建模任务，读 `film/models/<id>/model.json` 里的记录、写审阅、记录用户采用的版本。运行模型、拍检查图、导出和回读 GLB 需要无头浏览器，暂未接入。
 
 工具名和参数沿用 VibeDev Studio 的影视工具；工作区就是项目，所以不再需要 `project` 参数。
 
-Every conversation has `film_project` (read or start the workspace's film). Conversations in a film workspace also carry 34 screenplay, storyboard, cut and caption tools, `film_tools` and guidance; the director desk's and the modeling tools are groups taken on when needed (the director group starts enabled when the board has a director node). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
+Every conversation has `film_project` (read or start the workspace's film). Conversations in a film workspace also carry 35 screenplay, storyboard, cut, caption and render tools, `film_tools` and guidance; the director desk's and the modeling tools are groups taken on when needed (the director group starts enabled when the board has a director node). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
 
 ### 编剧技能 · Screenwriting skill
 
@@ -73,6 +74,14 @@ The editing desk downloads its models only after the person agrees, verifies eve
 
 Captions come from one of two engines with no fallback between them: `whisper` (free, local, run in a hidden page of an open window) or `gateway` (VibeDev's ASR through dsh-media: Mandarin only, paid per minute, timed by speech regions until the gateway returns timings). The plugin setting `captionEngine` picks the default.
 
+## 后台渲染 · Background render
+
+剪辑台的“渲染到项目”和 Agent 的 `timeline_render` 不开页面、在宿主里把剪辑渲染成 H.264 MP4：用剪辑台同一份上游渲染规划（`vendor/video-editor-bridge.mjs` 里的无头规划器）把剪辑变成 ffmpeg 参数，在本机的 ffmpeg 上跑，文件落在 `film/canvas/renders/`，并放到分镜画布上。接口与 VibeDev Studio 相同：`POST /api/canvas/timelines/:boardId/render`（`check: true` 只检查），进度和取消走影片任务的 `wait`/`cancel`；取消会结束 ffmpeg 进程树，一部片子同时只渲染一个。调色的剪辑很慢（约 20 倍实时）。
+
+ffmpeg 按这个顺序找：设置项 `ffmpegPath`、环境变量 `DSH_FILM_FFMPEG_PATH`、同意后下载的渲染器、已安装的 VibeDev Studio 自带的、PATH、常见安装位置（winget、choco、scoop 等）。都没有时，Windows x64 上剪辑台会提出下载渲染器：VibeDev Studio 同款的 FFmpeg 9.0（BtbN/FFmpeg-Builds `ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0`，压缩包 86,333,540 字节，SHA-256 固定），弹框说明它是独立程序、GPL 许可、大小和来源，同意后先从 VibeDev 网关下载、再退到 GitHub 原发布，用 Windows 自带的 `tar.exe` 解压，只保留 ffmpeg.exe 和它要的 DLL，逐个核对大小和 SHA-256，旁边放 `LICENSE.txt` 和写明源码出处的 `SOURCE.txt`，存在模型目录下。清单在 `models/renderer.json`。
+
+The background render plans the cut with the editor's own headless planner and runs it on this machine's ffmpeg, with no page open. FFmpeg is a separate program: the plugin runs it on the command line and never bundles it. On Windows x64 it can download the same pinned GPL build VibeDev Studio ships, only after the person agrees, verified file by file, with its licence and source note kept beside it.
+
 ## 开发 · Development
 
 ```bash
@@ -89,5 +98,7 @@ npm run build      # lib/ (Host half) + client/ (browser half)
 ## License
 
 MIT
+
+后台渲染下载的 FFmpeg 是独立程序，不属于本插件，按 GNU GPL 2.0 或更高版本发布；源码见 https://git.ffmpeg.org/ffmpeg.git（提交 46d8f462ee，release/9.0 分支），构建脚本见 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)（autobuild-2026-10-01-13-06）。下载后其许可证全文在程序旁的 `LICENSE.txt`。
 
 导演台的场景数学（`src/director/vendor/director-math/`，构建后在 `lib/director/vendor/director-math/`）原样复制自 [vibedev-director-desk](https://github.com/CrisLIUning/vibedev-director-desk)，Copyright (c) 2026 YZ，以 MIT 许可证发布（条款与上文相同，原文见该目录的 `LICENSE`）。
