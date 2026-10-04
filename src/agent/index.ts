@@ -65,7 +65,7 @@ async function boardHasDirector(cwd: string): Promise<boolean> {
 export function filmToolGroups(services: FilmToolServices): Record<string, FilmToolGroup> {
   return {
     director: {
-      description: 'The 导演 desk\'s 3D blocking scenes: query, stage, render, review, motion and modeling briefs for a desk target (director_*).',
+      description: 'The 导演 desk\'s 3D blocking scenes: query, stage, list and place model files at real size, render, review, motion and modeling briefs for a desk target (director_*).',
       tools: () => directorTools(services),
       startsEnabled: boardHasDirector,
     },

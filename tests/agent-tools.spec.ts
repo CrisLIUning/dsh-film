@@ -78,13 +78,24 @@ describe('the tool set', () => {
       'timeline_query', 'timeline_edit',
       'timeline_transcribe', 'timeline_apply_captions', 'media_get_task', 'media_cancel_task',
       'timeline_render',
-      'director_query', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
+      'director_query', 'director_models', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
     ])
     for (const tool of tools.values()) {
       expect(tool.parameters).toMatchObject({ type: 'object' })
       expect(tool.description.length).toBeGreaterThan(40)
     }
+  })
+
+  it('puts director_models in the director group and teaches director_stage place_model', () => {
+    const director = filmToolGroups(services).director!.tools().map(tool => tool.name)
+    expect(director).toContain('director_models')
+    expect(filmCoreTools(services).map(tool => tool.name)).not.toContain('director_models')
+    expect(tools.get('director_models')!.isConcurrencySafe?.({} as never)).toBe(true)
+    const stage = tools.get('director_stage')!.description
+    expect(stage).toContain('place_model')
+    expect(stage).toContain('director_models')
+    expect(FILM_GUIDANCE).toContain('director_models')
   })
 
   it('promises no skill, preview or desk this workbench does not have', () => {

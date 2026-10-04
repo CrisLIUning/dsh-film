@@ -54,6 +54,15 @@ function capped(diagnostics: unknown): unknown {
   return { ...diagnostics, findings: diagnostics.findings.slice(0, FINDINGS_SHOWN), findingsOmitted: diagnostics.findings.length - FINDINGS_SHOWN }
 }
 
+/** Models kept in a director_models answer. */
+export const MODELS_SHOWN = 100
+
+/** The facts the agent reads about one model file, in C11's shape. */
+function modelEntry(path: string, inFilm: boolean, facts: Record<string, unknown>): Record<string, unknown> {
+  const keep = ['format', 'role', 'placeable', 'suggestedKind', 'metresPerUnit', 'suggestedMetresPerUnit', 'sizeMetres', 'bounds', 'hasSkin', 'compression', 'approximate', 'pending', 'problem']
+  return { path, inFilm, ...Object.fromEntries(keep.filter(key => facts[key] !== undefined).map(key => [key, facts[key]])) }
+}
+
 /** A rendered or reviewed file with the workspace path read_image takes. */
 function withWorkspacePath(file: unknown): unknown {
   return isRecord(file) && typeof file.path === 'string' && file.path !== '' ? { ...file, workspacePath: `${FILM_DIR}/${file.path}` } : file
@@ -128,6 +137,39 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
       },
     }),
     defineTool({
+      name: 'director_models',
+      description: 'List the 3D model files a director scene can use (read-only): the film\'s own (film/…, including film/spaces/ sets) and, with '
+        + 'includeWorkspace (default true), GLB/FBX/OBJ files elsewhere in the workspace not imported yet. Each gives path, inFilm, format, role '
+        + '(space|model), placeable, suggestedKind (scene|prop|auto: auto means it has a rig — a character goes through the 导演 tab\'s 空间库), the '
+        + 'measured bounds in file units, metresPerUnit when the file declares its units (GLB 1, FBX by its unit) or suggestedMetresPerUnit (OBJ guess), '
+        + 'sizeMetres when the units are known, hasSkin, compression and any problem; pending means not measured yet (place_model measures it). Place '
+        + 'one with director_stage place_model. At most 100 entries.',
+      parameters: {
+        includeWorkspace: { type: 'boolean', description: 'Also list model files outside film/ (default true).' },
+      },
+      output: jsonOutput,
+      isConcurrencySafe: () => true,
+      async execute(args, exec) {
+        const film = await filmWorkspace(exec)
+        const listing = await callStudio(services.studio, film.cwd, {
+          method: 'GET',
+          path: `/api/canvas/assets/${segment(film.boardId)}?project=${segment(film.projectId)}`,
+        }, exec.signal)
+        const models: Record<string, unknown>[] = []
+        for (const asset of Array.isArray(listing.assets) ? listing.assets : []) {
+          if (!isRecord(asset) || asset.kind !== 'model' || typeof asset.filePath !== 'string' || !isRecord(asset.model)) continue
+          models.push(modelEntry(`${FILM_DIR}/${asset.filePath}`, true, asset.model))
+        }
+        if (args.includeWorkspace !== false) {
+          for (const file of Array.isArray(listing.workspaceModels) ? listing.workspaceModels : []) {
+            if (!isRecord(file) || typeof file.path !== 'string' || !isRecord(file.model)) continue
+            models.push(modelEntry(file.path, false, file.model))
+          }
+        }
+        return plain({ models: models.slice(0, MODELS_SHOWN), ...(models.length > MODELS_SHOWN ? { truncated: true } : {}) })
+      },
+    }),
+    defineTool({
       name: 'director_stage',
       description: 'Stage a director-desk scene from a plan in a director\'s words, compiled, checked and written into the desk (open in the 导演 tab) or '
         + 'the board\'s node; a node never opened starts empty. plan = {ops:[...]} (1–200, metres and scene seconds, additive: only what an op names changes). '
@@ -143,6 +185,12 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         + 'camera_micro_motion, camera_stroke, object_stroke, camera_preset_clip, camera_preset, edit_camera_motion_clip, edit_motion_clip, set_look_clip/'
         + 'edit_look_clip, set_action_clip/edit_action_clip/extract_hold_actions, light/lighting/lighting_preset, set_character_height, calibrate_asset, '
         + 'set_spatial_profile, import_asset/import_animation/relink_asset (source.url must be the film\'s /api/projects/<id>/raw/<path>, bytes are verified). '
+        + 'To put a model file (GLB, FBX, OBJ) in at real size use place_model {path:film/… or workspace-relative (see director_models),kind?:prop|scene,'
+        + 'at?:[x,z]|[x,y,z],facing?:degrees,metresPerUnit?|size?:{height|width|depth|longest:metres},name?,id?,assetId?}: it hashes, measures and '
+        + 'calibrates for you and expands into import_asset, calibrate_asset, place_asset and transform_objects; a workspace file is copied into '
+        + 'film/canvas/models/ only on apply (a dryRun reports wouldImport). Units come from metresPerUnit, else size over the measured box, else the file '
+        + '(GLB metres, an FBX\'s declared unit); an OBJ needs one of them. Characters (rigged) are imported by the person in the 导演 tab\'s 空间库, '
+        + 'not here. Up to 40 per plan; the answer\'s placed[] gives each assetId, objectId and size. '
         + 'dryRun:true compiles and checks without writing. Every answer carries the result\'s diagnostics: read them before calling it done. Pass the '
         + 'fingerprint from your last read (director_query events/actions) or last applied stage as expectedFingerprint, for dryRun and apply alike, so a '
         + 'scene edited in between is refused, not overwritten. A dryRun answer\'s fingerprint describes the proposed result, not the saved scene: apply with '

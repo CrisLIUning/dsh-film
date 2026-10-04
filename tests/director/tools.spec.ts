@@ -1,6 +1,6 @@
 /** The agent's director tools, called the way the agent loop calls them, against a real workspace and fake canvas pages. */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -15,6 +15,7 @@ import { createStudioRouter } from '../../src/routes.js'
 import { ProjectEvents } from '../../src/studio/events.js'
 import { character, lockedCamera, project } from './fixtures.js'
 import { openDeskPage } from './pages.js'
+import { Gltf } from '../model-files/fixtures.js'
 
 let cwd: string
 let film: string
@@ -113,5 +114,32 @@ describe('director tools', () => {
     const targeted = await run('director_modeling_brief', { kind: 'scene', description: '客栈大堂', context: { nodeId: 'desk', objectIds: ['a'] } })
     expect(targeted.context).toMatchObject({ projectId: film, boardId: film, view: 'director', director: { nodeId: 'desk', objectIds: ['a'] } })
     expect(targeted.skillIds).toEqual([])
+  })
+
+  it('list the film\'s and the workspace\'s models with their sizes, then place one', async () => {
+    await board([desk(scene())])
+    const chair = new Gltf()
+    const glb = chair.scene(chair.node({ scale: [0.01, 0.01, 0.01], children: [chair.node({ mesh: chair.mesh({ attributes: { POSITION: chair.box([-25, 0, -22.5], [25, 90, 22.5]) } }) })] })).glb()
+    await mkdir(join(cwd, 'props'), { recursive: true })
+    await mkdir(join(cwd, 'film', 'spaces'), { recursive: true })
+    await writeFile(join(cwd, 'props', 'chair.glb'), glb)
+    await writeFile(join(cwd, 'props', 'cup.obj'), 'v 0 0 0\nv 8 12 8\n')
+    await writeFile(join(cwd, 'film', 'spaces', 'hall.glb'), glb)
+    // Newest first: the chair after the cup.
+    await utimes(join(cwd, 'props', 'cup.obj'), new Date('2026-10-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z'))
+    await utimes(join(cwd, 'props', 'chair.glb'), new Date('2026-10-02T00:00:00Z'), new Date('2026-10-02T00:00:00Z'))
+    const listed = await run('director_models')
+    expect(listed.truncated).toBeUndefined()
+    expect(listed.models.map((model: { path: string; inFilm: boolean }) => [model.path, model.inFilm])).toEqual([['film/spaces/hall.glb', true], ['props/chair.glb', false], ['props/cup.obj', false]])
+    expect(listed.models[0]).toMatchObject({ format: 'glb', role: 'space', placeable: true, suggestedKind: 'scene', metresPerUnit: 1 })
+    expect(listed.models[1].sizeMetres.map((value: number) => Number(value.toFixed(3)))).toEqual([0.5, 0.9, 0.45])
+    expect(listed.models[2]).toMatchObject({ format: 'obj', suggestedMetresPerUnit: 1, bounds: { min: [0, 0, 0], max: [8, 12, 8] } })
+    expect(listed.models[2].metresPerUnit).toBeUndefined()
+    expect((await run('director_models', { includeWorkspace: false })).models.map((model: { path: string }) => model.path)).toEqual(['film/spaces/hall.glb'])
+
+    const fingerprint = (await run('director_query', { kind: 'events' })).fingerprint
+    const placed = await run('director_stage', { plan: { ops: [{ type: 'place_model', path: 'props/chair.glb', at: [1, 2], facing: 90 }] }, expectedFingerprint: fingerprint })
+    expect(placed.placed[0]).toMatchObject({ path: 'canvas/models/chair.glb', kind: 'prop', imported: true })
+    await expect(run('director_stage', { plan: { ops: [{ type: 'place_model', path: 'props/cup.obj' }] }, dryRun: true })).rejects.toThrow(/DIRECTOR_MODEL_UNITS_UNKNOWN: .*8 × 12 × 8/u)
   })
 })
