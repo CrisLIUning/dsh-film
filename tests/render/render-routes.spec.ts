@@ -431,7 +431,7 @@ setInterval(() => { us += 10000; process.stdout.write('out_time_us=' + us + '\\n
     expect(first.status).toBe(202)
     const second = await call(router, RENDER, {})
     expect(second.status).toBe(409)
-    expect(second.body).toMatchObject({ code: 'RENDER_BUSY', detail: { taskId: first.body.taskId } })
+    expect(second.body).toMatchObject({ code: 'RENDER_BUSY', taskId: first.body.taskId, detail: { taskId: first.body.taskId } })
     // A check is still answered while it runs.
     expect((await call(router, RENDER, { check: true })).status).toBe(200)
     finish()

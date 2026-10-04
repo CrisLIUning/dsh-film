@@ -142,7 +142,8 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
     }
     const busy = running.get(request.cwd)
     if (settings.check !== true && busy !== undefined) {
-      throw new TimelineRenderError(409, 'RENDER_BUSY', '这部片子正在渲染，等它完成或取消后再渲染。', { taskId: busy.taskId })
+      // The running task's id at the top, as the contract names it, and in detail like the other refusals.
+      throw new StudioReply(409, { error: '这部片子正在渲染，等它完成或取消后再渲染。', code: 'RENDER_BUSY', taskId: busy.taskId, detail: { taskId: busy.taskId } })
     }
     const ffmpeg = await findFfmpeg()
     if (ffmpeg === undefined) {
