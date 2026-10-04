@@ -94,6 +94,20 @@ Then open the right sidebar of a session that has a workspace and pick a part on
 
 Media anywhere in the workspace outside `film/` is material: the storyboard's library shows it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is copied into `film/canvas/media/` when used (as a copy-on-write clone where the file system supports it; never a hard link, so editing the original elsewhere later leaves the film's copy as it was), the same bytes only once; an imported file that has not changed since is no longer offered for import by the storyboard. A workspace inside a hidden folder (a name starting with `.`) or a credential folder such as `.ssh` gets no film, and its media is neither played nor imported.
 
+## 剪切、拼接与分离音频 · Cut, join and extract audio
+
+分镜画布上的视频可以剪切（定入点、出点）、拼接（把几段接成一段）和分离音频（把声音单独存成音频）。结果都是画布上的新节点，在来源右边，并有连线指回来源；原节点和原文件不动。结果文件放在 `film/canvas/media/`：剪切是 `clip-<id>.mp4`（音频文件剪切后保持原格式），拼接是 `join-<id>.mp4`，分离音频是 `extract-<id>.m4a`。撤销或删掉节点后，已经生成的文件留在磁盘上，和片里其他文件一样。
+
+这些操作由插件在 DSH 里直接完成，**不重新编码**：只复制原来的编码数据，所以不损画质、几乎不花时间，不需要 ffmpeg，分镜标签关着也能做，并作为影片任务运行，可以看进度、可以取消（取消后不留半个文件）。剪切默认从入点前最近的关键帧开始复制，并在 MP4 里写明从入点开始播放；个别不认这种标记的播放器会在开头多显示不到一个关键帧间隔的画面。
+
+只有能直接复制的才这样做。拼接要求每一段和第一段的编码、尺寸和编码参数相同，声音格式相同，都有或都没有声音，并且第二段起的入点落在关键帧上；同一个模型、同一个分辨率生成的镜头通常满足。不满足时插件会说明是哪一段、什么原因，由分镜页在浏览器里重新编码（以第一段的尺寸和帧率为准，无声的段补静音）——重新编码需要分镜标签开着。
+
+Videos on the storyboard can be cut (in and out points), joined (several clips into one) and have their sound extracted into an audio file. Each result is a new node right of its source with an edge back to it; the source node and file are untouched. Results go to `film/canvas/media/` as `clip-<id>.mp4` (an audio file keeps its format), `join-<id>.mp4` and `extract-<id>.m4a`; undoing or deleting the node leaves the file on disk like any other film file.
+
+The plugin does these in DSH itself **without re-encoding**: it copies the encoded data (mediabunny), so there is no quality loss, it takes moments, needs no ffmpeg and works with the storyboard tab closed. Each runs as a film task with progress and cancel (a cancelled edit leaves no partial file). A cut copies from the key frame before the in point and marks the MP4 to start playing at the in point; a player that ignores the mark shows up to one key-frame interval more at the start.
+
+Only what can be copied is done this way. A join needs every clip to match the first in codec, size and encoder parameters and in sound format, all with or all without sound, and every clip after the first to start on a key frame — shots from one model at one resolution usually do. Otherwise the plugin names the clip and the reason, and the storyboard page re-encodes in the browser (to the first clip's size and frame rate, silent clips padded with silence), which needs the storyboard tab open.
+
 ## Agent 的影视工具 · Agent tools
 
 每个会话都有 `film_project`：查看工作区的影片项目，在用户要做片时新建一个（用户打开影视标签时也会自动建好），或改片名和画幅（`update`）。工作区有影片项目的会话还会常驻 30 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台和建模两组工具按需加载：画板上有导演台节点时自动带上导演组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
