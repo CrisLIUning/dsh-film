@@ -165,6 +165,7 @@ describe('timeline endpoints', () => {
   })
 
   it('lists the film\'s media as assets and the workspace\'s own media as importable files, by workspace-relative URL', async () => {
+    await startFilm()
     await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
     await mkdir(join(cwd, 'media'), { recursive: true })
     await writeFile(join(cwd, 'film', 'canvas', 'media', 'shot 1.mp4'), 'mp4')
@@ -189,6 +190,7 @@ describe('timeline endpoints', () => {
   })
 
   it('keeps every film file in the editor\'s list however many files the workspace holds', async () => {
+    await startFilm()
     // A shared 2000-file listing used to fill up with media/ and drop every film/ asset, and the editor's next save dropped their clips.
     await mkdir(join(cwd, 'media'), { recursive: true })
     await Promise.all(Array.from({ length: 2001 }, (_, index) => writeFile(join(cwd, 'media', `still-${index}.png`), 'p')))

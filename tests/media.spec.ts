@@ -263,6 +263,26 @@ describe('serveMedia', () => {
 })
 
 describe('the workspace scanner', () => {
+  beforeEach(async () => {
+    await filmIn(cwd)
+  })
+
+  it('lists nothing for a folder that is not a film workspace, or a film in a hidden folder', async () => {
+    const plain = await mkdtemp(join(tmpdir(), 'dsh-film-plain-'))
+    const hidden = join(outside, '.secret', 'work')
+    try {
+      await mkdir(join(plain, 'photos'), { recursive: true })
+      await writeFile(join(plain, 'photos', 'a.png'), 'png')
+      expect(await listWorkspaceMedia(plain)).toEqual({ files: [], truncated: false })
+      await filmIn(hidden)
+      await mkdir(join(hidden, 'photos'), { recursive: true })
+      await writeFile(join(hidden, 'photos', 'a.png'), 'png')
+      expect(await listWorkspaceMedia(hidden)).toEqual({ files: [], truncated: false })
+    } finally {
+      await rm(plain, { recursive: true, force: true })
+    }
+  })
+
   it('lists the workspace\'s own media outside film/, newest first, skipping hidden, generated and credential folders', async () => {
     await file('media/images/old.png', 'p', new Date('2026-10-01T00:00:00Z'))
     await file('media/videos/new.mp4', 'vv', new Date('2026-10-03T00:00:00Z'))
@@ -372,12 +392,15 @@ describe('the film\'s listing', () => {
 })
 
 describe('listAssets', () => {
+  beforeEach(async () => {
+    await filmIn(cwd)
+  })
+
   it('lists the film\'s media and the workspace\'s own, newest first', async () => {
     await file('media/images/old.png', 'p', new Date('2026-10-01T00:00:00Z'))
     await file('media/videos/new.mp4', 'v', new Date('2026-10-03T00:00:00Z'))
     await file('film/media/voice.wav', 'a', new Date('2026-10-02T00:00:00Z'))
     await file('footage/take.mov', 'm', new Date('2026-09-30T00:00:00Z'))
-    await file('film/film.json', '{}')
     await file('media/.cache/hidden.png', 'h')
     await file('media/node_modules/pkg/logo.png', 'n')
     const { assets, truncated } = await listAssets(cwd)

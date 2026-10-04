@@ -38,6 +38,7 @@ async function get(studioPath: string): Promise<any> {
 
 describe('GET /api/canvas/assets/:boardId', () => {
   it('lists the workspace\'s own media as workspaceFiles and leaves the library as it was', async () => {
+    await file('film/film.json', JSON.stringify({ format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }))
     await file('film/canvas/media/shot.png', 'png')
     await file('media/gen.png', 'generated', new Date('2026-10-03T00:00:00Z'))
     await file('footage/day 1/take.mov', 'mov!', new Date('2026-10-02T00:00:00Z'))

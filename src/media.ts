@@ -366,6 +366,13 @@ export async function scanWorkspaceMedia(cwd: string, limits: WorkspaceScanLimit
  * @returns the listing (a fresh array each call).
  */
 export async function listWorkspaceMedia(cwd: string): Promise<WorkspaceMediaListing> {
+  // Only a film workspace in a place a film may be is listed, like playing and importing: a caller-chosen
+  // cwd must not turn the listing routes into a directory listing of any folder on the machine.
+  try {
+    await requireFilmWorkspace(cwd)
+  } catch {
+    return { files: [], truncated: false }
+  }
   const key = resolve(cwd)
   const now = performance.now()
   for (const [other, entry] of cache) if (entry.expires <= now) cache.delete(other)
