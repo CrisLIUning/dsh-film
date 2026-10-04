@@ -13,11 +13,12 @@
  * region's start. Timings are never invented; without a window to cut the
  * regions the engine refuses rather than guessing.
  *
- * Each region carries an idempotency key made from its audio
- * (`dsh-film-asr:<sha256 of the WAV>`) and a stable file name, so neither
- * dsh-media's own retries nor a later recognition of the same audio (after a
- * failure, a cancel or a restart) charges twice; the same audio twice in one
- * recognition is sent once.
+ * Each region carries an idempotency key and a file name made from its audio
+ * (`dsh-film-asr:<sha256 of the WAV>`, `region-<16 hex>.wav`), and each answer
+ * is kept under `film/.tasks/caption-asr-cache/`, so neither dsh-media's own
+ * retries nor a later recognition of the same audio (after a failure, a
+ * cancel or a restart) charges twice; the same audio twice in one recognition
+ * is sent once. A failure partway says what was already charged.
  *
  * The cost is confirmed as dsh-media's spending setting says: the desk shows
  * the price first (`spendingConfirmed`); an agent's recognition is confirmed
@@ -26,7 +27,10 @@
  * @module dsh-film/captions/gateway
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { filmWriteTarget, resolveFilmFile } from '../film-files.js'
 import type { HostMediaModel } from '../media/catalogue.js'
 import type { MediaServiceLike, TranscribeServiceResult, TranscribeSpending } from '../media/tasks.js'
 import type { EditorModels } from '../models/service.js'
@@ -68,6 +72,22 @@ function mediaFailure(error: unknown): TimelineCaptionError {
   const message = error instanceof Error ? error.message : String(error)
   if (typeof code === 'string' && known !== undefined) return new TimelineCaptionError(code, known.message, known.status, { detail: message })
   return new TimelineCaptionError(typeof code === 'string' ? code : 'CAPTION_RECOGNITION_FAILED', `网关转写失败：${message}`, 502)
+}
+
+/**
+ * A region failure after others were transcribed: say what was already
+ * charged and that it is kept, so a retry does not pay for it again — never
+ * "nothing was charged".
+ * @param error - the region's failure.
+ * @param regions - regions this recognition had transcribed (and paid for) before it.
+ * @param amountCny - what they cost, as dsh-media reported.
+ * @returns the error to throw.
+ */
+function withCharges(error: TimelineCaptionError, regions: number, amountCny: number): TimelineCaptionError {
+  if (regions === 0) return error
+  const cost = amountCny > 0 ? `，约 ¥${amountCny.toFixed(2)}` : ''
+  const message = `${error.message.replace(/^[A-Z_]+: /, '')}（此前已转写并计费 ${regions} 段${cost}；结果已保存，重新识别同一段音频不会再扣费。）`
+  return new TimelineCaptionError(error.code, message, error.status, { ...error.extra, chargedRegions: regions, ...(amountCny > 0 ? { chargedCny: amountCny.toFixed(2) } : {}) })
 }
 
 /** The transcription model dsh-media would use first, or why there is none. */
@@ -114,7 +134,62 @@ export function gatewayEstimate(model: HostMediaModel | undefined, seconds: numb
  * @returns `dsh-film-asr:<hex digest>`.
  */
 export function regionKey(wav: Uint8Array): string {
-  return `dsh-film-asr:${createHash('sha256').update(wav).digest('hex')}`
+  return `dsh-film-asr:${regionDigest(wav)}`
+}
+
+/** A region's WAV bytes' SHA-256, hex: its key, its upload name and its cache entry. */
+const regionDigest = (wav: Uint8Array): string => createHash('sha256').update(wav).digest('hex')
+
+/**
+ * A region's upload name, taken from its audio like its key: the gateway
+ * refuses a key sent again under another name, and the same audio can sit at
+ * another place in a later recognition (one clip alone, then the whole cut).
+ * @param wav - the region's WAV bytes.
+ * @returns `region-<first 16 hex digits>.wav`.
+ */
+export function regionName(wav: Uint8Array): string {
+  return `region-${regionDigest(wav).slice(0, 16)}.wav`
+}
+
+/** Where each region's answer is kept by its audio's digest, relative to `film/`. */
+export const REGION_ANSWERS = '.tasks/caption-asr-cache'
+
+/**
+ * A region's answer kept from an earlier recognition: a retry after a failure,
+ * a cancel or a restart reuses it instead of asking (and paying) again, even
+ * when the gateway's idempotency store has forgotten the key.
+ * @param cwd - the workspace.
+ * @param digest - the region's audio digest.
+ * @returns the answer, or `undefined`.
+ */
+async function keptAnswer(cwd: string, digest: string): Promise<TranscribeServiceResult | undefined> {
+  try {
+    const file = await resolveFilmFile(cwd, `${REGION_ANSWERS}/${digest}.json`)
+    const value = JSON.parse(await readFile(file.absolute, 'utf8')) as unknown
+    return isRecord(value) && typeof value.text === 'string' && typeof value.model === 'string' ? value as unknown as TranscribeServiceResult : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Keep a region's answer; a cache that cannot be written only costs a retry. */
+async function keepAnswer(cwd: string, digest: string, answer: TranscribeServiceResult): Promise<void> {
+  try {
+    const target = await filmWriteTarget(cwd, `${REGION_ANSWERS}/${digest}.json`)
+    const temporary = join(dirname(target), `.${randomUUID()}.tmp`)
+    await writeFile(temporary, JSON.stringify({
+      model: answer.model, text: answer.text, language: answer.language, name: answer.name,
+      ...(answer.segments !== undefined ? { segments: answer.segments } : {}),
+      ...(answer.taskId !== undefined ? { taskId: answer.taskId } : {}),
+      ...(answer.chargedCny !== undefined ? { chargedCny: answer.chargedCny } : {}),
+    }))
+    await rename(temporary, target).catch(async (error: unknown) => {
+      await rm(temporary, { force: true })
+      throw error
+    })
+  } catch {
+    // Nothing to do: the gateway's idempotency store still answers a retry of the same key.
+  }
 }
 
 /** One speech region a runner page cut, in source-file seconds, with its 16 kHz mono WAV. */
@@ -249,38 +324,53 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
         }
       // The same audio twice in one recognition (a take used twice) is transcribed once: it has one key.
       const answers = new Map<string, Promise<TranscribeServiceResult>>()
-      for (const [sourceIndex, source] of input.sources.entries()) {
+      // What this recognition has had transcribed and charged so far, for the message if a later region fails.
+      let charged = 0
+      let chargedCny = 0
+      for (const source of input.sources) {
         const length = source.sourceOut - source.sourceIn
         const segments: CaptionRecognition['segments'] = []
         const evidence: Array<Record<string, unknown>> = []
-        for (const [regionIndex, region] of (regions.get(source.clipId) ?? []).entries()) {
+        for (const region of regions.get(source.clipId) ?? []) {
           input.signal.throwIfAborted()
           // Region bounds are source-file seconds; the mapping reads seconds from sourceIn.
           const from = Math.min(length, Math.max(0, region.start - source.sourceIn))
           const to = Math.min(length, Math.max(0, region.end - source.sourceIn))
           if (to > from) {
             let answer: TranscribeServiceResult
-            let reused = false
+            let reused: false | 'recognition' | 'kept' = false
+            const digest = regionDigest(region.wav)
             try {
-              const key = regionKey(region.wav)
+              const key = `dsh-film-asr:${digest}`
               let pending = answers.get(key)
-              reused = pending !== undefined
-              if (pending === undefined) {
-                pending = media.transcribe({
-                  data: region.wav,
-                  mimeType: 'audio/wav',
-                  name: `region-${sourceIndex}-${regionIndex}.wav`,
-                  language: 'zh',
-                  idempotencyKey: key,
-                  timestamps: true,
-                  background: true,
-                }, { cwd: input.cwd }, input.signal, spending)
+              if (pending !== undefined) reused = 'recognition'
+              else {
+                const kept = await keptAnswer(input.cwd, digest)
+                if (kept !== undefined) {
+                  reused = 'kept'
+                  pending = Promise.resolve(kept)
+                } else {
+                  pending = media.transcribe({
+                    data: region.wav,
+                    mimeType: 'audio/wav',
+                    name: regionName(region.wav),
+                    language: 'zh',
+                    idempotencyKey: key,
+                    timestamps: true,
+                    background: true,
+                  }, { cwd: input.cwd }, input.signal, spending)
+                }
                 answers.set(key, pending)
               }
               answer = await pending
             } catch (error) {
               if (input.signal.aborted) throw error
-              throw mediaFailure(error)
+              throw withCharges(mediaFailure(error), charged, chargedCny)
+            }
+            if (reused === false) {
+              await keepAnswer(input.cwd, digest, answer)
+              charged++
+              chargedCny += Number(answer.chargedCny ?? 0) || 0
             }
             model = answer.model
             const lines = regionLines(answer, from, to)
@@ -288,8 +378,8 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
             evidence.push({
               start: region.start, end: region.end,
               ...(answer.taskId !== undefined ? { gatewayTaskId: answer.taskId } : {}),
-              // A repeat of audio already sent in this recognition was not charged again.
-              ...(reused ? { reused: true } : answer.chargedCny !== undefined ? { chargedCny: answer.chargedCny } : {}),
+              // A repeat of audio already sent in this recognition, or answered before, was not charged again.
+              ...(reused === 'recognition' ? { reused: true } : reused === 'kept' ? { reused: 'kept' } : answer.chargedCny !== undefined ? { chargedCny: answer.chargedCny } : {}),
               timing: lines.some(line => line.warnings?.includes('region-timing') === true) ? 'region' : lines.length > 0 ? 'gateway' : 'empty',
               text: answer.text,
             })

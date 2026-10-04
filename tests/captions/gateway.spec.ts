@@ -9,7 +9,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { gatewayEngine, gatewayEstimate, readRegions, regionKey } from '../../src/captions/gateway.js'
+import { REGION_ANSWERS, gatewayEngine, gatewayEstimate, readRegions, regionKey, regionName } from '../../src/captions/gateway.js'
 import { captionCaller } from '../../src/captions/service.js'
 import { CaptionRunnerHub, captionRunnerRoutes } from '../../src/captions/runner.js'
 import type { HostMediaModel } from '../../src/media/catalogue.js'
@@ -125,7 +125,9 @@ async function cutRegions(window: RunnerWindow, regions: Record<string, Array<{ 
 
 describe('gateway engine', () => {
   it('transcribes each speech region once, timed by the region, with stable keys and names', async () => {
-    const { media, calls } = fakeMedia(({ request }) => ({ model: 'doubao-asr-vibedev', text: request.name === 'region-0-0.wav' ? '你好' : request.name === 'region-1-0.wav' ? '再见' : '', language: 'zh', name: request.name!, taskId: `gw-${request.name}`, chargedCny: '0.01' }))
+    const said = ['你好', '', '再见']
+    let asked = 0
+    const { media, calls } = fakeMedia(({ request }) => ({ model: 'doubao-asr-vibedev', text: said[asked++] ?? '', language: 'zh', name: request.name!, taskId: `gw-${request.name}`, chargedCny: '0.01' }))
     const h = await setup(() => media)
     const window = await open()
     const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'gw', engine: 'gateway', spendingConfirmed: true })
@@ -135,9 +137,10 @@ describe('gateway engine', () => {
     await h.service.whenIdle()
     // Keyed by the audio itself, never by the task: a later recognition of the same audio is not charged again.
     expect(calls.map(call => [call.request.name, call.request.idempotencyKey, call.request.mimeType, call.request.language, call.request.timestamps, call.request.background])).toEqual([
-      ['region-0-0.wav', `dsh-film-asr:${sha256(calls[0]!.request.data!)}`, 'audio/wav', 'zh', true, true],
-      ['region-0-1.wav', `dsh-film-asr:${sha256(calls[1]!.request.data!)}`, 'audio/wav', 'zh', true, true],
-      ['region-1-0.wav', `dsh-film-asr:${sha256(calls[2]!.request.data!)}`, 'audio/wav', 'zh', true, true],
+      // The name comes from the audio too: the gateway refuses a key sent again under another name.
+      [`region-${sha256(calls[0]!.request.data!).slice(0, 16)}.wav`, `dsh-film-asr:${sha256(calls[0]!.request.data!)}`, 'audio/wav', 'zh', true, true],
+      [`region-${sha256(calls[1]!.request.data!).slice(0, 16)}.wav`, `dsh-film-asr:${sha256(calls[1]!.request.data!)}`, 'audio/wav', 'zh', true, true],
+      [`region-${sha256(calls[2]!.request.data!).slice(0, 16)}.wav`, `dsh-film-asr:${sha256(calls[2]!.request.data!)}`, 'audio/wav', 'zh', true, true],
     ])
     expect(new Set(calls.map(call => call.request.idempotencyKey)).size).toBe(3)
     expect(calls.every(call => /^dsh-film-asr:[0-9a-f]{64}$/.test(call.request.idempotencyKey!) && !call.request.idempotencyKey!.includes(started.taskId))).toBe(true)
@@ -153,7 +156,7 @@ describe('gateway engine', () => {
       ['你好', 0.375, 1.2000000000000002, 2.75, 4.4, ['region-timing']],
       ['再见', 4.5, 5.5, 0.5, 1.5, ['region-timing']],
     ])
-    expect(draft.diagnostics[0].evidence).toMatchObject({ engine: 'gateway', mode: 'region', model: 'doubao-asr-vibedev', regions: [{ gatewayTaskId: 'gw-region-0-0.wav', chargedCny: '0.01', timing: 'region' }, { timing: 'empty' }] })
+    expect(draft.diagnostics[0].evidence).toMatchObject({ engine: 'gateway', mode: 'region', model: 'doubao-asr-vibedev', regions: [{ gatewayTaskId: `gw-${calls[0]!.request.name}`, chargedCny: '0.01', timing: 'region' }, { timing: 'empty' }] })
   })
 
   it('uses the gateway\'s own segment timings when it returns them, offset by the region', async () => {
@@ -258,10 +261,44 @@ describe('gateway engine', () => {
     await cutRegions(window, { b: [{ start: 0, end: 1 }] })
     await h.service.whenIdle()
     expect(first.taskId).not.toBe(again.taskId)
+    // The second recognition reuses the answer kept on disk: nothing is sent, nothing is charged.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.request.idempotencyKey).toBe(regionKey(calls[0]!.request.data!))
+    expect(calls[0]!.request.name).toBe(regionName(calls[0]!.request.data!))
+    const draft = (await h.tasks.record(h.cwd, again.taskId))?.file as any
+    expect(JSON.stringify(draft)).toContain('"reused":"kept"')
+    // Without the kept answer the same audio goes under the same key and name, for the gateway's store to answer.
+    await rm(join(h.cwd, 'film', ...REGION_ANSWERS.split('/')), { recursive: true, force: true })
+    await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'try-3', engine: 'gateway', clipIds: ['b'], spendingConfirmed: true })
+    await cutRegions(window, { b: [{ start: 0, end: 1 }] })
+    await h.service.whenIdle()
     expect(calls).toHaveLength(2)
     expect(calls[1]!.request.idempotencyKey).toBe(calls[0]!.request.idempotencyKey)
     expect(calls[1]!.request.name).toBe(calls[0]!.request.name)
-    expect(calls[0]!.request.idempotencyKey).toBe(regionKey(calls[0]!.request.data!))
+  })
+
+  it('says what was already charged when a later region fails, and a retry pays only for what is left', async () => {
+    let fail = true
+    const { media, calls } = fakeMedia(({ request }) => {
+      if (calls.length === 3 && fail) throw Object.assign(new Error('balance'), { code: 'INSUFFICIENT_BALANCE' })
+      return { model: 'doubao-asr-vibedev', text: `第${calls.length}句`, language: 'zh', name: request.name!, chargedCny: '0.02' }
+    })
+    const h = await setup(() => media)
+    const window = await open()
+    const first = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'part-1', engine: 'gateway', clipIds: ['a'], spendingConfirmed: true })
+    await cutRegions(window, { a: [{ start: 2.2, end: 3 }, { start: 4, end: 5.1 }, { start: 6, end: 7.5 }] })
+    await h.service.whenIdle()
+    const error = (await h.tasks.record(h.cwd, first.taskId))?.error
+    expect(error).toMatchObject({ code: 'INSUFFICIENT_BALANCE', status: 402 })
+    expect(error?.message).toContain('此前已转写并计费 2 段，约 ¥0.04')
+    expect(error?.message).not.toContain('没有扣费')
+    fail = false
+    await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'part-2', engine: 'gateway', clipIds: ['a'], spendingConfirmed: true })
+    await cutRegions(window, { a: [{ start: 2.2, end: 3 }, { start: 4, end: 5.1 }, { start: 6, end: 7.5 }] })
+    await h.service.whenIdle()
+    // Two regions came from the kept answers; only the third was sent again (the failed attempt plus this one).
+    expect(calls).toHaveLength(4)
+    expect(calls[3]!.request.idempotencyKey).toBe(calls[2]!.request.idempotencyKey)
   })
 
   it('sends the same audio once within a recognition, and both regions get its words', async () => {

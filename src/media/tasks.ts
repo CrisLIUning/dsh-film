@@ -327,7 +327,11 @@ function errorOf(error: unknown): FilmTaskError {
 function localErrorOf(error: unknown): FilmTaskError {
   const status = (error as { status?: unknown } | undefined)?.status
   const base = errorOf(error)
-  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600 ? { ...base, status } : base
+  // A local task's own error already says what happened (what a recognition had charged before it failed, say):
+  // keep its words instead of the generic dsh-media message for the same code.
+  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600
+    ? { ...base, ...(error instanceof Error ? { message: base.code !== undefined && error.message.startsWith(`${base.code}: `) ? error.message.slice(base.code.length + 2) : error.message } : {}), status }
+    : base
 }
 
 /** What a cancelled local task reports: its own cancellation, or the generic one. */
