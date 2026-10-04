@@ -131,6 +131,49 @@ describe('canvas catalogue', () => {
     })
     expect(catalogue.videoLengthsSec).toEqual([5, 10])
   })
+
+  it('passes the reference-video, asset, combination and relay limits through', () => {
+    const video: HostMediaModel = {
+      id: 'seedance-2-0-official', name: 'Seedance 2.0', kind: 'video', inputModalities: ['text', 'image', 'video', 'audio'],
+      video: {
+        ...MODELS[1]!.video!,
+        minReferenceVideoSeconds: 2, maxReferenceVideoSeconds: 13, maxTotalReferenceVideoSeconds: 15, maxAssetBytes: 52_428_800,
+        gatewayRelayRequired: true, combinations: [{ duration: 5, ratio: '16:9', resolution: '720p' }, { duration: 10 }],
+      },
+    }
+    const caps = (canvasCatalogue([video]) as any).video[0].videoCapabilities
+    expect(caps).toMatchObject({
+      minReferenceVideoSeconds: 2, maxReferenceVideoSeconds: 13, maxTotalReferenceVideoSeconds: 15, maxAssetBytes: 52_428_800,
+      gatewayRelayRequired: true, combinations: [{ duration: 5, ratio: '16:9', resolution: '720p' }, { duration: 10 }],
+    })
+    // Copies: the canvas's catalogue never shares arrays with dsh-media's models.
+    expect(caps.combinations[0]).not.toBe(video.video!.combinations![0])
+    // Undeclared limits stay out rather than reading as 0.
+    const plain = (canvasCatalogue(MODELS) as any).video[0].videoCapabilities
+    for (const field of ['minReferenceVideoSeconds', 'maxReferenceVideoSeconds', 'maxTotalReferenceVideoSeconds', 'maxAssetBytes', 'gatewayRelayRequired', 'combinations']) {
+      expect(plain, field).not.toHaveProperty(field)
+    }
+  })
+
+  it('gives every image model the Host image profile, and video models none', () => {
+    const catalogue = canvasCatalogue([MODELS[0]!, { ...MODELS[0]!, id: 'gpt-image-2.5-sunburst' }, MODELS[1]!]) as any
+    const profile = {
+      v: 1,
+      source: 'host-profile',
+      sizes: [{ value: '1024x1024', aspect: '1:1' }, { value: '1536x1024', aspect: '3:2' }, { value: '1024x1536', aspect: '2:3' }],
+      qualities: ['auto', 'low', 'medium', 'high'],
+      maxOutputs: 4,
+      maxReferenceImages: 16,
+      maxReferenceImageBytes: 20_971_520,
+      allowedImageMimes: ['image/png', 'image/jpeg', 'image/webp'],
+    }
+    expect(catalogue.image.map((model: any) => model.imageCapabilities)).toEqual([profile, profile])
+    expect(catalogue.video[0].imageCapabilities).toBeUndefined()
+    // Each model gets its own copy.
+    catalogue.image[0].imageCapabilities.sizes.pop()
+    expect(catalogue.image[1].imageCapabilities.sizes).toHaveLength(3)
+    expect((canvasCatalogue([MODELS[0]!]) as any).image[0].imageCapabilities).toEqual(profile)
+  })
 })
 
 describe('canvas generation', () => {
@@ -156,6 +199,8 @@ describe('canvas generation', () => {
       request: { prompt: '雨夜客栈', size: '1536x1024', references: ['https://cdn.test/a.png', join(cwd, 'film', 'canvas', 'refs', 'ref-1.png')] },
       target: { cwd, folder: join(cwd, 'film', 'canvas', 'media'), stem: 'image-abc' },
     })
+    // One image per call, whatever count the page shows (imageCapabilities.maxOutputs is separate calls).
+    expect(media.calls[0]!.request).not.toHaveProperty('n')
     expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'image-abc.png'), 'utf8')).toBe('png')
   })
 

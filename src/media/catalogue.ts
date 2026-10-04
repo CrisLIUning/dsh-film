@@ -6,7 +6,9 @@
  *
  * Video modes are the ones dsh-media will accept ({@link effectiveVideoModes},
  * the same rule dsh-media checks a request against): a mode the canvas offers
- * but dsh-media refuses would only fail after the click.
+ * but dsh-media refuses would only fail after the click. Image models carry the
+ * Host's image profile ({@link IMAGE_CAPABILITIES}), what dsh-media's image
+ * generation takes whatever the model.
  * @module dsh-film/media/catalogue
  */
 
@@ -92,6 +94,27 @@ export const GATEWAY_PROVIDER = 'vibedev-gateway'
 
 /** Why a video model whose modes dsh-media cannot read is listed but not offered. */
 export const UNREADABLE_VIDEO_MODES_REASON = '网关为这个模型声明的视频模式无法识别，暂时不能生成'
+
+/**
+ * What dsh-media's image generation takes, for every image model (the gateway
+ * declares no per-model image limits). The canvas builds its image panel from it.
+ */
+export const IMAGE_CAPABILITIES = {
+  v: 1,
+  source: 'host-profile',
+  // dsh-media src/tools/image.ts:189 (sizes it documents) and the buckets dsh-film sends for an aspect (sizeFor in ./tasks.ts).
+  sizes: [{ value: '1024x1024', aspect: '1:1' }, { value: '1536x1024', aspect: '3:2' }, { value: '1024x1536', aspect: '2:3' }],
+  // dsh-media src/tools/image.ts:191.
+  qualities: ['auto', 'low', 'medium', 'high'],
+  // dsh-media src/tools/image.ts:192 (n 1-4). dsh-film asks for one image per call (FilmMediaTasks.runImage), so the canvas makes one call per image.
+  maxOutputs: 4,
+  // dsh-media src/tools/image.ts:22 (MAX_REFERENCES).
+  maxReferenceImages: 16,
+  // dsh-media src/tools/image.ts:20 (MAX_REFERENCE_BYTES, 20 MiB).
+  maxReferenceImageBytes: 20 * 1024 * 1024,
+  // dsh-media src/tools/image.ts:23 (REFERENCE_TYPES).
+  allowedImageMimes: ['image/png', 'image/jpeg', 'image/webp'],
+} as const
 
 type Json = Record<string, unknown>
 
@@ -190,13 +213,30 @@ export function videoCapabilities(video: HostVideoCapabilities): Json {
   caps.referenceVideoInput = (video.maxReferenceVideos ?? 0) > 0
   caps.referenceAudioInput = (video.maxReferenceAudios ?? 0) > 0
   if (video.nativeAudio !== undefined) caps.nativeAudioOutput = video.nativeAudio
-  for (const field of ['maxReferenceImages', 'maxReferenceVideos', 'maxReferenceAudios', 'maxReferenceImageBytes', 'maxReferenceVideoBytes', 'maxReferenceAudioBytes'] as const) {
+  for (const field of [
+    'maxReferenceImages', 'maxReferenceVideos', 'maxReferenceAudios', 'maxReferenceImageBytes', 'maxReferenceVideoBytes', 'maxReferenceAudioBytes',
+    'maxAssetBytes', 'minReferenceVideoSeconds', 'maxReferenceVideoSeconds', 'maxTotalReferenceVideoSeconds', 'gatewayRelayRequired',
+  ] as const) {
     if (video[field] !== undefined) caps[field] = video[field]
   }
   for (const field of ['allowedImageMimes', 'allowedVideoMimes', 'allowedAudioMimes'] as const) {
     if (video[field] !== undefined) caps[field] = [...video[field]!]
   }
+  if (video.combinations !== undefined) caps.combinations = video.combinations.map(combination => ({ ...combination }))
   return caps
+}
+
+/**
+ * The image profile every image model carries, as a fresh copy.
+ * @returns the canvas's `imageCapabilities`.
+ */
+export function imageCapabilities(): Json {
+  return {
+    ...IMAGE_CAPABILITIES,
+    sizes: IMAGE_CAPABILITIES.sizes.map(size => ({ ...size })),
+    qualities: [...IMAGE_CAPABILITIES.qualities],
+    allowedImageMimes: [...IMAGE_CAPABILITIES.allowedImageMimes],
+  }
 }
 
 function canvasModel(model: HostMediaModel): Json {
@@ -210,6 +250,7 @@ function canvasModel(model: HostMediaModel): Json {
     available: !unavailable,
     ...unavailable ? { unavailableReason: UNREADABLE_VIDEO_MODES_REASON } : {},
     ...video === undefined ? {} : { videoCapabilities: video },
+    ...model.kind === 'image' ? { imageCapabilities: imageCapabilities() } : {},
     ...pricingOf(model),
   }
 }
