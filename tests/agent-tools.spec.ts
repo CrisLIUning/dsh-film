@@ -7,7 +7,9 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { filmAgentTools, filmCoreTools, filmToolGroups, filmToolsTool } from '../src/agent/index.js'
 import type { FilmToolServices } from '../src/agent/index.js'
+import { FILM_GUIDANCE } from '../src/agent/guidance.js'
 import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
+import { buildModelingBrief } from '../src/modeling/contracts/modeling-brief.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
 import { summariseMaterial } from '../src/agent/timeline-tools.js'
 import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
@@ -83,6 +85,20 @@ describe('the tool set', () => {
       expect(tool.parameters).toMatchObject({ type: 'object' })
       expect(tool.description.length).toBeGreaterThan(40)
     }
+  })
+
+  it('promises no skill, preview or desk this workbench does not have', () => {
+    const forbidden = ['img2threejs', 'edit-vibedev-timeline', '独立建模预览', '「3D 建模」']
+    const texts = [
+      ...[...tools.values()].map(tool => `${tool.name}: ${tool.description}`),
+      `FILM_GUIDANCE: ${FILM_GUIDANCE}`,
+      `brief: ${buildModelingBrief({ kind: 'prop', description: '铜壶' }, 'p1').prompt}`,
+      `director brief: ${buildModelingBrief({ kind: 'prop', description: '铜壶', context: { projectId: 'p1', boardId: 'p1', view: 'director', director: { nodeId: 'd', objectIds: [] } } }, 'p1').prompt}`,
+    ]
+    for (const text of texts) {
+      for (const word of forbidden) expect(text, text.slice(0, 60)).not.toContain(word)
+    }
+    expect(buildModelingBrief({ kind: 'prop', description: '铜壶' }, 'p1').skillIds).toEqual([])
   })
 
   it('refuses arguments that do not match the schema before running', async () => {

@@ -334,10 +334,10 @@ describe('reviews', () => {
 describe('modeling briefs and compiled motion', () => {
   it('prepares a brief for the film, with or without a director target', async () => {
     const plain = await call(`/api/projects/${film}/modeling-brief`, { kind: 'prop', description: '一把旧木椅' })
-    expect(plain.body).toMatchObject({ projectId: film, skillIds: ['img2threejs'] })
+    expect(plain.body).toMatchObject({ projectId: film, skillIds: [] })
     expect(plain.body.prompt).toContain('无需创建或打开导演台')
     const targeted = await call(`/api/projects/${film}/modeling-brief`, { kind: 'scene', description: '客栈大堂', context: { projectId: film, boardId: film, view: 'director', director: { nodeId: 'desk', objectIds: [] } } })
-    expect(targeted.body.skillIds).toEqual(['director', 'img2threejs'])
+    expect(targeted.body.skillIds).toEqual([])
     expect(await call(`/api/projects/${film}/modeling-brief`, { kind: 'house', description: 'x' })).toMatchObject({ status: 400, body: { code: 'MODELING_BRIEF_INVALID' } })
     expect((await call(`/api/projects/${film}/modeling-brief`, { kind: 'scene', description: 'x', context: { projectId: 'other', boardId: film, view: 'director', director: { nodeId: 'd' } } })).body.error).toBe('建模需要当前项目的导演台目标')
   })

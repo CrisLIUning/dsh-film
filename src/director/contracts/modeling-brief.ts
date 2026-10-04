@@ -1,6 +1,6 @@
 /**
- * The img2threejs modeling brief the desk's 建模 button and the modeling
- * tools prepare: one copy, kept with the modeling contracts.
+ * The procedural-model brief the modeling tools prepare: one copy, kept with
+ * the modeling contracts.
  * @module dsh-film/director/contracts/modeling-brief
  */
 

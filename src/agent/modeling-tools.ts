@@ -162,8 +162,9 @@ export function modelingTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'model_brief',
-      description: 'Prepare a project-owned img2threejs modeling task. No director desk is required. Return the brief to the main conversation for staged '
-        + 'creation, independent preview and visual review; this call does not execute code or start another Agent.',
+      description: 'Prepare a project-owned procedural-model task: a spec plus Three.js source and notes under film/models/<id>/, written in this '
+        + 'conversation. No director desk is required. The workbench cannot run, photograph or export models, so the result is source, not a GLB. This call '
+        + 'runs no code and starts no other agent.',
       parameters: {
         kind: { ...KIND, required: true },
         description: { type: 'string', required: true },

@@ -220,7 +220,7 @@ describe('POST /api/projects/:id/modeling-brief', () => {
   it('prepares a project brief without a director desk, and one for a director target of this film', async () => {
     const independent = await call(BRIEF, 'POST', { kind: 'prop', description: '设计项目的杯子', references: ['models/cup/ref.png'] })
     expect(independent.status).toBe(200)
-    expect(independent.body).toMatchObject({ projectId, skillIds: ['img2threejs'] })
+    expect(independent.body).toMatchObject({ projectId, skillIds: [] })
     expect(independent.body.prompt).toContain('无需创建或打开导演台')
     expect(independent.body.prompt).toContain('film/models/')
     expect(independent.body.prompt).toContain('"models/cup/ref.png"')
@@ -228,7 +228,7 @@ describe('POST /api/projects/:id/modeling-brief', () => {
     const desk = await call(BRIEF, 'POST', { kind: 'vehicle', description: '蒸汽汽车', heightMetres: 2.4, context })
     expect(desk.status).toBe(200)
     expect(desk.body.prompt).toContain('蒸汽汽车')
-    expect(desk.body.skillIds).toEqual(['director', 'img2threejs'])
+    expect(desk.body.skillIds).toEqual([])
     expect(desk.body.context).toMatchObject({ projectId, view: 'director' })
   })
 

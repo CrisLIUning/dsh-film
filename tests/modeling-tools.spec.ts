@@ -83,7 +83,7 @@ describe('model_brief', () => {
   it('prepares the brief, folding film/ off reference paths and filling a director target with the film\'s ids', async () => {
     const projectId = await startFilm()
     const brief = await run('model_brief', { kind: 'prop', description: '一只铜壶', references: ['film/models/pot/ref.png'] })
-    expect(brief.skillIds).toEqual(['img2threejs'])
+    expect(brief.skillIds).toEqual([])
     expect(brief.prompt).toContain('"models/pot/ref.png"')
     const staged = await run('model_brief', { kind: 'scene', description: '地下酒窖', context: { nodeId: 'desk-1', objectIds: ['o1'] } })
     expect(staged.context).toMatchObject({ projectId, boardId: projectId, view: 'director', director: { nodeId: 'desk-1', objectIds: ['o1'] } })

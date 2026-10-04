@@ -297,8 +297,9 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'director_modeling_brief',
-      description: 'Prepare an img2threejs modeling brief for a director target (the desk\'s node and the selected objects). Runs no model and charges '
-        + 'nothing: read the returned prompt and carry the task out in this conversation.',
+      description: 'Prepare a project-owned procedural-model task for a director target (the desk\'s node and the selected objects): a spec plus '
+        + 'Three.js source and notes under film/models/<id>/, written in this conversation. The workbench cannot run, photograph or export models. Runs no '
+        + 'code, starts no other agent and charges nothing.',
       parameters: {
         ...briefParameters,
         context: {

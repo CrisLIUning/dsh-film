@@ -112,6 +112,6 @@ describe('director tools', () => {
     expect(await run('director_review', { action: 'list' })).toMatchObject({ versions: [], currentFingerprint: getDirectorProjectFingerprint(scene()) })
     const targeted = await run('director_modeling_brief', { kind: 'scene', description: '客栈大堂', context: { nodeId: 'desk', objectIds: ['a'] } })
     expect(targeted.context).toMatchObject({ projectId: film, boardId: film, view: 'director', director: { nodeId: 'desk', objectIds: ['a'] } })
-    expect(targeted.skillIds).toEqual(['director', 'img2threejs'])
+    expect(targeted.skillIds).toEqual([])
   })
 })

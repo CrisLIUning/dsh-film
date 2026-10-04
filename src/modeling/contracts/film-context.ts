@@ -1,7 +1,8 @@
 /**
  * The film UI selection a request may carry (a director target for a modeling
- * brief). Ported verbatim from Studio (packages/contracts/src/api/film-context.ts),
- * keeping its style.
+ * brief). Ported from Studio (packages/contracts/src/api/film-context.ts),
+ * keeping its style; Studio's renderFilmRunContext (a prompt section naming
+ * skills this workbench does not ship) is left out.
  * @module dsh-film/modeling/contracts/film-context
  */
 
@@ -37,12 +38,4 @@ export function normalizeFilmRunContext(value: unknown): FilmRunContext | undefi
     ...(seconds(timeline.seconds) !== undefined ? { seconds: seconds(timeline.seconds)! } : {}),
     ...(id(timeline.selectedClipId) ? { selectedClipId: id(timeline.selectedClipId) } : {}) };
   return out;
-}
-
-export function renderFilmRunContext(value: unknown): string {
-  const context = normalizeFilmRunContext(value);
-  if (!context) return '';
-  return ['### Current film surface', JSON.stringify(context),
-    'These are UI target hints captured when this message was submitted, not proof of current scene state or a screenshot. Use the mounted canvas/director/timeline tools to read before editing. Preserve these exact project, board, node and live-page identities. Re-query revisions/fingerprints before writes. If the live page has closed, report that explicitly; saved scene/timeline queries remain available.',
-    'Use director_query for scene structure/sample/diagnostics; canvas_get_state for the live board; timeline tools for the saved cut. Do not substitute a folder listing for these queries. Discover director, edit-vibedev-timeline, space-plan and img2threejs skills as relevant.'].join('\n');
 }

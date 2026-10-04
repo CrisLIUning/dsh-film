@@ -6,7 +6,8 @@
  *
  * - `POST /api/projects/:id/space-plans` compiles a space plan into
  *   `film/spaces/<name>.glb` (or only reports, with `dryRun`).
- * - `POST /api/projects/:id/modeling-brief` writes an img2threejs brief.
+ * - `POST /api/projects/:id/modeling-brief` writes a procedural-model brief (a spec
+ *   and Three.js source under `film/models/<id>/`, which this workbench cannot run).
  * - The procedural-model record under `film/models/<id>/model.json`: the list,
  *   the report, the model's own source, review notes, adoption, and the
  *   recorded runs — what the canvas's 程序化模型 panel and the model_* tools read.
