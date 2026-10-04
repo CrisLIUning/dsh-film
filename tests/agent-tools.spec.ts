@@ -1,6 +1,6 @@
 /** The agent's film tools, called the way the agent loop calls them, against a real workspace. */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -64,6 +64,7 @@ describe('the tool set', () => {
     expect([...tools.keys()]).toEqual([
       'film_project',
       'story_query', 'story_asset_bindings', 'story_create', 'story_apply_ops', 'story_history', 'story_checkpoint', 'story_restore', 'story_revert',
+      'story_import', 'story_export',
       'canvas_list_clients', 'canvas_get_state', 'canvas_get_selection', 'canvas_read_node', 'canvas_get_generation_status', 'canvas_get_document',
       'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
       'canvas_apply_ops', 'canvas_attach_media',
@@ -173,6 +174,122 @@ describe('story_asset_bindings', () => {
     const removed = await run('story_asset_bindings', { action: 'unbind', documentId, expectedRevision: second.document.revision, bindingId })
     expect(removed.changed).toBe(true)
     await expect(run('story_asset_bindings', { action: 'bind', documentId })).rejects.toThrow(/expectedRevision is required/u)
+  })
+})
+
+describe('story_import and story_export', () => {
+  it('preview, then apply a copy from content or a workspace file; a changed file needs a new preview', async () => {
+    await startFilm()
+    const made = await run('story_create', { title: '原稿' })
+    const { documentId, revision } = made.document as { documentId: string; revision: string }
+    const exported = await run('story_export', { documentId, expectedRevision: revision, mode: 'markdown' })
+    expect(exported).toMatchObject({ documentId, revision, mode: 'markdown', fileName: '原稿.md', completeRelations: true })
+    expect(exported.content).toBe(await readFile(join(cwd, ...String(made.document.filePath).split('/')), 'utf8'))
+
+    const preview = await run('story_import', { action: 'preview', format: 'markdown', content: exported.content })
+    expect(preview).toMatchObject({ format: 'native', semanticEditable: true, copy: true, fileCount: 0, digest: expect.stringMatching(/^[a-f0-9]{64}$/u) })
+    await expect(run('story_import', { action: 'apply', format: 'markdown', content: exported.content })).rejects.toThrow(/expectedPreviewDigest is required/u)
+    const copy = await run('story_import', { action: 'apply', format: 'markdown', content: exported.content, expectedPreviewDigest: preview.digest })
+    expect(copy).toMatchObject({ changed: true, document: { title: '原稿', filePath: expect.stringMatching(/^film\/story\/document_.+\.md$/u) } })
+    expect(copy.document.documentId).not.toBe(documentId)
+
+    await mkdir(join(cwd, 'notes'))
+    await writeFile(join(cwd, 'notes', 'idea.md'), '﻿# 点子\r\n\r\n雨夜，一个人在等车。')
+    const filePreview = await run('story_import', { action: 'preview', format: 'markdown', file: 'notes/idea.md' })
+    expect(filePreview).toMatchObject({ format: 'plain', content: '﻿# 点子\r\n\r\n雨夜，一个人在等车。' })
+    const fromFile = await run('story_import', { action: 'apply', format: 'markdown', file: 'notes\\idea.md', expectedPreviewDigest: filePreview.digest })
+    expect(fromFile.changed).toBe(true)
+    await writeFile(join(cwd, 'notes', 'idea.md'), '# 改过了')
+    await expect(run('story_import', { action: 'apply', format: 'markdown', file: 'notes/idea.md', expectedPreviewDigest: filePreview.digest })).rejects.toThrow(/STORY_IMPORT_PREVIEW_REQUIRED/u)
+    expect((await run('story_query')).documents).toHaveLength(3)
+
+    await writeFile(join(cwd, 'notes', 'gbk.md'), Buffer.from([0xc4, 0xe3, 0xba, 0xc3]))
+    await expect(run('story_import', { action: 'preview', format: 'markdown', file: 'notes/gbk.md' })).rejects.toThrow(/STORY_PACKAGE_TEXT_ENCODING/u)
+    await expect(run('story_import', { action: 'preview', format: 'markdown', file: 'notes/idea.md', content: '# x' })).rejects.toThrow(/STORY_TOOL_INPUT/u)
+    await expect(run('story_import', { action: 'preview', format: 'markdown' })).rejects.toThrow(/STORY_TOOL_INPUT/u)
+    await expect(run('story_import', { action: 'preview', format: 'markdown', file: '../outside.md' })).rejects.toThrow(/STORY_TOOL_PATH/u)
+    await expect(run('story_import', { action: 'preview', format: 'markdown', file: join(cwd, 'notes', 'idea.md') })).rejects.toThrow(/STORY_TOOL_PATH/u)
+    await expect(run('story_import', { action: 'preview', format: 'markdown', file: 'notes/absent.md' })).rejects.toThrow(/STORY_TOOL_FILE_NOT_FOUND/u)
+  })
+
+  it('never reads or writes through a link that leaves the workspace', async () => {
+    await startFilm()
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-film-outside-'))
+    try {
+      await writeFile(join(outside, 'secret.md'), '# 外面的稿')
+      await symlink(outside, join(cwd, 'link'), 'junction')
+      await expect(run('story_import', { action: 'preview', format: 'markdown', file: 'link/secret.md' })).rejects.toThrow(/STORY_TOOL_PATH.*leaves the workspace/u)
+      const made = await run('story_create', { title: '原稿' })
+      await expect(run('story_export', { documentId: made.document.documentId, expectedRevision: made.document.revision, mode: 'markdown', outputPath: 'link/out.md' }))
+        .rejects.toThrow(/STORY_TOOL_PATH/u)
+      await expect(run('story_export', { documentId: made.document.documentId, expectedRevision: made.document.revision, mode: 'markdown', outputPath: 'link/new/out.md' }))
+        .rejects.toThrow(/STORY_TOOL_PATH/u)
+      expect(await readdir(outside)).toEqual(['secret.md'])
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('exports text and packages to files, keeps package bytes out of answers, and imports the package elsewhere', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'face.png'), 'face bytes')
+    const made = await run('story_create', { title: '第一集' })
+    const { documentId } = made.document as { documentId: string }
+    const withPerson = await run('story_apply_ops', {
+      documentId, expectedRevision: made.document.revision,
+      operations: [{ kind: 'upsertEntity', entity: { id: 'person_lin', kind: 'person', profileBlockId: 'block_lin' }, profileMarkdown: '### 林\n' }],
+    })
+    const face = (await run('story_asset_bindings', { action: 'list' })).assets[0] as { filePath: string; sha256: string }
+    const bound = await run('story_asset_bindings', {
+      action: 'bind', documentId, expectedRevision: withPerson.document.revision,
+      binding: { target: { kind: 'entity', id: 'person_lin' }, scope: { kind: 'document' }, purpose: 'appearance', primary: true, filePath: face.filePath, expectedSha256: face.sha256 },
+    })
+    const revision = bound.document.revision as string
+    const saved = await readFile(join(cwd, 'film', 'story', `${documentId}.md`), 'utf8')
+
+    const markdown = await run('story_export', { documentId, expectedRevision: revision, mode: 'markdown', outputPath: 'exports/第一集.md' })
+    expect(markdown).toMatchObject({ output: 'exports/第一集.md', characters: saved.length, completeRelations: true })
+    expect(markdown).not.toHaveProperty('content')
+    expect(await readFile(join(cwd, 'exports', '第一集.md'), 'utf8')).toBe(saved)
+    await expect(run('story_export', { documentId, expectedRevision: revision, mode: 'markdown', outputPath: 'exports/第一集.md' })).rejects.toThrow(/STORY_EXPORT_EXISTS/u)
+    for (const live of ['film/story/copy.md', 'film/canvas/x.zip', process.platform === 'win32' ? 'FILM/.versions/x.md' : 'film/.versions/x.md', 'film/film.json', 'film/story', '../out.md', '/tmp/out.md']) {
+      await expect(run('story_export', { documentId, expectedRevision: revision, mode: 'package', outputPath: live }), live).rejects.toThrow(/STORY_TOOL_PATH/u)
+    }
+    // A refused target is refused before anything is exported.
+    await expect(readdir(join(cwd, 'film', 'story-exports'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(run('story_export', { documentId, expectedRevision: 'stale', mode: 'markdown' })).rejects.toThrow(/STORY_CONFLICT.*current revision/u)
+
+    const packaged = await run('story_export', { documentId, expectedRevision: revision, mode: 'package', outputPath: 'exports/第一集.zip' })
+    expect(JSON.stringify(packaged)).not.toContain('"content"')
+    expect(packaged).toMatchObject({
+      mode: 'package', fileName: '第一集.zip', mimeType: 'application/zip', output: 'exports/第一集.zip',
+      filePath: expect.stringMatching(new RegExp(`^film/story-exports/${documentId}-.+\\.zip$`, 'u')),
+      downloadPath: expect.stringMatching(/^\/api\/projects\/.+\/raw\/story-exports\//u),
+      manifest: { complete: true, fileCount: 1, missingCount: 0, files: [{ sha256: face.sha256 }] },
+    })
+    const zip = await readFile(join(cwd, 'exports', '第一集.zip'))
+    expect(zip.subarray(0, 2).toString()).toBe('PK')
+    expect(packaged.sizeBytes).toBe(zip.length)
+    expect(await readFile(join(cwd, ...String(packaged.filePath).split('/')))).toEqual(zip)
+
+    const preview = await run('story_import', { action: 'preview', format: 'package', file: 'exports/第一集.zip' })
+    expect(preview).toMatchObject({ format: 'native', fileCount: 1, manifest: { complete: true } })
+    const copy = await run('story_import', { action: 'apply', format: 'package', file: 'exports/第一集.zip', expectedPreviewDigest: preview.digest })
+    expect(copy.changed).toBe(true)
+    const references = await run('story_asset_bindings', { action: 'references', documentId: copy.document.documentId })
+    expect(references.references).toEqual([expect.objectContaining({ status: 'available', resolvedPath: expect.stringMatching(/^story-references\/import_/u) })])
+  })
+
+  it('cuts long Markdown in answers and says so', async () => {
+    await startFilm()
+    const made = await run('story_create', { title: '长稿', content: `# 长稿\n\n${'雨'.repeat(60_000)}` })
+    const body = await run('story_export', { documentId: made.document.documentId, expectedRevision: made.document.revision, mode: 'body' })
+    expect(body).toMatchObject({ completeRelations: false, contentTruncated: true })
+    expect(body.content).toHaveLength(48_000)
+    expect(body.totalLength).toBeGreaterThan(60_000)
+    const preview = await run('story_import', { action: 'preview', format: 'markdown', content: '雨'.repeat(50_000) })
+    expect(preview).toMatchObject({ contentTruncated: true, totalLength: 50_000 })
   })
 })
 
@@ -422,7 +539,7 @@ describe('installing the tools into film conversations', () => {
     host.live.push(early)
     const refresh = installFilmAgentTools(host.ctx as never, { tools: () => filmAgentTools(services), guidance: 'film guidance' })
     await settle()
-    expect(early.tools.size).toBe(23)
+    expect(early.tools.size).toBe(25)
     expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
 
     const other = host.agent('other', plainFolder)
@@ -439,7 +556,7 @@ describe('installing the tools into film conversations', () => {
     // Refreshing again installs nothing twice.
     refresh(plainFolder)
     await settle()
-    expect(other.tools.size).toBe(23)
+    expect(other.tools.size).toBe(25)
 
     await host.emit('agent/disposed', early)
     expect(early.tools.size).toBe(0)

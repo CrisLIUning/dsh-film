@@ -34,6 +34,7 @@ const TYPES: Readonly<Record<string, string>> = {
   '.map': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json',
   '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
   '.xml': 'application/xml',
   '.wasm': 'application/wasm',
   '.svg': 'image/svg+xml',
@@ -58,6 +59,7 @@ const TYPES: Readonly<Record<string, string>> = {
   '.m4a': 'audio/mp4',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
+  '.zip': 'application/zip',
 }
 
 /**
