@@ -133,4 +133,16 @@ describe('route error shapes', () => {
     const saved = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'assets.json'), 'utf8')) as { assets: Array<{ filePath: string; title: string; note?: string }> }
     expect(saved.assets).toEqual(expect.arrayContaining([expect.objectContaining({ filePath: 'models/knight/versions/v1/preview.png', title: '骑士 v1', note: '侧面' })]))
   })
+
+  it('keep the category the canvas gives a film file through a save and the next listing', async () => {
+    // The 0.3.0 canvas groups its library by `category`; the overlay must carry it like a title or tags.
+    await writeFilmFile(cwd, 'canvas/media/a.png', 'a')
+    const store = new CanvasAssetStore(cwd)
+    const library = await store.read(projectId, projectId)
+    await store.write(projectId, projectId, library.assets.map(asset => ({ ...asset, category: '角色', tags: ['主角'] })))
+    const again = await store.read(projectId, projectId)
+    expect(again.assets).toEqual([expect.objectContaining({ filePath: 'canvas/media/a.png', category: '角色', tags: ['主角'] })])
+    const saved = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'assets.json'), 'utf8')) as { assets: Array<{ filePath: string; category?: string }> }
+    expect(saved.assets).toEqual([expect.objectContaining({ filePath: 'canvas/media/a.png', category: '角色' })])
+  })
 })
