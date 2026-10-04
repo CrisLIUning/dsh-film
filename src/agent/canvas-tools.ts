@@ -350,11 +350,11 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
       output: jsonOutput,
       execute: (args, exec) => guarded(async () => {
         const film = await filmWorkspace(exec)
-        // A workspace file: the film keeps its own copy, as the editing desk's import does.
+        // A workspace file: the film keeps its own copy, made by the board's import.
         const path = await filmPathFor(film, args.path, { studio: services.studio, signal: exec.signal, failureCode: 'CANVAS_MEDIA_IMPORT_FAILED' })
         return plain(await callStudio(services.studio, film.cwd, {
           method: 'POST',
-          path: `/api/canvas/timelines/${segment(film.boardId)}/media?project=${segment(film.projectId)}`,
+          path: `/api/canvas/assets/${segment(film.boardId)}/attach?project=${segment(film.projectId)}`,
           body: { path, targetNodeId: args.targetNodeId, expectedContent: args.expectedContent },
         }, exec.signal))
       }),

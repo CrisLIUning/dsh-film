@@ -1,6 +1,6 @@
 ---
 name: film-screenwriting
-description: Writes, revises, structures and diagnoses short-film and episode screenplays in the 剧本 tab of the 影视 sidebar through the story_* tools — one saved document per film or episode, with stable scenes, people, places, props, dialogue links and text shots. Use for 编剧、写剧本、改稿、分场、对白、剧本诊断、短剧/单集, or for getting a script ready for the storyboard and the cut.
+description: Writes, revises, structures and diagnoses short-film and episode screenplays in the 剧本 tab of the 影视 sidebar through the story_* tools — one saved document per film or episode, with stable scenes, people, places, props, dialogue links and text shots. Use for 编剧、写剧本、改稿、分场、对白、剧本诊断、短剧/单集, or for getting a script ready for the storyboard and the director desk.
 metadata:
   zh_name: 编剧
   en_name: Film screenwriting
@@ -52,7 +52,7 @@ Technique and examples: [references/craft.md](references/craft.md). 竖屏短剧
 
 Change only the named scope; keep the author's voice, untouched passages, comments and unfamiliar Markdown. Prose: `replaceBlock` with `expectedMarkdown` copied from the block you read. A name: `renameEntity` (profile heading and linked speaker labels; mentions in prose stay as written). One attribution: `setSpeechSpeaker`. Even a “rewrite” edits block by block and keeps ids. Before a large rewrite, `story_checkpoint` the current revision.
 
-Undo on the person's terms: `story_revert` one operationId (refused if that text was edited since — keep their edit and say so); `story_restore` a whole version only when asked; `story_history` lists and reads versions. A restore never rolls back the board or the cut.
+Undo on the person's terms: `story_revert` one operationId (refused if that text was edited since — keep their edit and say so); `story_restore` a whole version only when asked; `story_history` lists and reads versions. A restore never rolls back the board.
 
 ## Diagnose
 
@@ -60,4 +60,4 @@ A diagnosis changes nothing unless the person asks. Follow [references/diagnosis
 
 ## Hand off
 
-When images or video are planned, give the people, places and props their visual identity and states in the same document and write text shots; [references/handoff.md](references/handoff.md) has the fields, reference images, and how a script reaches the 分镜 canvas and the 剪辑 cut. Handoff never starts a generation, replaces a production node or moves an existing clip.
+When images or video are planned, give the people, places and props their visual identity and states in the same document and write text shots; [references/handoff.md](references/handoff.md) has the fields, reference images, and how a script reaches the 分镜 canvas. Handoff never starts a generation or replaces a production node.

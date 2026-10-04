@@ -204,7 +204,7 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
             const revision = need(args.expectedRevision, 'expectedRevision')
             if (args.binding === undefined) throw new FilmToolError('STORY_TOOL_INPUT', 'binding is required for bind.')
             const binding = { ...args.binding }
-            // The library is the film's own files: a workspace image is brought in, as the editing desk's import does.
+            // The library is the film's own files: a workspace image is brought in through the board's import.
             // Only the bytes the agent chose are copied, so a mismatch is refused before anything lands in the film.
             const filePath = await filmPathFor(film, typeof binding.filePath === 'string' ? binding.filePath : '', {
               studio: services.studio,
@@ -306,7 +306,7 @@ export function storyTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'story_restore',
       description: 'Restore a whole saved version of a screenplay as a new current revision, with its relations and reference bindings. Requires the current '
-        + 'revision. Different from reverting one operation; it never rolls back canvas media or the cut.',
+        + 'revision. Different from reverting one operation; it never rolls back canvas media.',
       parameters: {
         documentId: { ...documentId, required: true },
         expectedRevision: { ...expectedRevision, required: true },

@@ -127,7 +127,7 @@ export function storyProductionTools(services: FilmToolServices): ToolDefinition
         + '{purpose: image | character-sheet (people) | scene-sheet (places) | prop-sheet (props) | shot, requestId} also creates a wired, editable image node '
         + 'with a production prompt — nothing is generated or billed. A card of the same document, object and scope is reused unless duplicate:true. Use a '
         + 'fresh requestId per request and keep it on retries (a replay answers the same node). The card\'s reference display follows later screenplay '
-        + 'revisions; production prompts, generated media and timeline clips are kept. Only on the person\'s request.',
+        + 'revisions; production prompts and generated media are kept. Only on the person\'s request.',
       parameters: {
         documentId: { ...documentId, required: true },
         expectedRevision: { ...expectedRevision, required: true },
@@ -174,7 +174,7 @@ export function storyProductionTools(services: FilmToolServices): ToolDefinition
         + 'source (story_source) and the target with canvas_get_document nodeId — its adoptionTarget holds the exact saved values — and pass those values '
         + 'as expectedTarget for the selected fields (omit a key the node does not have). "prompt" replaces both prompt and composerContent with the '
         + 'production brief; "references" snapshots the selected image bytes into the film and replaces the node\'s references. A changed target is a '
-        + 'conflict and nothing is written; unselected fields, generated media and the cut stay as they are. Never call it merely because the screenplay '
+        + 'conflict and nothing is written; unselected fields and generated media stay as they are. Never call it merely because the screenplay '
         + 'changed.',
       parameters: {
         documentId: { ...documentId, required: true },
@@ -220,9 +220,9 @@ export function storyProductionTools(services: FilmToolServices): ToolDefinition
     defineTool({
       name: 'story_impact',
       description: 'Read how the current saved screenplay differs from what production took from it: source cards and explicitly adopted fields on the '
-        + 'board, outputs generated from sources, director-shot links and, where recorded, timeline clips — one item per use and field, with status '
+        + 'board, outputs generated from sources and director-shot links — one item per use and field, with status '
         + 'unchanged, changed, source-missing or unavailable, whether the field was edited by hand since, and whether the actual generation inputs '
-        + 'differed. A change notice does not authorize changing production inputs, regenerating media or replacing clips.',
+        + 'differed. A change notice does not authorize changing production inputs, or regenerating media.',
       parameters: {
         documentId: { ...documentId, required: true },
       },

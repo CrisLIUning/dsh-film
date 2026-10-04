@@ -16,7 +16,7 @@ export class FilmToolError extends Error {
   /**
    * @param code - the stable code.
    * @param message - what the model reads.
-   * @param body - the refusal's answer as the route gave it, for a tool that acts on it (a busy render's `taskId`).
+   * @param body - the refusal's answer as the route gave it, for a tool that acts on it (a busy task's `taskId`).
    */
   constructor(readonly code: string, message: string, readonly body?: Readonly<Record<string, unknown>>) {
     super(message.startsWith(`${code}:`) ? message : `${code}: ${message}`)
@@ -35,7 +35,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /**
  * What a refusal says, without the whole documents some refusals carry
- * (a conflict answers with the current screenplay or cut).
+ * (a conflict answers with the current screenplay).
  * @param status - the HTTP status.
  * @param payload - the parsed answer.
  * @returns the error.
@@ -51,7 +51,7 @@ export function refusal(status: number, payload: unknown): FilmToolError {
   if (Array.isArray(body.diagnostics) && body.diagnostics.length > 0) notes.push(`diagnostics: ${JSON.stringify(body.diagnostics.slice(0, 10))}`)
   if (Array.isArray(body.paths) && body.paths.length > 0) notes.push(`paths: ${JSON.stringify(body.paths.slice(0, 20))}`)
   if (typeof body.operationId === 'string') notes.push(`operation: ${body.operationId}`)
-  // A busy render names the task already running, which can be waited on.
+  // A busy task names the task already running, which can be waited on.
   if (typeof body.taskId === 'string' && body.taskId !== '') notes.push(`taskId: ${body.taskId}`)
   // Director refusals name what the next call needs: the nodes to choose from, the step that failed, the scene's current fingerprint.
   if (Array.isArray(body.directorNodes)) notes.push(`directorNodes: ${JSON.stringify(body.directorNodes.slice(0, 20))}`)

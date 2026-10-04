@@ -11,7 +11,7 @@ import { FILM_GUIDANCE } from '../src/agent/guidance.js'
 import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
 import { buildModelingBrief } from '../src/modeling/contracts/modeling-brief.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
-import { summariseMaterial } from '../src/agent/timeline-tools.js'
+import { compactTask } from '../src/agent/media-task-tools.js'
 import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
@@ -75,9 +75,7 @@ describe('the tool set', () => {
       'canvas_list_clients', 'canvas_get_state', 'canvas_get_selection', 'canvas_read_node', 'canvas_get_generation_status', 'canvas_get_document',
       'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
       'canvas_apply_ops', 'canvas_attach_media',
-      'timeline_query', 'timeline_edit',
-      'timeline_transcribe', 'timeline_apply_captions', 'media_get_task', 'media_cancel_task',
-      'timeline_render',
+      'media_get_task', 'media_cancel_task',
       'director_query', 'director_models', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
     ])
@@ -85,6 +83,21 @@ describe('the tool set', () => {
       expect(tool.parameters).toMatchObject({ type: 'object' })
       expect(tool.description.length).toBeGreaterThan(40)
     }
+  })
+
+  it('carries 30 core tools and nothing of the removed editing desk', () => {
+    const core = filmCoreTools(services).map(tool => tool.name)
+    expect(core).toHaveLength(30)
+    expect(core).toEqual(expect.arrayContaining(['media_get_task', 'media_cancel_task']))
+    const texts = [...[...tools.values()].map(tool => `${tool.name}: ${tool.description}`), `FILM_GUIDANCE: ${FILM_GUIDANCE}`]
+    for (const text of texts) {
+      expect(text, text.slice(0, 60)).not.toMatch(/timeline_|剪辑|editing desk|caption|ffmpeg/iu)
+    }
+    // A review is handed on to generation only.
+    const review = tools.get('director_review')!.parameters as { properties: Record<string, { enum?: unknown[] }> }
+    expect(review.properties.target?.enum).toEqual(['generation'])
+    expect(review.properties.mode?.enum).toEqual(['image', 'video'])
+    expect(review.properties.baseRevision).toBeUndefined()
   })
 
   it('puts director_models in the director group and teaches director_stage place_model', () => {
@@ -673,96 +686,32 @@ describe('canvas_attach_media', () => {
   })
 })
 
-describe('timeline tools', () => {
-  it('reads the cut and the board\'s material, previews and applies a placement on the revision', async () => {
-    const film = await startFilm()
-    expect(await run('timeline_query')).toEqual({ revision: 0, empty: true, note: 'This film has no cut yet.' })
-    expect(await run('timeline_query', { kind: 'board' })).toEqual({ media: [], scripts: [] })
-    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
-    await writeFile(join(cwd, 'film', 'canvas', 'media', 'still.png'), 'png')
-    await run('canvas_apply_ops', { ops: [
-      { type: 'add_node', id: 'img-1', nodeType: 'image', title: '客栈外景', metadata: { content: `/api/projects/${film.id}/raw/canvas/media/still.png` } },
-      { type: 'add_node', id: 'script', nodeType: 'text', metadata: { content: '老板：客官里面请。\n来客：一碗热汤。' } },
-    ] })
-    const offered = await run('timeline_query', { kind: 'board' })
-    expect(offered.media).toEqual([expect.objectContaining({ nodeId: 'img-1', kind: 'image', path: 'canvas/media/still.png' })])
-    expect(offered.scripts).toEqual([expect.objectContaining({ id: 'script', source: 'board', lineCount: 2 })])
-
-    await expect(run('timeline_edit', { place: { nodeId: 'img-1' } })).rejects.toThrow(/baseRevision/)
-    await expect(run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1' }, sound: { loudness: -14 } })).rejects.toThrow(/exactly one/)
-    const preview = await run('timeline_edit', { dryRun: true, place: { nodeId: 'img-1', durationSeconds: 3 } })
-    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
-    expect(preview.result.before).toBeUndefined()
-    expect(preview.result.after).toBeUndefined()
-    const placed = await run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1', durationSeconds: 3 }, operationId: 'op-place' })
-    expect(placed).toMatchObject({ result: { committed: true, revision: 1 }, placed: { clipId: 'op-place-visuals', track: 'visuals', durationSeconds: 3 } })
-    expect(await run('timeline_query')).toMatchObject({ revision: 1, visuals: [{ id: 'op-place-visuals', start: 0, duration: 3 }] })
-    await expect(run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1' } })).rejects.toThrow(/CANVAS_TIMELINE_CONFLICT.*current revision: 1/u)
-  })
-
-  it('previews a raw command plan against the current cut', async () => {
+describe('film task tools', () => {
+  it('reads and cancels a film task, and an old local task from 0.1 reads as interrupted', async () => {
     await startFilm()
-    const preview = await run('timeline_edit', { dryRun: true, operations: [{ id: 'ratio-1', type: 'project.set_ratio', ratio: '9:16' }] })
-    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+    await mkdir(join(cwd, 'film', '.tasks'), { recursive: true })
+    // A caption recognition 0.1 left running when the Host stopped.
+    const old = {
+      taskId: 'old-caption-task', projectId: 'p', surface: 'video-editor', model: 'whisper', status: 'running', startedAt: 1, endedAt: null,
+      progress: ['已开始'], error: null, kind: 'local', request: { capability: 'timeline-captions' },
+      interruption: { message: '识别中断', code: 'CAPTION_INTERRUPTED', status: 503 },
+    }
+    await writeFile(join(cwd, 'film', '.tasks', 'old-caption-task.json'), JSON.stringify(old))
+    const read = await run('media_get_task', { taskId: 'old-caption-task' })
+    expect(read).toMatchObject({ taskId: 'old-caption-task', status: 'interrupted', error: { code: 'CAPTION_INTERRUPTED' } })
+    // A finished one keeps its file, without bulky members.
+    await writeFile(join(cwd, 'film', '.tasks', 'old-render.json'), JSON.stringify({
+      ...old, taskId: 'old-render', status: 'done', endedAt: 2, file: { name: 'canvas/renders/cut.mp4', size: 3, kind: 'video', mime: 'video/mp4', loudness: { lufs: -14 } },
+    }))
+    expect(await run('media_get_task', { taskId: 'old-render' })).toMatchObject({ status: 'done', file: { name: 'canvas/renders/cut.mp4', size: 3, kind: 'video', mime: 'video/mp4' } })
+    expect((await run('media_get_task', { taskId: 'old-render' })).file.loudness).toBeUndefined()
+    expect(await run('media_cancel_task', { taskId: 'old-render' })).toMatchObject({ taskId: 'old-render', status: 'done' })
+    await expect(run('media_get_task', { taskId: 'missing-task' })).rejects.toThrow(/MEDIA_TASK_NOT_FOUND/)
   })
 
-  it('places and swaps in workspace files by their workspace path, bringing each into the film once', async () => {
-    await startFilm()
-    await mkdir(join(cwd, 'media'), { recursive: true })
-    await writeFile(join(cwd, 'media', 'gen.png'), 'generated')
-    await mkdir(join(cwd, 'takes'), { recursive: true })
-    await writeFile(join(cwd, 'takes', 'b.png'), 'take b')
-    const preview = await run('timeline_edit', { dryRun: true, place: { path: 'media/gen.png', durationSeconds: 2 }, operationId: 'op-gen' })
-    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
-    const placed = await run('timeline_edit', { baseRevision: 0, place: { path: join(cwd, 'media', 'gen.png'), durationSeconds: 2 }, operationId: 'op-gen' })
-    expect(placed).toMatchObject({ result: { committed: true, revision: 1 }, placed: { path: 'canvas/media/gen.png', track: 'visuals' } })
-    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['gen.png'])
-    const swapped = await run('timeline_edit', { baseRevision: 1, version: { clipId: placed.placed.clipId, path: 'takes/b.png' }, operationId: 'op-take-b' })
-    expect(swapped).toMatchObject({ result: { committed: true, revision: 2 }, swapped: { from: 'canvas/media/gen.png', to: 'canvas/media/b.png' } })
-    expect((await run('timeline_query')).visuals).toEqual([expect.objectContaining({ id: placed.placed.clipId, path: 'canvas/media/b.png' })])
-  })
-
-  it('names a sound item\'s file the ways place names one: a workspace file is copied in once, film/… is the film\'s', async () => {
-    await startFilm()
-    await mkdir(join(cwd, 'media'), { recursive: true })
-    await writeFile(join(cwd, 'media', 'bed.mp3'), 'music bed')
-    const preview = await run('timeline_edit', { dryRun: true, sound: { items: [{ kind: 'music', file: 'media/bed.mp3', durationSeconds: 4 }] }, operationId: 'op-bed' })
-    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
-    const placed = await run('timeline_edit', { baseRevision: 0, sound: { items: [{ kind: 'music', file: 'media/bed.mp3', durationSeconds: 4 }] }, operationId: 'op-bed' })
-    expect(placed.result).toMatchObject({ committed: true, revision: 1 })
-    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['bed.mp3'])
-    expect((await run('timeline_query')).music).toEqual([expect.objectContaining({ path: 'canvas/media/bed.mp3' })])
-    // Spelled with film/ in front, the film's own file is used as it is.
-    const again = await run('timeline_edit', { dryRun: true, sound: { items: [{ kind: 'music', file: 'film/canvas/media/bed.mp3', durationSeconds: 4 }] } })
-    expect(again.result).toMatchObject({ committed: false })
-    expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['bed.mp3'])
-  })
-
-  it('lists the film\'s files and the workspace\'s media not in the film yet', async () => {
-    await startFilm()
-    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
-    await writeFile(join(cwd, 'film', 'canvas', 'media', 'shot.mp4'), 'mp4')
-    await mkdir(join(cwd, 'footage'), { recursive: true })
-    await writeFile(join(cwd, 'footage', 'take.mov'), 'mov!')
-    await writeFile(join(cwd, 'footage', 'used.png'), 'png')
-    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'img-1', nodeType: 'image' }] })
-    await run('canvas_attach_media', { targetNodeId: 'img-1', path: 'footage/used.png', expectedContent: '' })
-    const material = await run('timeline_query', { kind: 'material' })
-    expect(material.truncated).toBe(false)
-    expect(material.film.map((file: { path: string }) => file.path).sort()).toEqual(['canvas/media/shot.mp4', 'canvas/media/used.png'])
-    expect(material.film).toContainEqual({ path: 'canvas/media/shot.mp4', kind: 'video', sizeBytes: 3 })
-    expect(material.workspace).toEqual([{ path: 'footage/take.mov', kind: 'video', sizeBytes: 4 }])
-  })
-
-  it('keeps a material answer to 200 files of each kind and says when it is cut', () => {
-    const assets = Array.from({ length: 250 }, (_, index) => ({ assetId: `canvas-file:canvas/media/${index}.png`, kind: 'image', name: `${index}.png`, sizeBytes: 1 }))
-    const projectFiles = Array.from({ length: 3 }, (_, index) => ({ path: `media/${index}.png`, kind: 'image', sizeBytes: 1, url: 'u' }))
-    const summary = summariseMaterial({ assets, projectFiles, truncated: false }) as { film: unknown[]; workspace: unknown[]; truncated: boolean }
-    expect(summary.film).toHaveLength(200)
-    expect(summary.film[0]).toEqual({ path: 'canvas/media/0.png', kind: 'image', sizeBytes: 1 })
-    expect(summary.workspace).toEqual([{ path: 'media/0.png', kind: 'image', sizeBytes: 1 }, { path: 'media/1.png', kind: 'image', sizeBytes: 1 }, { path: 'media/2.png', kind: 'image', sizeBytes: 1 }])
-    expect(summary.truncated).toBe(true)
-    expect((summariseMaterial({ assets: [], projectFiles: [], truncated: true }) as { truncated: boolean }).truncated).toBe(true)
+  it('summarises a task without bulky members', () => {
+    expect(compactTask({ taskId: 't', status: 'done', progress: ['a', 'b'], startedAt: 1, endedAt: 2, error: null, file: { name: 'canvas/media/x.png', size: 3, kind: 'image', mime: 'image/png', documentResult: { kind: 'draft' } } }))
+      .toEqual({ taskId: 't', status: 'done', progress: 'b', startedAt: 1, endedAt: 2, file: { name: 'canvas/media/x.png', size: 3, kind: 'image', mime: 'image/png' } })
   })
 })
 

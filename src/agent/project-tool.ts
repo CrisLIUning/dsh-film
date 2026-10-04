@@ -33,11 +33,11 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
 export function filmProjectTool(services: FilmToolServices): ToolDefinition {
   return defineTool({
     name: 'film_project',
-    description: 'The film project of this conversation\'s workspace, worked on in the 影视 sidebar (剧本 screenplays, 分镜 storyboard, 剪辑 editing desk, '
-      + '导演 director desk). action "status" reads it; "create" starts one, kept as files under film/, and the story_*, canvas_* and timeline_* tools come '
+    description: 'The film project of this conversation\'s workspace, worked on in the 影视 sidebar (剧本 screenplays, 分镜 storyboard, '
+      + '导演 director desk). action "status" reads it; "create" starts one, kept as files under film/, and the story_* and canvas_* tools come '
       + 'with it (the sidebar also creates it, named after the folder, when the person opens one of its tabs); create one only when the person wants a '
-      + 'film, short or storyboard made here. "update" renames the film (title) or changes its frame (aspectRatio); the frame applies to new cuts, and an '
-      + 'existing cut\'s frame is changed in the editing desk (timeline_edit project.set_ratio).',
+      + 'film, short or storyboard made here. "update" renames the film (title) or changes its frame (aspectRatio), the film frame the storyboard '
+      + 'canvas and the director desk use.',
     parameters: {
       action: { type: 'string', required: true, enum: ['status', 'create', 'update'] },
       title: { type: 'string', description: 'For create (defaults to the folder name) and update.' },
@@ -59,7 +59,7 @@ export function filmProjectTool(services: FilmToolServices): ToolDefinition {
         return plain({
           project,
           changed,
-          note: changed ? 'Saved; the 影视 sidebar shows it. A new frame applies to new cuts only.' : 'The film already has this title and frame.',
+          note: changed ? 'Saved; the 影视 sidebar shows it.' : 'The film already has this title and frame.',
         })
       }
       const result = await createProject(cwd, parseNewProject({ title: args.title, aspectRatio: args.aspectRatio }, cwd))
@@ -68,7 +68,7 @@ export function filmProjectTool(services: FilmToolServices): ToolDefinition {
         project: result.project,
         created: result.created,
         note: result.created
-          ? 'Created. The film tools (story_*, canvas_*, timeline_*) are available from your next step, and the 影视 sidebar shows the film.'
+          ? 'Created. The film tools (story_*, canvas_*) are available from your next step, and the 影视 sidebar shows the film.'
           : 'This workspace already has this film project. The film tools are available from your next step.',
       })
     }),

@@ -1,7 +1,7 @@
 /**
  * The agent's film tools: `film_project` in every conversation; in the
- * conversations whose workspace is a film, the screenplay, storyboard and cut
- * tools plus `film_tools`, and the director desk's and the modeling tools as
+ * conversations whose workspace is a film, the screenplay, storyboard and film
+ * task tools plus `film_tools`, and the director desk's and the modeling tools as
  * groups taken on when needed.
  * @module dsh-film/agent
  */
@@ -14,21 +14,19 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { CANVAS_DOCUMENT_FILE } from '../canvas/documents.js'
 import { canvasTools } from './canvas-tools.js'
-import { captionTools } from './caption-tools.js'
 import { jsonOutput, plain } from './context.js'
 import type { FilmToolServices } from './context.js'
 import { directorTools } from './director-tools.js'
 import { FILM_GUIDANCE } from './guidance.js'
 import { installFilmAgentTools } from './install.js'
 import type { FilmToolGroup, FilmToolInstaller } from './install.js'
+import { mediaTaskTools } from './media-task-tools.js'
 import { modelingTools } from './modeling-tools.js'
 import { filmProjectTool } from './project-tool.js'
 import { storyTools } from './story-tools.js'
 import { storyExchangeTools } from './story-exchange-tools.js'
 import { storyProductionTools } from './story-production-tools.js'
 import { FilmToolError } from './studio-client.js'
-import { timelineTools } from './timeline-tools.js'
-import { renderTools } from './render-tools.js'
 
 export type { FilmToolServices, FilmWorkspace } from './context.js'
 export { FilmToolError } from './studio-client.js'
@@ -43,9 +41,8 @@ export function filmCoreTools(services: FilmToolServices): ToolDefinition[] {
     ...storyTools(services),
     ...storyExchangeTools(services),
     ...storyProductionTools(services),
-    ...canvasTools(services), ...timelineTools(services),
-    ...captionTools(services),
-    ...renderTools(services),
+    ...canvasTools(services),
+    ...mediaTaskTools(services),
   ]
 }
 

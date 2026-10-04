@@ -301,14 +301,13 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         commentId: { type: 'string' },
         resolved: { type: 'boolean' },
         includeProject: { type: 'boolean' },
-        target: { type: 'string', enum: ['generation', 'timeline'] },
+        target: { type: 'string', enum: ['generation'] },
         operationId: { type: 'string' },
         dryRun: { type: 'boolean' },
-        mode: { type: 'string', enum: ['image', 'video', 'append', 'replace'] },
+        mode: { type: 'string', enum: ['image', 'video'] },
         filePath: { type: 'string', description: 'A file of the version, as its files[].path lists it.' },
         prompt: { type: 'string' },
         model: { type: 'string' },
-        baseRevision: { type: 'integer' },
         video: { type: 'boolean' },
         quality: { type: 'string', enum: ['720p', '1080p'] },
         fps: { type: 'integer', enum: [24, 30, 60] },
@@ -316,7 +315,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
       output: jsonOutput,
       async execute(args, exec) {
         const command = defined(args, ['action', 'versionId', 'expectedRevision', 'expectedFingerprint', 'name', 'text', 'shotId', 'at', 'commentId', 'resolved',
-          'includeProject', 'target', 'operationId', 'dryRun', 'mode', 'filePath', 'prompt', 'model', 'baseRevision', 'video', 'quality', 'fps'])
+          'includeProject', 'target', 'operationId', 'dryRun', 'mode', 'filePath', 'prompt', 'model', 'video', 'quality', 'fps'])
         const answer = await onBoard(exec, args, '/api/director/review', command)
         const versions = Array.isArray(answer.versions)
           ? answer.versions.map(version => isRecord(version) && Array.isArray(version.files) ? { ...version, files: version.files.map(withWorkspacePath) } : version)

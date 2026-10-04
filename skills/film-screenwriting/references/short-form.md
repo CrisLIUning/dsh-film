@@ -22,12 +22,12 @@
 
 ## Runtime
 - Estimate by performing the script in your head: lines at speaking pace, actions at their real length, pauses included. For planning only, Mandarin dialogue runs at about 4 characters per second, punctuation excluded; action has no word rate.
-- Say “估计” until timing, a rehearsal or a rendered cut measures it.
+- Say “估计” until timing, a rehearsal or a rendered shot measures it.
 - Given a target, store it with `updateDocument {changes: {targetSeconds}}`. To fit it, cut repeated beats, explanations and doubled endings before cutting turns.
 
 ## Writing for generated video
-- A generated shot runs from a few seconds to about 15 s. Write a scene as a chain of visible moments; a speech that needs 40 seconds needs several shots or a cut.
-- One speaker's turn per speech block, linked to its person: on the cut it becomes one caption and one voice line, and a shot prompt can quote it with its speaker. Keep acting notes short, or put them in an action block — a parenthetical inside a speech block ends up in the caption.
+- A generated shot runs from a few seconds to about 15 s. Write a scene as a chain of visible moments; a speech that needs 40 seconds needs several shots.
+- One speaker's turn per speech block, linked to its person: it becomes one spoken line, and a shot prompt can quote it with its speaker. Keep acting notes short, or put them in an action block — a parenthetical inside a speech block ends up in the spoken line.
 - Mark off-screen speech (画外：……). In a shot with several people, say who speaks and who stays silent; a listener on screen does not speak someone else's line.
 - Name objects precisely and the same way every time (纸箱快递箱, never 箱子 in one scene and 包裹 in the next); reference images are matched to those words.
 - Keep looks in the profile fields (see handoff.md), not repeated in every action line.

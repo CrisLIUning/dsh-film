@@ -6,7 +6,6 @@
 - Batch E — production fields and a text shot
 - Reference images
 - To the 分镜 canvas
-- To the 剪辑 cut
 - Impact, import and export
 
 ## Production-ready fields
@@ -48,10 +47,7 @@ Continues Batches A–D in operations.md. Omitting `profileMarkdown` keeps the e
 - Character, place and prop sheets: use the film asset-dossier skill when the catalog lists one. Never paste the managed screenplay into ordinary text nodes as a second copy.
 - `story_director_links` (`list`, then `link`/`unlink` with the fingerprints `list` returned) records that a saved source is staged by a saved director-desk shot. Provenance only; it never edits the 3D scene.
 
-## To the 剪辑 cut
-`timeline_query` for the cut's revision, then `timeline_edit` with `sound: {script: {storyDocumentId}}` and `baseRevision` (dry run, then apply) places each speech block as one caption on the cut's shots, the speaker taken from its speech record. It reads the saved screenplay, so save first. Unlinked or multi-speaker blocks produce wrong speakers.
-
 ## Impact, import and export
-- `story_impact`: read it before proposing downstream updates. Existing outputs and clips are history, not a to-do list; changing them needs the person's request.
+- `story_impact`: read it before proposing downstream updates. Existing outputs are history, not a to-do list; changing them needs the person's request.
 - `story_export`: `markdown` keeps structure; `body` drops ids and relations (say so); `package` adds the reference images, lands in `film/story-exports/`, and a missing image needs `allowMissing` and a word to the person.
 - `story_import`: `preview`, then `apply` with the returned digest. It creates a new document and never overwrites one; plain text gets no invented relations.
