@@ -17,13 +17,14 @@ import { createProject, parseNewProject, readProject, workspaceDirectory } from 
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
-import type { CanvasBoardAgent } from './canvas/board-agent.js'
+import { CanvasBoardAgent } from './canvas/board-agent.js'
 import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes, screenwriterServices } from './studio/screenwriter-routes.js'
 import { addStoryExchangeRoutes } from './studio/story-exchange-routes.js'
+import { addStoryProductionRoutes } from './studio/story-production-routes.js'
 import { addTextRoutes } from './studio/text-routes.js'
 import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
@@ -132,9 +133,11 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   const story = screenwriterServices({
     onChange: (cwd, documentId, revision) => { events.emit(cwd, { type: 'story-changed', documentId, revision }) },
   })
+  const boardAgent = options.boardAgent ?? new CanvasBoardAgent()
   addScreenwriterRoutes(router, story)
   addStoryExchangeRoutes(router, { story, events })
-  addCanvasRoutes(router, events, options.boardAgent)
+  addStoryProductionRoutes(router, { story, events, boardAgent })
+  addCanvasRoutes(router, events, boardAgent)
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)

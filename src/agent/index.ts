@@ -15,6 +15,7 @@ import { installFilmAgentTools } from './install.js'
 import { filmProjectTool } from './project-tool.js'
 import { storyTools } from './story-tools.js'
 import { storyExchangeTools } from './story-exchange-tools.js'
+import { storyProductionTools } from './story-production-tools.js'
 import { timelineTools } from './timeline-tools.js'
 
 export type { FilmToolServices, FilmWorkspace } from './context.js'
@@ -29,6 +30,7 @@ export function filmAgentTools(services: FilmToolServices): ToolDefinition[] {
   return [
     ...storyTools(services),
     ...storyExchangeTools(services),
+    ...storyProductionTools(services),
     ...canvasTools(services), ...timelineTools(services),
   ]
 }
