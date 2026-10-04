@@ -61,8 +61,10 @@ const APPS = {
       'not public; licence: director-desk/LICENSE).',
       '',
       'The desk\'s own build also writes director-desk/THIRD-PARTY-NOTICES.txt and',
-      'director-desk/licenses/ (Mediabunny, MPL-2.0); the list below covers the',
-      'desk\'s npm packages as well.',
+      'director-desk/licenses/ (Mediabunny, MPL-2.0; and, in a build with the glTF',
+      'decoders in director-desk/decoders/, the Draco decoder, Apache-2.0;',
+      'meshoptimizer, MIT, is listed in the desk\'s notices); the list below covers',
+      'the desk\'s npm packages as well.',
     ],
     /** The source repositories' licence files, copied into the app folder. */
     licenses: source => [
