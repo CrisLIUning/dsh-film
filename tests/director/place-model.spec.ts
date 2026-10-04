@@ -1,5 +1,6 @@
 /** The agent's place_model op (C10), staged through the router in-process against a real workspace. */
 
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -147,6 +148,52 @@ describe('place_model', () => {
     expect(again.body.placed[0].assetId).toBe(first.body.placed[0].assetId)
     expect((await savedProject()).assets.filter((asset: { sourceType: string; kind: string }) => asset.sourceType === 'model' && asset.kind === 'prop')).toHaveLength(1)
     expect(await modelsCopied()).toEqual(['chair.glb'])
+  })
+
+  it('keeps its ids clear of the agent\'s own id-less imports and placements between placements', async () => {
+    await file('props/a.glb', boxGlb([0.5, 0.9, 0.45]))
+    await file('props/b.glb', boxGlb([1, 1, 1]))
+    const crate = boxGlb([0.3, 0.3, 0.3])
+    await file('film/props/x.glb', crate)
+    const sha = createHash('sha256').update(crate).digest('hex')
+    const imported = (extra: Record<string, unknown> = {}) => ({
+      type: 'import_asset', name: 'x', kind: 'prop', calibration: { metresPerUnit: 0.5, rotation: [0, 0, 0], anchor: 'ground-center' },
+      source: { url: `/api/projects/${film}/raw/props/x.glb`, fileName: 'x.glb', modelFormat: 'glb', byteLength: crate.length, contentSha256: sha }, ...extra,
+    })
+    // The import takes the desk's own next asset and object ids, between two placements.
+    const first = await apply([{ type: 'place_model', path: 'props/a.glb' }, imported(), { type: 'place_model', path: 'props/b.glb' }])
+    expect(first.status, JSON.stringify(first.body)).toBe(200)
+    // With its asset id named, the import's scene object still takes the desk's next object id.
+    const second = await apply([{ type: 'place_model', path: 'props/a.glb', at: [2, 0] }, imported({ assetId: 'xx' }), { type: 'place_model', path: 'props/b.glb', at: [4, 0] }])
+    expect(second.status, JSON.stringify(second.body)).toBe(200)
+    // And an id-less place_asset between placements.
+    const crateAsset = first.body.applied.find((entry: { op: number; type: string }) => entry.op === 1 && entry.type === 'import_asset').assetId
+    expect(second.body.applied.find((entry: { op: number }) => entry.op === 1)).toMatchObject({ assetId: crateAsset, reused: true })
+    const third = await apply([{ type: 'place_model', path: 'props/a.glb', at: [6, 0] }, { type: 'place_asset', assetId: crateAsset, at: [0, 4] }, { type: 'place_model', path: 'props/b.glb', at: [8, 0] }])
+    expect(third.status, JSON.stringify(third.body)).toBe(200)
+    const saved = await savedProject()
+    const objectIds = saved.objects.map((object: { id: string }) => object.id)
+    expect(new Set(objectIds).size).toBe(objectIds.length)
+    expect(saved.objects).toHaveLength(1 + 3 + 3 + 3)
+  })
+
+  it('reuses an asset the desk measured itself, even with a locked instance, without calibrating it again', async () => {
+    await file('props/chair.glb', boxGlb([0.5, 0.9, 0.45]))
+    const first = await apply([{ type: 'place_model', path: 'props/chair.glb' }])
+    expect(first.status, JSON.stringify(first.body)).toBe(200)
+    // The desk's own measurement (three's Float32 data) differs in the last digits, and the person locks the instance.
+    const document = (await new CanvasDocumentStore(cwd, film).read(film))!
+    const scene = await savedProject()
+    const asset = scene.assets.find((entry: { id: string }) => entry.id === first.body.placed[0].assetId)
+    asset.modelBounds = { min: [-0.24999999, 0, -0.22499999], max: [0.24999999, 0.89999998, 0.22499999] }
+    scene.objects.find((entry: { id: string }) => entry.id === first.body.placed[0].objectId).locked = true
+    await new CanvasDocumentStore(cwd, film).write(film, { ...document, nodes: [{ id: 'desk', type: 'director', title: '导演台', metadata: { directorProject: scene } }] })
+
+    const again = await apply([{ type: 'place_model', path: 'film/canvas/models/chair.glb', at: [3, 0] }])
+    expect(again.status, JSON.stringify(again.body)).toBe(200)
+    expect(again.body.placed[0].assetId).toBe(asset.id)
+    expect(again.body.applied.map((entry: { type: string }) => entry.type)).toEqual(['import_asset', 'place_asset'])
+    expect((await savedProject()).assets.find((entry: { id: string }) => entry.id === asset.id).modelBounds).toEqual(asset.modelBounds)
   })
 
   it('numbers applied ops and refusals by the agent\'s own ops', async () => {

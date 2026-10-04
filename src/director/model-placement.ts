@@ -273,6 +273,10 @@ export async function prepareModelPlacements(rawOps: readonly unknown[], film: {
   return prepared
 }
 
+/** The prefixes of the asset and object ids a placement makes up when the op names none. */
+export const PLACED_ASSET_PREFIX = 'placed_model_'
+export const PLACED_OBJECT_PREFIX = 'placed_obj_'
+
 /** The largest numeric suffix of ids with this prefix. */
 function highest(ids: Iterable<string>, prefix: string): number {
   let most = 0
@@ -283,9 +287,6 @@ function highest(ids: Iterable<string>, prefix: string): number {
   }
   return most
 }
-
-const sameBox = (left: unknown, right: ModelBox): boolean =>
-  isRecord(left) && JSON.stringify([left.min, left.max]) === JSON.stringify([right.min, right.max])
 
 /**
  * Turn the plan's placements into the desk's own ops against the scene just
@@ -298,8 +299,10 @@ const sameBox = (left: unknown, right: ModelBox): boolean =>
  * @returns the expanded ops, the agent's op index of each, and what each placement will make.
  */
 export function expandModelPlacements(rawOps: readonly unknown[], prepared: ReadonlyMap<number, PreparedPlacement>, project: DirectorProject, projectId: string): { ops: unknown[]; origin: number[]; placed: PlacedModel[] } {
-  const own = rawOps.filter(op => !isPlaceModel(op))
-  // Ids the plan names itself, and how many ids the agent's own ops may still pick on their own.
+  // Placements get ids of their own prefixes, which the desk's allocators never hand out
+  // (`imported_model_N` and `obj_N` from the highest taken, `obj_N` from the first free),
+  // so the agent's own id-less imports and placements anywhere in the plan cannot take
+  // one first. Only ids the plan names itself, or the scene already has, are avoided.
   const named = new Set<string>()
   for (const op of rawOps) {
     if (!isRecord(op)) continue
@@ -307,17 +310,17 @@ export function expandModelPlacements(rawOps: readonly unknown[], prepared: Read
   }
   const assetIds = new Set([...project.assets.map(asset => asset.id), ...named])
   const objectIds = new Set([...project.objects.map(object => object.id), ...project.cameras.map(camera => camera.id), ...named])
-  let nextAsset = highest(assetIds, 'imported_model_') + 1 + own.filter(op => isRecord(op) && op.type === 'import_asset' && op.assetId === undefined).length
-  let nextObject = Math.max(highest(objectIds, 'obj_'), project.objects.length) + 1 + own.length
+  let nextAsset = highest(assetIds, PLACED_ASSET_PREFIX) + 1
+  let nextObject = highest(objectIds, PLACED_OBJECT_PREFIX) + 1
   const freeAsset = (): string => {
-    while (assetIds.has(`imported_model_${nextAsset}`)) nextAsset++
-    const id = `imported_model_${nextAsset++}`
+    while (assetIds.has(`${PLACED_ASSET_PREFIX}${nextAsset}`)) nextAsset++
+    const id = `${PLACED_ASSET_PREFIX}${nextAsset++}`
     assetIds.add(id)
     return id
   }
   const freeObject = (): string => {
-    while (objectIds.has(`obj_${nextObject}`)) nextObject++
-    const id = `obj_${nextObject++}`
+    while (objectIds.has(`${PLACED_OBJECT_PREFIX}${nextObject}`)) nextObject++
+    const id = `${PLACED_OBJECT_PREFIX}${nextObject++}`
     objectIds.add(id)
     return id
   }
@@ -359,8 +362,11 @@ export function expandModelPlacements(rawOps: readonly unknown[], prepared: Read
       calibration: calibration(),
     })
     origin.push(index)
-    const stored = existing?.modelBounds
-    if (placement.bounds !== undefined && !(existing !== undefined && sameBox(stored, placement.bounds))) {
+    // The measured bounds are stored on a new asset only. A reused one has the same bytes and
+    // calibration already, and bounds the desk measured itself (exact, where the Host's may be
+    // approximate) — or, without bounds, a locked instance that refuses any calibration.
+    const lockedOrMeasured = existing !== undefined && (existing.modelBounds != null || project.objects.some(object => object.assetRefId === existing.id && object.locked))
+    if (placement.bounds !== undefined && earlier === undefined && !lockedOrMeasured) {
       ops.push({ type: 'calibrate_asset', assetId, calibration: calibration(), bounds: { min: [...placement.bounds.min], max: [...placement.bounds.max] } })
       origin.push(index)
     }
