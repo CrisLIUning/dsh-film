@@ -16,6 +16,8 @@
  *   entry files package.json points at exist.
  * - No file in lib/ or client/ contains this checkout's absolute path or a
  *   home-directory path (a build that bakes in where it ran).
+ * - No app code or data file carries GPL-3.0 eSpeak NG (the editor's VibeDev
+ *   build leaves out the Kokoro and vits-web Piper voices that bring it).
  * - Every app file name can be routed by the Host (others are skipped).
  *
  *   node scripts/check-package.mjs

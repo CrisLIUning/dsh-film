@@ -10,7 +10,7 @@
       "platforms": ["win32-x64"],
       "license": {
         "name": "GPL-2.0-or-later",
-        "notice": "FFmpeg 是独立的开源程序，不属于影视工作台；工作台只在本机调用它把剪辑渲染成 MP4。这一版按 GNU GPL 2.0 或更高版本发布（含 libx264、libass），许可证全文随程序保存为 LICENSE.txt。下载 82.3 MB 的压缩包，解压后保留约 182 MB。来源：BtbN/FFmpeg-Builds 的 autobuild-2026-10-01-13-06，由 FFmpeg 提交 46d8f462ee（release/9.0 分支，https://git.ffmpeg.org/ffmpeg.git）构建；SOURCE.txt 记着这些。",
+        "notice": "FFmpeg 是独立的开源程序，不属于影视工作台；工作台只在本机调用它把剪辑渲染成 MP4。这一版按 GNU GPL 2.0 或更高版本发布（含 libx264、libass），许可证全文随程序保存为 LICENSE.txt。下载约 86 MB 的压缩包，解压后保留约 191 MB。来源：BtbN/FFmpeg-Builds 的 autobuild-2026-10-01-13-06，由 FFmpeg 提交 46d8f462ee（release/9.0 分支，https://git.ffmpeg.org/ffmpeg.git）构建；SOURCE.txt 记着这些。",
         "url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
       },
       "artifacts": [

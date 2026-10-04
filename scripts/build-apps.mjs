@@ -765,7 +765,14 @@ function rewriteModelNoticeLinks(text, source, { appDirectory, targets }) {
     return `https://github.com/CrisLIUning/vibedev-video-editor/blob/${head}/${file}`
   }
   let rewritten = 0
-  const body = text.replace(/\]\(([^)\s]+)\)/gu, (match, target) => {
+  // A file named in a code span is not a link, but it is not in the package either: link the fork's copy.
+  const named = text.replace(/(?<!\[)`UPSTREAM\.md`/gu, () => {
+    const link = forkFile('UPSTREAM.md')
+    if (link === undefined) throw new Error('editor: MODEL_LICENSES.md names UPSTREAM.md, which vibedev-video-editor\'s git does not track')
+    rewritten += 1
+    return `[\`UPSTREAM.md\`](${link})`
+  })
+  const body = named.replace(/\]\(([^)\s]+)\)/gu, (match, target) => {
     if (/^[a-z][a-z0-9+.-]*:/iu.test(target) || target.startsWith('#')) return match
     const [path, anchor] = target.split(/(?=#)/u)
     let link
@@ -884,10 +891,12 @@ function editorPreface({ appDirectory, packages, source }) {
     `     package     ${npmTarball(aac.name, aac.version)}`,
     ...(aac.integrity === undefined ? [] : [`                 (${aac.integrity})`]),
     '                 It holds src/, including bridge.c, the C glue compiled with',
-    '                 FFmpeg\'s encoder, and the prebuilt build/aac.js.',
+    '                 FFmpeg\'s encoder, the prebuilt dist/modules/build/aac.js, and',
+    '                 a README whose "Building and development" section gives the',
+    '                 exact FFmpeg configure flags and the emcc link command.',
     `     repository  https://github.com/Vanilagy/mediabunny/tree/v${aac.version}/packages/aac-encoder`,
     '     FFmpeg      https://git.ffmpeg.org/ffmpeg.git (https://ffmpeg.org/download.html)',
-    ...wrap(`The package's repository does not publish which FFmpeg revision or configuration its WebAssembly was built from${lavc === undefined ? '' : `; the build reports libavcodec ${lavc}, a development version after FFmpeg 8.0`}.`, '                 '),
+    ...wrap(`The configuration is published (see the package README above); the exact FFmpeg revision is not${lavc === undefined ? '' : `: the build reports libavcodec ${lavc}, a development version between FFmpeg 8.0 (libavcodec 62.11.100) and 8.1 (62.28.100)`}.`, '                 '),
     ...wrap('It is not a separate file: the bundler inlined it into the editor\'s entry chunk. To replace it, rebuild the editor from its source (https://github.com/CrisLIUning/vibedev-video-editor, MIT, `npm run build:dsh`) with another build of @mediabunny/aac-encoder, for example through an npm "overrides" entry, and put the result in apps/editor.', '   '),
     '',
     ...wrap(`@libav.js/variant-webcodecs: only its JavaScript frontend is in this folder (inside the worker above)${frontendWasm.length > 0 ? `; its own builds are here too: ${frontendWasm.join(', ')}` : '; its own WebAssembly builds are not shipped'}. Source: ${frontend.map(item => npmTarball(item.name, item.version)).join(', ') || 'not in the closure'}.`),

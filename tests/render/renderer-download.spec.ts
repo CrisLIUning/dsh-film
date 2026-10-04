@@ -78,7 +78,7 @@ describe('the packaged renderer', () => {
     expect(ffmpeg!.label).toContain('独立程序')
     expect(notice).toContain('独立的开源程序')
     expect(notice).toContain('GPL')
-    expect(notice).toContain('82.3 MB')
+    expect(notice).toContain('约 86 MB')
     expect(notice).toContain('46d8f462ee')
     expect(notice).toContain('LICENSE.txt')
     expect(ffmpeg!.license.url).toMatch(/^https:\/\//)
