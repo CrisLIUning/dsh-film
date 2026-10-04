@@ -67,6 +67,13 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', '.od', 'dist', 'bui
  */
 const MODEL_VERSIONS = /^models\/[^/]+\/versions$/
 
+/**
+ * Compiled skeletal motion clips (`motions/<task>/motion.glb`, director_compile_motion):
+ * GLBs, but animation for a character, not a space or a prop, so the library
+ * (and the desk's 空间库 built from it) never offers them.
+ */
+const MOTIONS_DIR = 'motions'
+
 const extensionOf = (path: string): string => path.split('.').pop()?.toLowerCase() ?? ''
 
 /** A file under a model's `versions/` folder, which the scan leaves out. */
@@ -74,6 +81,9 @@ const isModelVersionOutput = (filePath: string | undefined): boolean => {
   const parts = filePath?.split('/') ?? []
   return parts.length > 3 && MODEL_VERSIONS.test(parts.slice(0, 3).join('/'))
 }
+
+/** A file under the film's `motions/` folder, which the scan leaves out. */
+const isMotionOutput = (filePath: string | undefined): boolean => filePath?.startsWith(`${MOTIONS_DIR}/`) === true
 
 /**
  * The asset kind of a media file.
@@ -109,7 +119,7 @@ export async function scanMedia(directory: string): Promise<ScannedFile[]> {
       // A reparse point is asked again (a cloud placeholder is a file); links are never followed.
       const { kind, stats } = await entryKind(entry, join(folder, entry.name))
       if (kind === 'dir') {
-        if (!SKIPPED_DIRECTORIES.has(entry.name) && !MODEL_VERSIONS.test(relative)) await walk(join(folder, entry.name), relative)
+        if (!SKIPPED_DIRECTORIES.has(entry.name) && !MODEL_VERSIONS.test(relative) && relative !== MOTIONS_DIR) await walk(join(folder, entry.name), relative)
         continue
       }
       if (kind !== 'file' || mediaKindFor(entry.name) === null) continue
@@ -289,8 +299,9 @@ export class CanvasAssetStore {
     await updateLibrary(this.file, (state) => {
       const known = new Map(state.assets.map(asset => [asset.filePath, asset]))
       const incoming = new Set(overlay.map(asset => asset.filePath))
-      // Kept though the canvas never sees them: published references, and model version outputs the scan hides (their titles, tags and notes stay).
-      const published = state.assets.filter(asset => !incoming.has(asset.filePath) && (asset.gatewayReference !== undefined || isModelVersionOutput(asset.filePath)))
+      // Kept though the canvas never sees them: published references, and model version outputs and motion clips the scan hides (their titles, tags and notes stay).
+      const published = state.assets.filter(asset => !incoming.has(asset.filePath)
+        && (asset.gatewayReference !== undefined || isModelVersionOutput(asset.filePath) || isMotionOutput(asset.filePath)))
       state.assets = [...overlay.map((asset) => {
         const { gatewayReference: _reference, referenceSha256: _hash, ...editable } = asset
         const prior = known.get(asset.filePath)

@@ -1,6 +1,6 @@
 /** The canvas's asset library offers the workspace's own media beside the film's. */
 
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -56,6 +56,23 @@ describe('GET /api/canvas/assets/:boardId', () => {
     const url = new URL(library.workspaceFiles[1].url, 'http://host')
     expect(url.pathname).toBe('/api/dsh-film/media')
     expect(Object.fromEntries(url.searchParams)).toEqual({ cwd, path: 'footage/day 1/take.mov' })
+  })
+
+  it('never lists compiled motion clips, and keeps what the overlay knows about them', async () => {
+    await file('film/film.json', JSON.stringify({ format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }))
+    await file('film/motions/t1/motion.glb', 'glTF')
+    await file('film/spaces/hall.glb', 'glTF')
+    await file('film/canvas/assets.json', JSON.stringify({ assets: [{ id: 'canvas-file:motions/t1/motion.glb', kind: 'model', storage: 'file', filePath: 'motions/t1/motion.glb', title: '点头' }] }))
+    const library = await get('/api/canvas/assets/film-1?project=film-1')
+    expect(library.assets.map((asset: { filePath: string }) => asset.filePath)).toEqual(['spaces/hall.glb'])
+    const url = new URL('http://host/api/dsh-film/studio-write')
+    url.searchParams.set('cwd', cwd)
+    url.searchParams.set('path', '/api/canvas/assets/film-1?project=film-1')
+    url.searchParams.set('method', 'PUT')
+    const saved = await router.dispatch(new Request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assets: library.assets }) }))
+    expect(saved.status).toBe(200)
+    const stored = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'assets.json'), 'utf8')) as { assets: Array<{ filePath: string; title?: string }> }
+    expect(stored.assets.find(asset => asset.filePath === 'motions/t1/motion.glb')).toMatchObject({ title: '点头' })
   })
 
   it('leaves out a workspace file the film imported, until it changes or the film\'s copy goes', async () => {
