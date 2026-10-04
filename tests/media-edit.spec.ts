@@ -402,7 +402,43 @@ describe('FilmMediaTasks.startLocal', () => {
     const started = await tasks.startLocal(cwd, 'film', request('44444444-dddd'), async () => {
       throw new MediaEditError(422, 'MEDIA_EDIT_NEEDS_TRANSCODE', 'cannot copy')
     })
-    expect(await settle(tasks, started.taskId)).toMatchObject({ status: 'failed', error: { code: 'MEDIA_EDIT_NEEDS_TRANSCODE', status: 422, message: 'cannot copy' } })
+    const failed = await settle(tasks, started.taskId)
+    expect(failed).toMatchObject({ status: 'failed', error: { code: 'MEDIA_EDIT_NEEDS_TRANSCODE', status: 422, message: 'cannot copy' } })
+    expect(failed.error?.reasons).toBeUndefined()
+    await tasks.settled()
+  })
+
+  it('keeps the reasons of an edit refused while it ran, so the page knows what to re-encode', async () => {
+    const tasks = new FilmMediaTasks(() => undefined)
+    const reasons = [{ index: 1, reason: 'missing-audio', detail: '这一段的声音比画面早 120 ms 结束。' }]
+    const started = await tasks.startLocal(cwd, 'film', { ...request('44444444-eeee'), capability: 'video.join' }, async () => {
+      throw new MediaEditError(422, 'VIDEO_JOIN_NEEDS_TRANSCODE', 'cannot join', { reasons })
+    })
+    expect(await settle(tasks, started.taskId)).toMatchObject({ status: 'failed', error: { code: 'VIDEO_JOIN_NEEDS_TRANSCODE', status: 422, reasons } })
+    await tasks.settled()
+    expect(await new FilmMediaTasks(() => undefined).record(cwd, started.taskId)).toMatchObject({ error: { reasons } })
+  })
+
+  it('finishes an edit done when the cancel comes after its result is named (while it lands on the board)', async () => {
+    const tasks = new FilmMediaTasks(() => undefined)
+    let land!: () => void
+    const landing = new Promise<void>((resolve) => { land = resolve })
+    let named = false
+    const started = await tasks.startLocal(cwd, 'film', request('88888888-aaaa'), async (signal) => {
+      named = true
+      // Holding the board lock: the cancel arrives now, and landing goes on.
+      await landing
+      expect(signal.aborted).toBe(true)
+      return { ...file, landedNodeId: 'video-1' }
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(named).toBe(true)
+    await tasks.cancel(cwd, started.taskId)
+    land()
+    const ended = await settle(tasks, started.taskId)
+    expect(ended).toMatchObject({ status: 'done', error: null, file: { name: file.name, landedNodeId: 'video-1' } })
+    expect(ended.lines.at(-1)).toBe('完成')
+    expect((await tasks.record(cwd, started.taskId))?.cancellation).toBeUndefined()
     await tasks.settled()
   })
 

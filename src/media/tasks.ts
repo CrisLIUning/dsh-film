@@ -12,8 +12,10 @@
  * media edits (cut, join, extract audio — `startLocal`, media/edit.ts), as
  * 0.1 ran its own cut. They carry `kind: 'local'` and their `request`
  * (capability, idempotency key, parameters); a cancel aborts the work and
- * leaves the task interrupted with its `cancellation`, and a restart leaves
- * an unfinished one interrupted, so an old 0.1 record reads as interrupted too.
+ * leaves the task interrupted with its `cancellation` (one that comes after
+ * the result is named is too late, and the task ends done), and a restart
+ * leaves an unfinished one interrupted, so an old 0.1 record reads as
+ * interrupted too. A failed edit's error carries the refusal `reasons`.
  *
  * A reference may also be a Studio URL of the film's own files: a bound
  * screenplay reference version (`/api/projects/<id>/story/documents/<doc>/
@@ -92,6 +94,8 @@ export interface FilmTaskError {
   status?: number
   retryable?: boolean
   stage?: string
+  /** A media edit refused while it ran (`MEDIA_EDIT_NEEDS_TRANSCODE`, `VIDEO_JOIN_NEEDS_TRANSCODE`): the reasons, as the routes' 422 answers give them. */
+  reasons?: Array<{ index: number; reason: string; detail: string }>
 }
 
 /** What a task generates. An old local task's record may name a surface no longer listed here. */
@@ -288,13 +292,20 @@ export const LOCAL_TASK_LIMIT = 2
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{8,80}$/
 
-/** Why a local task failed, for the record. */
+/** Why a local task failed, for the record: with an edit's refusal reasons, so the page knows what to re-encode. */
 function localErrorOf(error: unknown): FilmTaskError {
-  const coded = error as { status?: unknown; code?: unknown; message?: unknown } | undefined
+  const coded = error as { status?: unknown; code?: unknown; message?: unknown; extra?: { reasons?: unknown } } | undefined
+  const reasons = Array.isArray(coded?.extra?.reasons)
+    ? (coded.extra.reasons as unknown[]).filter((entry): entry is { index: number; reason: string; detail: string } => {
+      const reason = entry as { index?: unknown; reason?: unknown; detail?: unknown } | null
+      return typeof reason?.index === 'number' && typeof reason.reason === 'string' && typeof reason.detail === 'string'
+    }).map(({ index, reason, detail }) => ({ index, reason, detail }))
+    : []
   return {
     message: error instanceof Error ? error.message : String(error),
     ...typeof coded?.code === 'string' ? { code: coded.code } : {},
     status: typeof coded?.status === 'number' ? coded.status : 500,
+    ...reasons.length > 0 ? { reasons } : {},
   }
 }
 
@@ -465,7 +476,8 @@ export class FilmMediaTasks {
       try {
         if (controller.signal.aborted) throw controller.signal.reason
         const file = await run(controller.signal, (line) => { if (!controller.signal.aborted) this.change(cwd, task, {}, line) })
-        if (controller.signal.aborted) throw controller.signal.reason
+        // A cancel that came after the result got its name (while it was measured or landed on the board) is too late:
+        // the file exists and may be on the board, so the task is done with it rather than cancelled with a file left over.
         this.change(cwd, task, { status: 'done', file }, '完成')
       } catch (error) {
         if (controller.signal.aborted) {
@@ -742,7 +754,7 @@ export class FilmMediaTasks {
   /**
    * Stop waiting for a task: an image request is cancelled; a submitted video
    * cannot be cancelled at the gateway and keeps running; a media edit stops
-   * and deletes its partial file.
+   * and deletes its partial file (once its result is named it finishes done).
    * @param cwd - the workspace.
    * @param taskId - the canvas task.
    */
