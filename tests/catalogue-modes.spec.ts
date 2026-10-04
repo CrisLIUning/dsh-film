@@ -175,6 +175,21 @@ describe('an image-to-video request on a lane without first frames', () => {
     expect(request.firstFrame).toBeUndefined()
   })
 
+  it('refuses a tail frame on the 全能参考 remap before any task or charge', async () => {
+    const startVideo = async (): Promise<never> => { throw new Error('must not start') }
+    tasks = new FilmMediaTasks(() => ({
+      models: async () => LANES,
+      generateImages: async () => { throw new Error('not used') },
+      startVideo,
+      task: async () => undefined,
+      onTask: () => () => {},
+    }))
+    await expect(tasks.generate(cwd, 'p1', {
+      surface: 'video', prompt: '推门而入', model: 'seedance-2.5-vibedev', videoMode: 'image-to-video', firstFrame: 'canvas/refs/a.png', lastFrame: 'canvas/refs/b.png',
+    })).rejects.toMatchObject({ status: 400, code: 'VIDEO_INPUT_UNSUPPORTED' })
+    expect(await tasks.list(cwd)).toEqual([])
+  })
+
   it('keeps 图生视频 as a first frame where the lane has one', async () => {
     for (const id of ['seedance-2-5-special', 'seedance-2.0']) {
       const { request, progress } = await submit({ model: id, videoMode: 'image-to-video', images: ['canvas/refs/first.png'] })

@@ -430,6 +430,8 @@ export class FilmMediaTasks {
     // Resolved before the task exists: an unavailable reference refuses the request rather than failing a started run.
     const films = await this.filmReferences(cwd, body)
     const asReference = surface === 'video' && text(body.videoMode) === 'image-to-video' && await firstFrameGoesToReference(media, model)
+    // 全能参考 has no tail frame: refuse here, before anything is charged, rather than drop it from the request.
+    if (asReference && text(body.lastFrame) !== undefined) throw new FilmMediaError(400, 'VIDEO_INPUT_UNSUPPORTED', '这条线路不收首帧和尾帧，图生视频会改走全能参考，尾帧没法带上。请去掉尾帧，或把它作为参考图片发送。')
     const taskId = randomUUID()
     const output = text(body.output) ?? `canvas/media/${surface}-${taskId.slice(0, 10)}${surface === 'image' ? '.png' : '.mp4'}`
     const outputPath = projectFile(cwd, output)
