@@ -4087,6 +4087,23 @@ function isTimelineArchive(value) {
   const archive = value;
   return archive.format === "timeline-studio-archive" && archive.version === 3 && !!archive.project && typeof archive.project === "object" && !Array.isArray(archive.project);
 }
+var CLIP_COLLECTIONS = [
+  "visualSegments",
+  "visualOverlaySegments",
+  "audioSegments",
+  "musicSegments",
+  "captionSegments",
+  "stickerSegments"
+];
+function isEmptyTimeline(document2) {
+  if (document2 === null || document2 === void 0) return true;
+  if (!isTimelineArchive(document2)) return false;
+  const project = document2.project;
+  return CLIP_COLLECTIONS.every((key) => {
+    const clips = project[key];
+    return !Array.isArray(clips) || clips.length === 0;
+  });
+}
 
 // src/timeline-source-time.ts
 function getTimelineSourceTime(clip, localSeconds) {
@@ -4132,6 +4149,7 @@ export {
   getVideoEditorCommand,
   inspectVideoEditorDocument,
   inspectVideoEditorTracks,
+  isEmptyTimeline,
   isTimelineArchive,
   isVideoEditorCapabilityId,
   listVideoEditorCommands,
