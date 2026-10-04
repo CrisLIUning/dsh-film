@@ -6,7 +6,8 @@
  *
  * Every path that crosses a route here is workspace-relative and checked the
  * same way ({@link resolveWorkspaceMedia}): no absolute paths, no `.`/`..`, no
- * hidden, ignored or credential folders, media only, and the real path must be
+ * hidden, ignored or credential folders, media only (or media and the GLB, FBX
+ * and OBJ models where the caller asks for them), and the real path must be
  * the path asked for inside the workspace (no links out). The workspace itself
  * must be a film workspace outside hidden and credential folders
  * ({@link requireFilmWorkspace}), so the caller-chosen `cwd` cannot widen that.
@@ -19,6 +20,8 @@ import { extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 
 import { performance } from 'node:perf_hooks'
 import { FilmError } from './errors.js'
 import { serveFile } from './files.js'
+import { modelTypeOf } from './model-files/types.js'
+import type { ModelFormat } from './model-files/types.js'
 import { foldedName as folded, isCredentialDirName } from './path-rules.js'
 import { FILM_DIR, requireFilmWorkspace, workspaceDirectory } from './project.js'
 
@@ -52,6 +55,21 @@ const MEDIA_TYPES: Readonly<Record<string, { kind: MediaKind; type: string }>> =
  */
 export function mediaTypeOf(path: string): { kind: MediaKind; type: string } | undefined {
   return MEDIA_TYPES[extname(path).toLowerCase()]
+}
+
+/** The model formats the workspace scan lists and the import copies: one file each. */
+export type WorkspaceModelFormat = Exclude<ModelFormat, 'gltf'>
+
+/**
+ * The model format and content type of a file the workspace scan lists, from
+ * its extension: GLB, FBX and OBJ. A `.gltf` is not one: its `.bin` and
+ * textures are separate files that a one-file copy would leave behind.
+ * @param path - a file path.
+ * @returns the format and type, or `undefined`.
+ */
+export function workspaceModelTypeOf(path: string): { format: WorkspaceModelFormat; type: string } | undefined {
+  const type = modelTypeOf(path)
+  return type === undefined || type.format === 'gltf' ? undefined : { format: type.format, type: type.type }
 }
 
 /** One media file of the workspace. */
@@ -134,6 +152,17 @@ export class WorkspaceMediaError extends Error {
  * @returns the path with `/` separators and no leading `./`.
  */
 export function checkWorkspaceMediaPath(raw: string): string {
+  return checkWorkspaceFilePath(raw)
+}
+
+/**
+ * Check a workspace-relative path the way {@link checkWorkspaceMediaPath}
+ * does, accepting model files (GLB, FBX, OBJ) too when asked.
+ * @param raw - the path as sent, with `/` or `\` separators.
+ * @param options - `models: true` to accept the model formats the scan lists.
+ * @returns the path with `/` separators and no leading `./`.
+ */
+export function checkWorkspaceFilePath(raw: string, options: { models?: boolean } = {}): string {
   const path = raw.replaceAll('\\', '/').replace(/^(?:\.\/)+/u, '')
   const invalid = (why: string): never => { throw new WorkspaceMediaError('invalid', `"${raw}" ${why}`) }
   if (path === '' || raw.includes('\0')) invalid('is not a workspace-relative path.')
@@ -147,8 +176,13 @@ export function checkWorkspaceMediaPath(raw: string): string {
     ? folders.slice(1).some(isFilmSkippedDirName)
     : folders.some(isSkippedDirName) || hasIgnoredPrefix(folders)
   if (skipped) invalid('is in a folder that is never listed (generated, installed or credential files).')
-  if (mediaTypeOf(path) === undefined) throw new WorkspaceMediaError('not-media', `"${raw}" is not an image, video or audio file.`)
-  return path
+  if (mediaTypeOf(path) !== undefined) return path
+  if (options.models !== true) throw new WorkspaceMediaError('not-media', `"${raw}" is not an image, video or audio file.`)
+  if (workspaceModelTypeOf(path) !== undefined) return path
+  if (modelTypeOf(path)?.format === 'gltf') {
+    throw new WorkspaceMediaError('not-media', `"${raw}" is a .gltf, whose .bin and texture files are separate: convert it to a GLB first.`)
+  }
+  throw new WorkspaceMediaError('not-media', `"${raw}" is not an image, video, audio or model (GLB, FBX, OBJ) file.`)
 }
 
 /** A workspace media file, proven to be where it was asked for. */
@@ -173,6 +207,13 @@ const inside = (root: string, path: string): string | undefined => {
   return offset === '' || offset === '..' || offset.startsWith(`..${sep}`) || isAbsolute(offset) ? undefined : offset
 }
 
+/** A workspace media or model file, proven to be where it was asked for. */
+export interface ResolvedWorkspaceFile extends Omit<ResolvedWorkspaceMedia, 'kind'> {
+  kind: MediaKind | 'model'
+  /** The model format, for a model file. */
+  format?: WorkspaceModelFormat
+}
+
 /**
  * Find a workspace media file: the path is checked ({@link checkWorkspaceMediaPath}),
  * then its real path must be exactly that path under the real workspace — a
@@ -182,9 +223,21 @@ const inside = (root: string, path: string): string | undefined => {
  * @returns the file.
  */
 export async function resolveWorkspaceMedia(cwd: string, raw: string): Promise<ResolvedWorkspaceMedia> {
-  const path = checkWorkspaceMediaPath(raw)
+  return await resolveWorkspaceFile(cwd, raw) as ResolvedWorkspaceMedia
+}
+
+/**
+ * Find a workspace media file, or a model file when asked, under the same
+ * rules as {@link resolveWorkspaceMedia}.
+ * @param cwd - the workspace directory.
+ * @param raw - the workspace-relative path as sent.
+ * @param options - `models: true` to accept GLB, FBX and OBJ files.
+ * @returns the file.
+ */
+export async function resolveWorkspaceFile(cwd: string, raw: string, options: { models?: boolean } = {}): Promise<ResolvedWorkspaceFile> {
+  const path = checkWorkspaceFilePath(raw, options)
   const segments = path.split('/')
-  const missing = (): WorkspaceMediaError => new WorkspaceMediaError('not-found', `There is no media file "${path}" in the workspace.`)
+  const missing = (): WorkspaceMediaError => new WorkspaceMediaError('not-found', `There is no ${options.models === true ? 'media or model' : 'media'} file "${path}" in the workspace.`)
   const root = await realpath(cwd).catch(() => undefined)
   if (root === undefined) throw missing()
   const expected = join(root, ...segments)
@@ -195,13 +248,15 @@ export async function resolveWorkspaceMedia(cwd: string, raw: string): Promise<R
   if (stats?.isFile() !== true) throw missing()
   const film = await realpath(join(root, FILM_DIR)).catch(() => undefined)
   const filmOffset = film === undefined ? undefined : inside(film, real)
-  const type = mediaTypeOf(real) ?? mediaTypeOf(path)!
+  const media = mediaTypeOf(path)
+  const model = media === undefined ? workspaceModelTypeOf(path) : undefined
   return {
     path: relative(root, real).split(sep).join('/'),
     absolute: real,
     ...(filmOffset !== undefined ? { filmPath: filmOffset.split(sep).join('/') } : {}),
-    kind: type.kind,
-    type: type.type,
+    kind: media?.kind ?? 'model',
+    ...(model !== undefined ? { format: model.format } : {}),
+    type: media?.type ?? model!.type,
     stats,
   }
 }
@@ -225,6 +280,8 @@ const READ_BATCH = 16
 interface WalkLimits {
   depth: number
   files: number
+  /** The most model files collected (beside the media, not counted against `files`); none when left out. */
+  models?: number
   entries: number
   /** `performance.now()` past which the walk stops. */
   deadline: number
@@ -253,15 +310,27 @@ export async function entryKind(entry: Pick<Dirent, 'isDirectory' | 'isFile' | '
   return stats.isDirectory() ? { kind: 'dir' } : stats.isFile() ? { kind: 'file', stats } : { kind: 'other' }
 }
 
+/** One model file of the workspace (GLB, FBX or OBJ), as the scan lists it. */
+export interface WorkspaceModelFile {
+  /** Relative to the workspace, with `/` separators. */
+  path: string
+  format: WorkspaceModelFormat
+  bytes: number
+  /** ISO 8601. */
+  modifiedAt: string
+}
+
 /**
- * Breadth first through a folder: its media files, hidden names and skipped
- * folders left out, links never followed.
+ * Breadth first through a folder: its media files (and model files, when
+ * asked), hidden names and skipped folders left out, links never followed.
  * @param root - the folder.
  * @param limits - when to stop.
- * @returns the files (relative to `root`, unsorted) and whether the walk stopped early.
+ * @returns the files and models (relative to `root`, unsorted) and whether the walk stopped early.
  */
-async function walkMedia(root: string, limits: WalkLimits): Promise<{ files: MediaAsset[]; truncated: boolean }> {
+async function walkMedia(root: string, limits: WalkLimits): Promise<{ files: MediaAsset[]; models: WorkspaceModelFile[]; truncated: boolean }> {
   const files: MediaAsset[] = []
+  const models: WorkspaceModelFile[] = []
+  const modelLimit = limits.models ?? 0
   let entries = 0
   let truncated = false
   let level: string[] = ['']
@@ -289,6 +358,7 @@ async function walkMedia(root: string, limits: WalkLimits): Promise<{ files: Med
       }
       const kinds = await Promise.all(candidates.map(({ relative: path, entry }) => entryKind(entry, join(root, ...path.split('/')))))
       const media: Array<{ path: string; kind: MediaKind; stats?: Stats }> = []
+      const found: Array<{ path: string; format: WorkspaceModelFormat; stats?: Stats }> = []
       for (const [index, { relative: path, entry }] of candidates.entries()) {
         const { kind, stats } = kinds[index]!
         if (kind === 'dir') {
@@ -296,7 +366,16 @@ async function walkMedia(root: string, limits: WalkLimits): Promise<{ files: Med
         } else if (kind === 'file') {
           const type = mediaTypeOf(entry.name)
           if (type !== undefined) media.push({ path, kind: type.kind, ...(stats !== undefined ? { stats } : {}) })
+          else if (models.length + found.length < modelLimit) {
+            const model = workspaceModelTypeOf(entry.name)
+            if (model !== undefined) found.push({ path, format: model.format, ...(stats !== undefined ? { stats } : {}) })
+          }
         }
+      }
+      const modelStats = await Promise.all(found.map(file => file.stats ?? lstat(join(root, ...file.path.split('/'))).catch(() => undefined)))
+      for (const [index, file] of found.entries()) {
+        const info = modelStats[index]
+        if (info?.isFile() === true) models.push({ path: file.path, format: file.format, bytes: info.size, modifiedAt: info.mtime.toISOString() })
       }
       const room = limits.files - files.length
       if (media.length > room) {
@@ -311,16 +390,21 @@ async function walkMedia(root: string, limits: WalkLimits): Promise<{ files: Med
     }
     level = next
   }
-  return { files, truncated }
+  return { files, models, truncated }
 }
 
-const newestFirst = (left: MediaAsset, right: MediaAsset): number =>
+const newestFirst = (left: { path: string; modifiedAt: string }, right: { path: string; modifiedAt: string }): number =>
   right.modifiedAt.localeCompare(left.modifiedAt) || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+
+/** The most model files one workspace listing returns. */
+export const WORKSPACE_MODEL_LIMIT = 300
 
 /** A workspace's media listing. */
 export interface WorkspaceMediaListing {
   /** Newest first; paths relative to the workspace. */
   files: MediaAsset[]
+  /** The GLB, FBX and OBJ files the same scan found (at most {@link WORKSPACE_MODEL_LIMIT}), newest first. */
+  models: WorkspaceModelFile[]
   /** The scan stopped at a limit (files, entries or time) before it read everything. */
   truncated: boolean
 }
@@ -331,6 +415,7 @@ const cache = new Map<string, { listing: Promise<WorkspaceMediaListing>; expires
 export interface WorkspaceScanLimits {
   depth?: number
   files?: number
+  models?: number
   entries?: number
   budgetMs?: number
 }
@@ -342,20 +427,22 @@ export interface WorkspaceScanLimits {
  * @returns the listing.
  */
 export async function scanWorkspaceMedia(cwd: string, limits: WorkspaceScanLimits = {}): Promise<WorkspaceMediaListing> {
-  const { files, truncated } = await walkMedia(cwd, {
+  const { files, models, truncated } = await walkMedia(cwd, {
     depth: limits.depth ?? WORKSPACE_MEDIA_DEPTH,
     files: limits.files ?? WORKSPACE_MEDIA_LIMIT,
+    models: limits.models ?? WORKSPACE_MODEL_LIMIT,
     entries: limits.entries ?? WORKSPACE_ENTRY_LIMIT,
     deadline: performance.now() + (limits.budgetMs ?? WORKSPACE_SCAN_BUDGET_MS),
     skip: isSkippedDirName,
     skipTop: isFilmFolder,
   })
-  return { files: files.sort(newestFirst), truncated }
+  return { files: files.sort(newestFirst), models: models.sort(newestFirst), truncated }
 }
 
 /**
  * The workspace's own media: image, video and audio files outside `film/`,
- * newest first. Hidden entries, generated and installed trees, credential
+ * newest first, and beside them the GLB, FBX and OBJ models the same scan
+ * found (at most {@link WORKSPACE_MODEL_LIMIT}). Hidden entries, generated and installed trees, credential
  * folders and links are skipped; the scan is breadth first and stops at
  * {@link WORKSPACE_MEDIA_LIMIT} files, {@link WORKSPACE_ENTRY_LIMIT} entries or
  * {@link WORKSPACE_SCAN_BUDGET_MS}, and says so. A listing is reused for
@@ -371,7 +458,7 @@ export async function listWorkspaceMedia(cwd: string): Promise<WorkspaceMediaLis
   try {
     await requireFilmWorkspace(cwd)
   } catch {
-    return { files: [], truncated: false }
+    return { files: [], models: [], truncated: false }
   }
   const key = resolve(cwd)
   const now = performance.now()
@@ -386,8 +473,8 @@ export async function listWorkspaceMedia(cwd: string): Promise<WorkspaceMediaLis
       () => { if (cache.get(key) === created) cache.delete(key) },
     )
   }
-  const { files, truncated } = await entry.listing
-  return { files: [...files], truncated }
+  const { files, models, truncated } = await entry.listing
+  return { files: [...files], models: [...models], truncated }
 }
 
 /**

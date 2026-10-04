@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilmError } from '../src/errors.js'
 import { RANGE_CHUNK, parseRange } from '../src/files.js'
 import {
-  WORKSPACE_CACHE_MS, WORKSPACE_MEDIA_DEPTH, WorkspaceMediaError, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia, isSkippedDirName, listAssets,
-  listFilmMedia, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia, workspaceMediaUrl,
+  WORKSPACE_CACHE_MS, WORKSPACE_MEDIA_DEPTH, WORKSPACE_MODEL_LIMIT, WorkspaceMediaError, checkWorkspaceFilePath, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia,
+  isSkippedDirName, listAssets, listFilmMedia, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceFile, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia,
+  workspaceMediaUrl, workspaceModelTypeOf,
 } from '../src/media.js'
 import { ProjectEvents } from '../src/studio/events.js'
 
@@ -136,6 +137,22 @@ describe('resolveWorkspaceMedia', () => {
     await expect(resolveWorkspaceMedia(cwd, 'footage/none.mp4')).rejects.toMatchObject({ problem: 'not-found' })
     await mkdir(join(cwd, 'folder.mp4'))
     await expect(resolveWorkspaceMedia(cwd, 'folder.mp4')).rejects.toMatchObject({ problem: 'not-found' })
+  })
+
+  it('takes GLB, FBX and OBJ models only when asked, and never a .gltf', async () => {
+    await file('props/chair.glb', 'glTF')
+    await file('props/lamp.gltf', '{}')
+    await expect(resolveWorkspaceMedia(cwd, 'props/chair.glb')).rejects.toMatchObject({ problem: 'not-media' })
+    expect(await resolveWorkspaceFile(cwd, 'props\\chair.glb', { models: true })).toMatchObject({ path: 'props/chair.glb', kind: 'model', format: 'glb', type: 'model/gltf-binary' })
+    expect(checkWorkspaceFilePath('a/b.FBX', { models: true })).toBe('a/b.FBX')
+    expect(checkWorkspaceFilePath('a/b.obj', { models: true })).toBe('a/b.obj')
+    expect(checkWorkspaceFilePath('a/b.png', { models: true })).toBe('a/b.png')
+    expect(() => checkWorkspaceFilePath('props/lamp.gltf', { models: true })).toThrow(/convert it to a GLB/u)
+    expect(() => checkWorkspaceFilePath('node_modules/x/chair.glb', { models: true })).toThrow(WorkspaceMediaError)
+    expect(() => checkWorkspaceFilePath('.hidden/chair.glb', { models: true })).toThrow(WorkspaceMediaError)
+    expect(() => checkWorkspaceFilePath('a/b.txt', { models: true })).toThrow(/GLB, FBX, OBJ/u)
+    expect(workspaceModelTypeOf('x.GLB')).toEqual({ format: 'glb', type: 'model/gltf-binary' })
+    expect(workspaceModelTypeOf('x.gltf')).toBeUndefined()
   })
 
   it('spells the path as the file system does', async () => {
@@ -273,11 +290,11 @@ describe('the workspace scanner', () => {
     try {
       await mkdir(join(plain, 'photos'), { recursive: true })
       await writeFile(join(plain, 'photos', 'a.png'), 'png')
-      expect(await listWorkspaceMedia(plain)).toEqual({ files: [], truncated: false })
+      expect(await listWorkspaceMedia(plain)).toEqual({ files: [], models: [], truncated: false })
       await filmIn(hidden)
       await mkdir(join(hidden, 'photos'), { recursive: true })
       await writeFile(join(hidden, 'photos', 'a.png'), 'png')
-      expect(await listWorkspaceMedia(hidden)).toEqual({ files: [], truncated: false })
+      expect(await listWorkspaceMedia(hidden)).toEqual({ files: [], models: [], truncated: false })
     } finally {
       await rm(plain, { recursive: true, force: true })
     }
@@ -331,6 +348,26 @@ describe('the workspace scanner', () => {
     expect((await entryKind(asLink, join(cwd, 'gone.mp4'))).kind).toBe('other')
   })
 
+  it('lists models beside the media, under the same rules and their own cap', async () => {
+    await file('props/chair.glb', 'glTF', new Date('2026-10-03T00:00:00Z'))
+    await file('props/table.fbx', 'fbx', new Date('2026-10-02T00:00:00Z'))
+    await file('props/cup.obj', 'v 0 0 0', new Date('2026-10-01T00:00:00Z'))
+    await file('props/lamp.gltf', '{}')
+    await file('node_modules/pkg/model.glb')
+    await file('.cache/model.glb')
+    await file('film/canvas/models/chair.glb')
+    await file('media/shot.png')
+    const listing = await scanWorkspaceMedia(cwd)
+    expect(paths(listing.files)).toEqual(['media/shot.png'])
+    expect(listing.models).toEqual([
+      { path: 'props/chair.glb', format: 'glb', bytes: 4, modifiedAt: '2026-10-03T00:00:00.000Z' },
+      { path: 'props/table.fbx', format: 'fbx', bytes: 3, modifiedAt: '2026-10-02T00:00:00.000Z' },
+      { path: 'props/cup.obj', format: 'obj', bytes: 7, modifiedAt: '2026-10-01T00:00:00.000Z' },
+    ])
+    expect((await scanWorkspaceMedia(cwd, { models: 2 })).models).toHaveLength(2)
+    expect(WORKSPACE_MODEL_LIMIT).toBe(300)
+  })
+
   it('enters folders down to the depth limit and no deeper', async () => {
     const folders = (count: number): string => Array.from({ length: count }, (_, index) => `d${index}`).join('/')
     await file(`${folders(WORKSPACE_MEDIA_DEPTH)}/deep.png`)
@@ -344,7 +381,7 @@ describe('the workspace scanner', () => {
     expect(await scanWorkspaceMedia(cwd, { files: 3 })).toMatchObject({ files: expect.any(Array), truncated: true })
     expect((await scanWorkspaceMedia(cwd, { files: 3 })).files).toHaveLength(3)
     expect((await scanWorkspaceMedia(cwd, { entries: 2 })).truncated).toBe(true)
-    expect(await scanWorkspaceMedia(cwd, { budgetMs: -1 })).toEqual({ files: [], truncated: true })
+    expect(await scanWorkspaceMedia(cwd, { budgetMs: -1 })).toEqual({ files: [], models: [], truncated: true })
     expect((await scanWorkspaceMedia(cwd, { files: 6 })).truncated).toBe(false)
   })
 
