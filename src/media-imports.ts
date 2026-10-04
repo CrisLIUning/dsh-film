@@ -1,8 +1,8 @@
 /**
  * The film's import record, `film/canvas/imports.json`: which workspace media
  * files the film took in (copied into `film/canvas/media/`), and as what. The
- * libraries that offer the workspace's own media (the editing desk's
- * material, the canvas's workspace files) leave out a file the film already
+ * libraries that offer the workspace's own media (the canvas's workspace
+ * files and models) leave out a file the film already
  * has, until that file changes or the film's copy goes.
  *
  * Imports of one workspace take turns under {@link withImportLock}, so two

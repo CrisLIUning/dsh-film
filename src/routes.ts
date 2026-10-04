@@ -11,17 +11,17 @@
  *   renames the film or changes its frame; announced as `project-changed`.
  * - `GET  /api/dsh-film/runtime` — the version this Host runs and the one installed
  *   now (no `cwd`); a workbench page shows a restart banner when they differ.
- * - `GET  /api/dsh-film/assets?cwd=` — the workspace's media files, the film's and its own.
  * - `GET|HEAD /api/dsh-film/media?cwd=&path=` — one media file of the workspace
  *   (`path` relative to it), with byte ranges.
- * - `/api/dsh-film/caption-runner/*` — the caption runner's windows (see captions/runner).
+ * - `GET|HEAD /api/dsh-film/studio`, `POST /api/dsh-film/studio-write` — the
+ *   Studio-compatible API the hosted canvas and desk call (see studio/router).
  * @module dsh-film/routes
  */
 
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { FilmError } from './errors.js'
 import { runtimeRoute } from './runtime.js'
-import { listAssets, serveMedia } from './media.js'
+import { serveMedia } from './media.js'
 import { createProject, parseNewProject, parseProjectChange, readProject, updateProject, workspaceDirectory } from './project.js'
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
@@ -38,18 +38,9 @@ import { addStoryProductionRoutes } from './studio/story-production-routes.js'
 import { addTextRoutes } from './studio/text-routes.js'
 import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
-import { addTimelineRoutes } from './studio/timeline-routes.js'
-import { addRenderRoutes } from './studio/render-routes.js'
-import type { RenderRouteOptions } from './studio/render-routes.js'
-import { addModelRoutes } from './studio/model-routes.js'
 import { addDirectorRoutes } from './studio/director-routes.js'
-import type { EditorModels } from './models/service.js'
 import { addModelingRoutes } from './studio/modeling-routes.js'
 import type { ModelEnvironment } from './modeling/contracts/model-project.js'
-import { captionRunnerRoutes } from './captions/runner.js'
-import type { CaptionRunnerHub } from './captions/runner.js'
-import type { CaptionService } from './captions/service.js'
-import { addCaptionRoutes } from './studio/caption-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -134,30 +125,22 @@ const projectUpdateRoute = (events: ProjectEvents) => async (request: Request): 
   return json(200, { project })
 }
 
-async function assets(request: Request): Promise<Response> {
-  const cwd = await workspaceDirectory(new URL(request.url).searchParams.get('cwd'))
-  return json(200, await listAssets(cwd))
-}
-
 /**
  * The routes this plugin registers.
  * @param studio - the Studio-compatible API.
  * @param projectCreated - told when a workspace gets its film project (the agent's film tools come with it).
- * @param captionRunner - the caption runner, whose windows' routes are served too.
  * @param events - the project event bus the Studio API announces on (project changes go to open pages through it).
  * @returns the route list.
  */
 export function filmRoutes(
   studio: StudioRouter = createStudioRouter(),
   projectCreated: (cwd: string) => void = () => {},
-  captionRunner?: CaptionRunnerHub,
   events: ProjectEvents = new ProjectEvents(),
 ): ConnectionFetchRoute[] {
   return [
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(projectRoute(projectCreated)) },
     { path: `${ROUTE_PREFIX}/project/update`, methods: ['POST'], requestBody: 'buffered', fetch: answering(projectUpdateRoute(events)) },
     runtimeRoute(),
-    { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
     // The Studio-compatible API on two routes: reads, and writes with streamed
     // bodies (uploads can be large). One route cannot do both: the Host builds
@@ -165,8 +148,6 @@ export function filmRoutes(
     // with a body is refused before it reaches the handler.
     { path: `${ROUTE_PREFIX}/studio`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: request => studio.dispatch(request) },
     { path: `${ROUTE_PREFIX}/studio-write`, methods: ['POST'], requestBody: 'streaming', fetch: request => studio.dispatch(request) },
-    // The caption runner serves every workspace from each open window, so its routes take no cwd.
-    ...(captionRunner !== undefined ? captionRunnerRoutes(captionRunner) : []),
   ]
 }
 
@@ -191,14 +172,10 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addMediaRoutes(router, tasks, media)
   addProjectRoutes(router, events)
   addBoardFileRoutes(router, events)
-  addTimelineRoutes(router, events)
-  addRenderRoutes(router, events, { ...options.renderer, tasks, models: options.models, ffmpegPath: options.ffmpegPath })
   addTextRoutes(router, new CanvasTextModels(options.text ?? (() => ({}))), async (model) => {
     const video = (await media()?.models())?.find(entry => entry.id === model)?.video
     return video?.nativeAudio
   })
-  if (options.models !== undefined) addModelRoutes(router, options.models)
-  if (options.captions !== undefined) addCaptionRoutes(router, options.captions)
   addModelingRoutes(router, { events, ...(options.modelEnvironment !== undefined ? { environment: options.modelEnvironment } : {}) })
   return router
 }
@@ -214,14 +191,6 @@ export interface StudioRouterOptions {
   tasks?: FilmMediaTasks
   /** DSH's model services, read at each request (text-node answers, the prompt writer). */
   text?: () => TextServices
-  /** The editing desk's AI models; without it the model endpoints are not offered. */
-  models?: EditorModels
   /** The procedural-model panel's environment probe (tests replace it). */
   modelEnvironment?: () => Promise<ModelEnvironment>
-  /** Original-audio captions; without it the caption endpoints are not offered. */
-  captions?: CaptionService
-  /** The plugin setting naming the ffmpeg the background render runs. */
-  ffmpegPath?: string
-  /** The background render's seams (tests replace finding and running ffmpeg). */
-  renderer?: Omit<RenderRouteOptions, 'tasks' | 'models' | 'ffmpegPath'>
 }

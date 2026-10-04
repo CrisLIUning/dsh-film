@@ -13,8 +13,6 @@ import type { StoryDocument } from '../../src/screenwriter/contracts/index.js'
 import { StoryHandoff } from '../../src/screenwriter/handoff.js'
 import { StoryImpact } from '../../src/screenwriter/impact.js'
 import { StoryService } from '../../src/screenwriter/service.js'
-import { createEmptyTimelineArchive } from '../../src/timeline/archive.js'
-import { TimelineStore } from '../../src/timeline/store.js'
 
 const nodesOf = (board: CanvasDocument | null) => (board?.nodes ?? []) as Array<Record<string, any>>
 
@@ -188,39 +186,39 @@ describe('saved screenplay references and explicit production adoption (Studio c
     expect(await boards.read(board)).toEqual(before)
   })
 
-  it('reports actual output and cut provenance separately from newly adopted inputs and director intent', async () => {
+  it('reports actual output provenance separately from newly adopted inputs and director intent, and never reads an old cut', async () => {
     const a = await createBound()
     const adopted = await handoff.adopt(cwd, a.documentId, { expectedRevision: a.revision, objectId: 'person', boardId: board, targetNodeId: 'production', fields: ['prompt', 'references'], expectedTarget: original.metadata })
     const output = { requestId: 'render-a', sourceNodeId: 'production', adoption: adopted.adoption, inputs: { prompt: '人工改后的生成文字', referenceImages: adopted.node.metadata.references, referenceVideos: [], referenceAudios: [] } }
     const source = { preview: adopted.preview, scope: { kind: 'document' }, linkedAt: '2026-01-01' }
     const mediaUrl = `/api/projects/${board}/raw/canvas/media/a.png`
     await boards.update(current => ({ ...current!, nodes: nodesOf(current).map(node => ({ ...node, metadata: { ...node.metadata, content: mediaUrl, storyOutputSource: output, storyOutputHistory: [{ content: mediaUrl, storyOutputSource: output }], storyDirectorLinks: { camera: [source] } } })) }))
-    const timeline = new TimelineStore(cwd)
-    const archive = createEmptyTimelineArchive()
-    archive.project.visualSegments = [{ id: 'clip', name: '已裁切镜头', duration: 2, sourceIn: 1, director: { nodeId: 'production', shotId: 'camera', storySources: [source] }, storyMediaSource: { projectId: board, path: 'canvas/media/a.png', outputs: [output] } }]
-    await timeline.save({ document: archive, baseRevision: 0 })
+    // A cut 0.1's editing desk saved, whose clip records the same sources: left on disk, never read or rewritten.
+    const cutFile = path.join(cwd, 'film', 'canvas', 'timeline.json')
+    const cut = {
+      revision: 1,
+      document: { project: { visualSegments: [{ id: 'clip', name: '已裁切镜头', duration: 2, sourceIn: 1, director: { nodeId: 'production', shotId: 'camera', storySources: [source] }, storyMediaSource: { projectId: board, path: 'canvas/media/a.png', outputs: [output] } }] } },
+    }
+    await writeFile(cutFile, JSON.stringify(cut, null, 2))
+    const cutSha = createHash('sha256').update(await readFile(cutFile)).digest('hex')
     const b = await story.apply(cwd, a.documentId, { expectedRevision: a.revision, operations: [{ kind: 'replaceBlock', blockId: 'profile', markdown: '### 她\n\n带走钥匙。' }] })
     await handoff.adopt(cwd, a.documentId, { expectedRevision: b.document.revision, objectId: 'person', boardId: board, targetNodeId: 'production', fields: ['prompt'], expectedTarget: { prompt: adopted.node.metadata.prompt as string, composerContent: adopted.node.metadata.composerContent as string } })
     const beforeBoard = await boards.read(board)
-    const beforeCut = await timeline.read()
     const items = (await new StoryImpact(story, handoff).read(cwd, a.documentId)).items
-    expect(items).toHaveLength(10) // two fields for each distinct use; duplicate history collapses
+    expect(items).toHaveLength(6) // two fields for each distinct use; duplicate history collapses
     expect(items.filter(item => item.field === 'prompt')).toEqual([
       expect.objectContaining({ sourceType: 'input', adoptedRevision: b.document.revision, status: 'unchanged' }),
       expect.objectContaining({ sourceType: 'output', adoptedRevision: a.revision, status: 'changed' }),
       expect.objectContaining({ sourceType: 'director', adoptedRevision: a.revision, status: 'changed' }),
-      expect.objectContaining({ sourceType: 'timeline-slot', clipId: 'clip', adoptedRevision: a.revision, status: 'changed' }),
-      expect.objectContaining({ sourceType: 'timeline-media', clipId: 'clip', adoptedRevision: a.revision, status: 'changed' }),
     ])
     expect(new Set(items.map(item => item.usageId)).size).toBe(items.length)
-    expect(items.filter(item => item.sourceType === 'output' || item.sourceType === 'timeline-media')).toEqual([
-      expect.objectContaining({ field: 'prompt', inputsChanged: true, manualChanged: false }),
-      expect.objectContaining({ field: 'references', inputsChanged: false }),
+    expect(items.every(item => !('clipId' in item) && ['input', 'output', 'director'].includes(item.sourceType ?? 'input'))).toBe(true)
+    expect(items.filter(item => item.sourceType === 'output')).toEqual([
       expect.objectContaining({ field: 'prompt', inputsChanged: true, manualChanged: false }),
       expect.objectContaining({ field: 'references', inputsChanged: false }),
     ])
     expect(await boards.read(board)).toEqual(beforeBoard)
-    expect(await timeline.read()).toEqual(beforeCut)
+    expect(createHash('sha256').update(await readFile(cutFile)).digest('hex')).toBe(cutSha)
   })
 })
 

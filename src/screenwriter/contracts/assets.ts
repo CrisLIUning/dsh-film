@@ -144,11 +144,10 @@ export interface StoryImpactResponse {
   documentId: string;
   currentRevision: string;
   items: Array<{
-    /** Stable identity of this use, including separate outputs and cut slots. */
+    /** Stable identity of this use, including separate outputs. */
     usageId?: string;
-    sourceType?: 'input' | 'output' | 'director' | 'timeline-media' | 'timeline-slot';
+    sourceType?: 'input' | 'output' | 'director';
     nodeId: string;
-    clipId?: string;
     directorShotId?: string;
     outputPath?: string;
     objectId: string;
@@ -175,19 +174,6 @@ export interface StoryOutputSource {
   model: string;
   mode: string;
   [key: string]: unknown;
-}
-
-/** Actual file provenance on a saved timeline clip. A replacement with an
- * untracked file writes null instead of inheriting the former output's source. */
-export interface StoryMediaSource {
-  projectId: string;
-  boardId: string;
-  path: string;
-  sha256: string;
-  outputs: StoryOutputSource[];
-  /** Director renders have camera/link snapshots, not a generation adoption. */
-  directorOutputs?: StoryDirectorOutputSource[];
-  directorReviews?: import("./director-review.js").DirectorReviewOrigin[];
 }
 
 export interface StoryDirectorLink {

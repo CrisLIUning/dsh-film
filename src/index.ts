@@ -1,17 +1,17 @@
 /**
- * dsh-film: a film workbench for DeepSeek Harness and VibeDev. Four tabs in
- * the chat's right sidebar — script, storyboard, editing and director desks —
- * work on one film per workspace, kept as files under `film/`.
+ * dsh-film: a film workbench for DeepSeek Harness and VibeDev. Three tabs in
+ * the chat's right sidebar — 剧本 (screenplays), 分镜 (the storyboard canvas)
+ * and 导演 (the director desk) — work on one film per workspace, kept as files
+ * under `film/`.
  *
- * This Host half serves the workbench: the project file, the workspace's
- * media listing and byte-range media playback. The routes exist only while a
- * client connection service runs (the desktop app or the web client). It also
- * gives the agent its film tools — `film_project` everywhere, and the
- * screenplay, storyboard and cut tools in conversations whose workspace is a
- * film — through the same API the workbench's pages call — and its skills
- * (the screenwriting skill) wherever DSH's skill registry runs. Original-audio
- * captions are recognised by the editing desk's Whisper in a hidden page of
- * an open window (the Host has no browser).
+ * This Host half serves the workbench: the project file, byte-range media
+ * playback, the Studio-compatible API the hosted canvas and desk call, and
+ * the hosted apps' files. The routes exist only while a client connection
+ * service runs (the desktop app or the web client). It also gives the agent
+ * its film tools — `film_project` everywhere, and the screenplay, storyboard
+ * and film task tools in conversations whose workspace is a film — through
+ * the same API the workbench's pages call — and its skills (the screenwriting
+ * skill) wherever DSH's skill registry runs.
  *
  * ```yaml
  * - insert:
@@ -21,8 +21,6 @@
  * @module dsh-film
  */
 
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -33,15 +31,9 @@ import type { MediaServiceLike } from './media/tasks.js'
 import type { AttachmentsLike, DefaultModelLike, LlmLike } from './canvas/text-models.js'
 import { CanvasBoardAgent } from './canvas/board-agent.js'
 import { createStudioRouter, filmRoutes } from './routes.js'
-import { EditorModels, defaultModelsRoot } from './models/service.js'
 import { ProjectEvents } from './studio/events.js'
-import { modelFileRoutes } from './studio/model-routes.js'
 import { applyFilmAgentTools } from './agent/index.js'
 import { registerFilmSkills } from './skills.js'
-import { CaptionRunnerHub } from './captions/runner.js'
-import { CaptionService } from './captions/service.js'
-import { whisperEngine } from './captions/engines.js'
-import { TimelineStore } from './timeline/store.js'
 
 export { FilmError } from './errors.js'
 export type { FilmErrorCode } from './errors.js'
@@ -57,16 +49,15 @@ export const name = 'dsh-film'
 export interface Config {
   /** Where the built apps are; empty for the package's own `apps/`. For developing an app against a live Host. */
   appsDir: string
-  /** Where the editing desk's AI models are kept; empty for `$DSH_HOME/cache/dsh-film/video-editor-models`. */
-  modelsDir: string
-  /** The ffmpeg the background render runs; empty to find one (the downloaded renderer, VibeDev Studio's, PATH...). */
-  ffmpegPath?: string
 }
 
+/**
+ * The settings. 0.1 had two more, for the cut tools it shipped then; a
+ * profile that still holds them loads, since the object schema leaves
+ * unknown keys alone instead of refusing them.
+ */
 export const Config: Schema<Config> = Schema.object({
   appsDir: Schema.string().default(''),
-  modelsDir: Schema.string().default(''),
-  ffmpegPath: Schema.string().default(''),
 })
 
 /** The package's built apps. */
@@ -89,28 +80,16 @@ export function apply(ctx: Context, config: Config): void {
     defaults: ctx.get('agentDefaultModel') as DefaultModelLike | undefined,
     attachments: ctx.get('attachments') as AttachmentsLike | undefined,
   })
-  // The editing desk's AI models: downloaded only after the person agrees, kept once per machine.
-  const models = new EditorModels({ root: config.modelsDir.trim() === '' ? defaultModelsRoot() : resolve(config.modelsDir.trim()) })
-  ctx.effect(() => () => { models.dispose() }, 'dsh-film: editor models')
   // One API for the pages and the agent: the agent's edits reach open pages as the pages' own do.
   const events = new ProjectEvents()
   const boardAgent = new CanvasBoardAgent()
-  // Captions: Whisper runs in a hidden page of an open window (the Host has no browser).
   const appsRoot = config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim()
-  const captionRunner = new CaptionRunnerHub({ pageAvailable: () => existsSync(join(appsRoot, 'editor', 'caption-runner.html')) })
-  ctx.effect(() => () => { captionRunner.dispose() }, 'dsh-film: caption runner')
-  const captions = new CaptionService({
-    tasks,
-    engine: whisperEngine({ models, runner: captionRunner }),
-    timelines: (cwd, projectId) => new TimelineStore(cwd, (path) => { events.emit(cwd, { type: 'file-changed', projectId, path }) }),
-  })
-  const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent, captions, ffmpegPath: config.ffmpegPath ?? '' })
+  const studio = createStudioRouter({ media, tasks, text, events, boardAgent })
   let projectCreated: (cwd: string) => void = () => {}
 
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.
   ctx.inject(['connection'], (scoped) => {
-    const routes = filmRoutes(studio, (cwd) => { projectCreated(cwd) }, captionRunner, events)
-    routes.push(...modelFileRoutes(models))
+    const routes = filmRoutes(studio, (cwd) => { projectCreated(cwd) }, events)
     for (const { app, directory } of findApps(appsRoot)) {
       const { files, skipped } = scanApp(app, directory)
       if (skipped.length > 0) {

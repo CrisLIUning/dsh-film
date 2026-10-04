@@ -8,7 +8,6 @@ import { Context } from '@deepseek-ai/cordis'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import * as Film from '../src/index.js'
 import { filmRoutes } from '../src/routes.js'
-import { packagedModelManifests } from '../src/models/service.js'
 import { ProjectEvents } from '../src/studio/events.js'
 import type { ProjectEvent } from '../src/studio/events.js'
 
@@ -92,7 +91,7 @@ describe('/api/dsh-film/project', () => {
     const events = new ProjectEvents()
     const seen: ProjectEvent[] = []
     events.subscribe(cwd, (event) => { seen.push(event) })
-    routes = new Map(filmRoutes(undefined, undefined, undefined, events).map(route => [route.path, route]))
+    routes = new Map(filmRoutes(undefined, undefined, events).map(route => [route.path, route]))
     const made = (await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))).body.project
     const renamed = await call('/api/dsh-film/project/update', {}, post({ cwd, title: '  雨夜来客 ' }))
     expect(renamed).toMatchObject({ status: 200, body: { project: { id: made.id, title: '雨夜来客', aspectRatio: '16:9' } } })
@@ -107,7 +106,7 @@ describe('/api/dsh-film/project', () => {
     expect(seen).toHaveLength(2)
   })
 
-  it('refuses an update with no film, nothing to change or a frame the editing desk lacks', async () => {
+  it('refuses an update with no film, nothing to change or a frame no longer offered', async () => {
     expect((await call('/api/dsh-film/project/update', {}, post({ cwd, title: 'x' }))).body.error.code).toBe('PROJECT_NOT_FOUND')
     expect((await call('/api/dsh-film/project/update', {}, post({ cwd, title: 'x' }))).status).toBe(404)
     await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))
@@ -139,20 +138,16 @@ describe('/api/dsh-film/project', () => {
   })
 })
 
-describe('/api/dsh-film/assets and /media', () => {
+describe('/api/dsh-film/media', () => {
   beforeEach(async () => {
     await mkdir(join(cwd, 'film'), { recursive: true })
     await writeFile(join(cwd, 'film', 'film.json'), JSON.stringify({ format: 'vibedev.film', version: 1, id: 'film-1', title: 'A', aspectRatio: '16:9', createdAt: 't', updatedAt: 't' }))
   })
 
-  it('lists the workspace\'s media and plays a file by its workspace-relative path', async () => {
+  it('plays a file by its workspace-relative path; the 0.1 shelf listing is gone', async () => {
     await mkdir(join(cwd, 'media', 'videos'), { recursive: true })
     await writeFile(join(cwd, 'media', 'videos', 'shot.mp4'), 'abcdefghij')
-    await mkdir(join(cwd, 'footage'), { recursive: true })
-    await writeFile(join(cwd, 'footage', 'take.mov'), 'mov')
-    const listing = await call('/api/dsh-film/assets', { cwd })
-    expect(listing.body.truncated).toBe(false)
-    expect(listing.body.assets.map((asset: { path: string }) => asset.path).sort()).toEqual(['footage/take.mov', 'media/videos/shot.mp4'])
+    expect(routes.has('/api/dsh-film/assets')).toBe(false)
     const media = await call('/api/dsh-film/media', { cwd, path: 'media/videos/shot.mp4' }, { headers: { range: 'bytes=2-4' } })
     expect(media.status).toBe(206)
     expect(await media.response.text()).toBe('cde')
@@ -193,33 +188,31 @@ describe('dsh-film plugin', () => {
       },
     })
     // An empty apps folder: the packaged apps/ may hold built apps with hundreds of routes.
-    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
-    const isModelFile = (entry: string) => entry.includes('/api/dsh-film/models/')
-    expect(registered.filter(entry => !isModelFile(entry))).toEqual([
+    const fiber = await ctx.plugin(Film, { appsDir: cwd })
+    const expected = [
       'GET,POST /api/dsh-film/project',
       'POST /api/dsh-film/project/update',
       'GET /api/dsh-film/runtime',
-      'GET /api/dsh-film/assets',
       'GET,HEAD /api/dsh-film/media',
       'GET,HEAD /api/dsh-film/studio',
       'POST /api/dsh-film/studio-write',
-      'GET /api/dsh-film/caption-runner/events',
-      'POST /api/dsh-film/caption-runner/claim',
-      'POST /api/dsh-film/caption-runner/progress',
-      'POST /api/dsh-film/caption-runner/result',
-      'GET,HEAD /api/dsh-film/caption-runner/source',
-    ])
-    // One route per file of every model the editor may download.
-    const files = packagedModelManifests().flatMap(model => model.artifacts.map(artifact => `GET,HEAD /api/dsh-film/models/${model.id}/${model.revision}/${artifact.id}`))
-    expect(registered.filter(isModelFile)).toEqual(files)
+    ]
+    expect(registered).toEqual(expected)
     await fiber.dispose()
-    expect(removed.filter(path => !isModelFile(path)).sort()).toEqual([
-      '/api/dsh-film/assets',
-      '/api/dsh-film/caption-runner/claim', '/api/dsh-film/caption-runner/events', '/api/dsh-film/caption-runner/progress',
-      '/api/dsh-film/caption-runner/result', '/api/dsh-film/caption-runner/source',
-      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/project/update', '/api/dsh-film/runtime', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
-    ])
-    expect(removed.filter(isModelFile)).toHaveLength(files.length)
+    expect(removed.sort()).toEqual(expected.map(entry => entry.split(' ')[1]).sort())
+  })
+
+  it('loads a profile that still holds the 0.1 settings modelsDir and ffmpegPath', async () => {
+    const registered: string[] = []
+    const ctx = new Context()
+    ctx.provide('connection')
+    ctx.set('connection', { fetch: { register(route: ConnectionFetchRoute) { registered.push(route.path); return async () => {} } } })
+    const stale = { appsDir: cwd, modelsDir: join(cwd, 'models'), ffmpegPath: join(cwd, 'ffmpeg.exe') }
+    expect(Film.Config(stale as Film.Config)).toMatchObject({ appsDir: cwd })
+    const fiber = await ctx.plugin(Film, stale as Film.Config)
+    expect(registered).toContain('/api/dsh-film/project')
+    expect(registered.some(path => path.includes('/models/') || path.includes('caption'))).toBe(false)
+    await fiber.dispose()
   })
 
   it('announces a project change on the event stream the hosted pages read', async () => {
@@ -227,7 +220,7 @@ describe('dsh-film plugin', () => {
     const ctx = new Context()
     ctx.provide('connection')
     ctx.set('connection', { fetch: { register(route: ConnectionFetchRoute) { served.set(route.path, route); return async () => {} } } })
-    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
+    const fiber = await ctx.plugin(Film, { appsDir: cwd })
     routes = served
     const made = (await call('/api/dsh-film/project', {}, post({ cwd, ensure: true }))).body.project
     const controller = new AbortController()

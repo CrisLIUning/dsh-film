@@ -1,14 +1,14 @@
 /**
  * What a saved screenplay's changes touch in production, ported from Studio's
  * StoryImpact (apps/daemon/src/screenwriter/impact.ts): every adopted field on
- * the board, every output generated from a source, every director-shot link
- * and every timeline clip that records a screenplay snapshot is compared with
- * the current saved screenplay, field by field. It reads only; no change here
- * adopts a new reference, rewrites an output or changes a timeline.
+ * the board, every output generated from a source and every director-shot link
+ * that records a screenplay snapshot is compared with the current saved
+ * screenplay, field by field. It reads only; no change here adopts a new
+ * reference or rewrites an output.
  *
- * The board is the film's one board (`film/canvas/document.json`) and the cut
- * its one timeline (`film/canvas/timeline.json`). Timeline items appear only
- * where clips carry `director.storySources` or `storyMediaSource`.
+ * The board is the film's one board (`film/canvas/document.json`). Studio also
+ * compares the clips of its cut; this workbench has no cut, and an old
+ * `film/canvas/timeline.json` is never read.
  * @module dsh-film/screenwriter/impact
  */
 
@@ -16,7 +16,6 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { StoryAdoption, StoryAdoptionField, StoryBindingScope, StoryFieldAdoption, StoryImpactItem, StoryImpactResponse, StorySourcePreview } from './contracts/index.js'
 import { CanvasDocumentStore } from '../canvas/documents.js'
-import { TimelineStore } from '../timeline/store.js'
 import { filmProjectOf } from './handoff.js'
 import type { StoryHandoff } from './handoff.js'
 import { StoryError } from './service.js'
@@ -26,7 +25,7 @@ const digest = (value: unknown): string => createHash('sha256').update(JSON.stri
 const record = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const referenceSelection = (source: StorySourcePreview) => source.references.map(reference => ({ assetId: reference.assetId, assetVersionId: reference.assetVersionId, sha256: reference.sha256 }))
-type Use = Pick<StoryImpactItem, 'nodeId' | 'title' | 'sourceType' | 'clipId' | 'outputPath' | 'directorShotId'> & { usageId: string }
+type Use = Pick<StoryImpactItem, 'nodeId' | 'title' | 'sourceType' | 'outputPath' | 'directorShotId'> & { usageId: string }
 
 export class StoryImpact {
   /**
@@ -36,8 +35,8 @@ export class StoryImpact {
   constructor(private readonly story: StoryService, private readonly handoff: StoryHandoff) {}
 
   /**
-   * Compare saved inputs, actual outputs and cut slots independently with the
-   * current saved screenplay.
+   * Compare saved inputs and actual outputs independently with the current
+   * saved screenplay.
    * @param cwd - the workspace directory.
    * @param documentId - the screenplay.
    * @returns one item per use and field.
@@ -46,8 +45,6 @@ export class StoryImpact {
     const projectId = (await filmProjectOf(cwd)).id
     const document = await this.story.get(cwd, documentId)
     const board = await new CanvasDocumentStore(cwd, projectId).read(projectId)
-    const timelineStore = new TimelineStore(cwd)
-    const timeline = await timelineStore.read()
     const result: StoryImpactResponse = { documentId, currentRevision: document.revision, items: [] }
     const previews = new Map<string, Promise<StorySourcePreview>>()
     const seen = new Set<string>()
@@ -128,63 +125,13 @@ export class StoryImpact {
         }
       }
     }
-    const project = record(record(timeline.document)?.project)
-    for (const track of ['visualSegments', 'visualOverlaySegments', 'audioSegments', 'musicSegments']) {
-      for (const raw of array(project?.[track])) {
-        const clip = record(raw)
-        if (typeof clip?.id !== 'string') continue
-        const director = record(clip.director)
-        const media = record(clip.storyMediaSource)
-        const use = { nodeId: typeof director?.nodeId === 'string' ? director.nodeId : '', title: typeof clip.name === 'string' ? clip.name : clip.id, clipId: clip.id, usageId: `clip:${track}:${clip.id}` }
-        await links({ ...use, sourceType: 'timeline-slot', ...(typeof director?.shotId === 'string' ? { directorShotId: director.shotId } : {}) }, director?.storySources)
-        if (media?.projectId !== projectId) continue
-        for (const [index, rawOutput] of array(media.outputs).entries()) {
-          const output = record(rawOutput)
-          if (!output) continue
-          await linkedSources({ ...use, sourceType: 'timeline-media', usageId: `${use.usageId}:media:${index}` }, output.sources)
-          await adoption({
-            ...use, sourceType: 'timeline-media', usageId: `${use.usageId}:media:${index}`, nodeId: typeof output.sourceNodeId === 'string' ? output.sourceNodeId : '',
-            ...(typeof media.path === 'string' ? { outputPath: media.path } : {}),
-          }, output.adoption, undefined, record(output.inputs))
-        }
-        for (const rawOutput of array(media.directorOutputs)) {
-          const output = record(rawOutput)
-          if (!output) continue
-          for (const rawShot of array(output.shots)) {
-            const shot = record(rawShot)
-            const shotId = typeof shot?.shotId === 'string' ? shot.shotId : ''
-            if (!shotId || !directorShotOverlapsClip(shot!, clip)) continue
-            await links({
-              ...use, sourceType: 'timeline-media', usageId: `${use.usageId}:director-media:${digest(output)}:${shotId}`, nodeId: typeof output.sourceNodeId === 'string' ? output.sourceNodeId : '',
-              directorShotId: shotId, ...(typeof media.path === 'string' ? { outputPath: media.path } : {}),
-            }, shot?.storySources)
-          }
-        }
-      }
-    }
-    // Findings must refer to one saved screenplay and one saved cut.
+    // Findings must refer to one saved screenplay.
     const latest = await this.story.get(cwd, documentId)
-    if (latest.revision !== document.revision || (await timelineStore.read()).revision !== timeline.revision) {
-      throw new StoryError(409, 'STORY_CONFLICT', 'The screenplay or timeline changed while checking production impact. Refresh the comparison.', latest)
+    if (latest.revision !== document.revision) {
+      throw new StoryError(409, 'STORY_CONFLICT', 'The screenplay changed while checking production impact. Refresh the comparison.', latest)
     }
     return result
   }
-}
-
-/**
- * Renders retain the full file's camera manifest. A trimmed video clip uses
- * only intersecting file ranges; sourceIn/sourceOut refer to director scene
- * time and must not be confused with the rendered file's start/end. Images
- * (including contact sheets) retain all represented cameras, even at t=0.
- */
-function directorShotOverlapsClip(shot: Record<string, unknown>, clip: Record<string, unknown>): boolean {
-  if (clip.type !== 'video' && clip.sourceKind !== 'video') return true
-  const start = typeof clip.sourceStart === 'number' ? clip.sourceStart : 0
-  const duration = clip.duration
-  const rate = typeof clip.playbackRate === 'number' ? clip.playbackRate : 1
-  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(start) || !Number.isFinite(rate) || rate <= 0
-    || typeof shot.start !== 'number' || typeof shot.end !== 'number' || shot.end <= shot.start) return true
-  return shot.start < start + duration * rate - 1e-6 && shot.end > start + 1e-6
 }
 
 /**

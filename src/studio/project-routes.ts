@@ -24,7 +24,7 @@ import { projectOf } from './canvas-routes.js'
 export const PROJECT_DIR = 'film'
 /** Studio's upload limit. */
 export const UPLOAD_LIMIT = 20 * 1024 * 1024
-/** The limit of a raw upload (an exported cut, a generated clip), streamed to disk. */
+/** The limit of a raw upload (a director render, a generated clip), streamed to disk. */
 export const RAW_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024
 
 /** Documents a browser could run scripts from; served in a sandbox. */

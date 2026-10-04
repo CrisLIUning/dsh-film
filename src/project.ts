@@ -1,7 +1,7 @@
 /**
  * The film project: one per workspace, described by `film/film.json`. The
  * project file names the film and its frame; the other parts (script,
- * storyboard, timeline, director scenes) live beside it under `film/`.
+ * storyboard, director scenes) live beside it under `film/`.
  *
  * The workbench creates the film the first time one of its tabs is on screen,
  * named after the workspace folder; the person renames it and picks its frame
@@ -29,15 +29,15 @@ export const PROJECT_FORMAT = 'vibedev.film'
 export const PROJECT_VERSION = 1
 
 /**
- * Frames a film can be given: exactly the editing desk's own set (the video
- * editor's `HOST_PROJECT_ASPECTS`), so a new cut opens in the film's frame.
+ * Frames a film can be given: the film frame the storyboard canvas and the
+ * director desk use (the set 0.1 shared with Studio's `HOST_PROJECT_ASPECTS`).
  */
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:5', '21:9', '2.39:1'] as const
 export type AspectRatio = typeof ASPECT_RATIOS[number]
 
 /**
- * Frames earlier versions offered that the editing desk does not cut in. A
- * film that has one keeps it and shows it as it is; it is never offered.
+ * Frames earlier versions offered that are no longer offered. A film that
+ * has one keeps it and shows it as it is; it is never offered.
  */
 export const LEGACY_ASPECT_RATIOS = ['4:3'] as const
 /** A frame a project file may hold. */
@@ -129,8 +129,8 @@ export function parseNewProject(input: unknown, cwd: string): NewProject {
 }
 
 /**
- * Validate a change to a project: a non-blank title, a frame the editing desk
- * cuts in, or both.
+ * Validate a change to a project: a non-blank title, one of the offered
+ * frames, or both.
  * @param input - the request body or tool arguments.
  * @returns the change.
  */
@@ -306,8 +306,7 @@ export async function createProject(
 
 /**
  * Rename the film or change its frame. The file is replaced atomically under
- * its lock, and fields this version does not know are kept. A frame applies to
- * new cuts; an existing cut keeps its own until it is changed in the editing desk.
+ * its lock, and fields this version does not know are kept.
  * @param cwd - the workspace directory.
  * @param change - the new title and/or frame.
  * @param now - the change time.

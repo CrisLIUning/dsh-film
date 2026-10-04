@@ -320,7 +320,11 @@ describe('reviews', () => {
     expect(staged.expectedFingerprint).toBe(fingerprint)
     expect(staged.request.ops.filter((op: any) => op.type === 'add_node').map((op: any) => op.id)).toEqual(Object.values(dry.body.handoff.nodeIds))
     expect(JSON.stringify(staged.request.ops)).toContain(`@[node:${dry.body.handoff.nodeIds.prompt}]`)
-    expect((await call('/api/director/review', { ...handoff, target: 'timeline', mode: 'append', dryRun: true })).body.code).toBe('DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE')
+    // This workbench has no cut: an older page asking for the timeline handoff gets a plain refusal.
+    expect(await call('/api/director/review', { ...handoff, target: 'timeline', mode: 'append', dryRun: true })).toMatchObject({
+      status: 400,
+      body: { code: 'DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE', error: '影视工作台没有剪辑台；审阅版只能交给画布生成。' },
+    })
   })
 
   it('needs a board and refuses an unknown version', async () => {

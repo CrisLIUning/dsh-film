@@ -3,9 +3,9 @@
  * reviewed render as its reference. Ported from Studio's
  * apps/daemon/src/director/review-handoff.ts — the same deterministic node
  * ids, request hash and metadata, sent to the open canvas page as
- * `director_stage_review`. The timeline handoff (Studio's `buildShotPlan`
- * over the cut) is not ported yet and is refused with
- * `DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE`.
+ * `director_stage_review`. This workbench has no cut to hand a review to, so
+ * Studio's timeline handoff (`buildShotPlan` over the cut) is refused with 400
+ * `DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE`; older canvas pages may still ask for it.
  * @module dsh-film/director/review-handoff
  */
 
@@ -48,7 +48,7 @@ export function generationFlowOpsWithIds(input: Record<string, unknown>, ids: { 
 export function createReviewHandoff(stage: StageReviewOnPage) {
   return async (scene: ReviewScene, review: DirectorReviewVersion, request: DirectorReviewHandoffRequest): Promise<DirectorReviewHandoffResult> => {
     if (request.target === 'timeline') {
-      throw new DirectorReviewError(501, 'DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE', '影视工作台还不能把审阅版直接交给剪辑；请用 timeline_edit 放入审阅视频')
+      throw new DirectorReviewError(400, 'DIRECTOR_REVIEW_TIMELINE_UNAVAILABLE', '影视工作台没有剪辑台；审阅版只能交给画布生成。')
     }
     const file = review.files.find(item => item.path === request.filePath)
     if (!file) return invalid('所选参考文件不属于这一版')

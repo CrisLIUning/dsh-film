@@ -51,7 +51,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 const { importWorkspaceFile } = await import('../src/canvas/workspace-import.js')
-const { invalidateWorkspaceMedia, listFilmMedia, scanWorkspaceMedia } = await import('../src/media.js')
+const { invalidateWorkspaceMedia, scanWorkspaceMedia } = await import('../src/media.js')
 const { CanvasAssetStore } = await import('../src/canvas/assets.js')
 
 let cwd: string
@@ -102,7 +102,7 @@ describe('importing', () => {
 })
 
 describe('cloud placeholders', () => {
-  it('are listed as the files they are, by the workspace scan, the film\'s listing and the canvas library', async () => {
+  it('are listed as the files they are, by the workspace scan and the canvas library', async () => {
     fs.placeholders.add('cloud.png')
     fs.placeholders.add('cloud.mp4')
     fs.placeholders.add('synced')
@@ -110,7 +110,6 @@ describe('cloud placeholders', () => {
     await file('synced/inside.mp4')
     await file('film/canvas/media/cloud.mp4')
     expect((await scanWorkspaceMedia(cwd)).files.map(entry => entry.path).sort()).toEqual(['media/cloud.png', 'synced/inside.mp4'])
-    expect((await listFilmMedia(cwd)).map(entry => entry.path)).toEqual(['canvas/media/cloud.mp4'])
     const library = await new CanvasAssetStore(cwd).read('film', 'film')
     expect(library.assets.map(asset => asset.filePath)).toEqual(['canvas/media/cloud.mp4'])
   })

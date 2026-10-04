@@ -1,12 +1,10 @@
 /**
- * The board's media, as the editing desk sees it (Studio's
- * `canvas-timeline-place.ts` listing and `canvas-board-landing.ts`).
+ * Film files on the board (Studio's `canvas-board-landing.ts`).
  *
  * The board is where a film's material collects — generations, renders,
  * files someone dropped in. Its media nodes play project files by Studio's
- * raw URL; those are the material the desk can place. A finished file (an
- * exported cut) is landed back on the board as a new node, right of
- * everything there. Studio asks the open board page to add that node; here
+ * raw URL. A file is put into an existing node, or landed on the board as a
+ * new node, right of everything there. Studio asks the open board page to add that node; here
  * the Host writes it into `film/canvas/document.json` under the board's lock
  * and announces the change, and an open canvas merges it in (its story-sync
  * refresh), so it works whether or not the page is open.
@@ -19,41 +17,13 @@ import type { CanvasDocument, CanvasDocumentStore } from './documents.js'
 
 export type BoardMediaKind = 'video' | 'image' | 'audio'
 
-/** One media node on the board that plays a file of the project. */
-export interface BoardMedia {
-  nodeId: string
-  title: string
-  /** The file, relative to `film/`. */
-  path: string
-  kind: BoardMediaKind
-  durationSeconds?: number
-  width?: number
-  height?: number
-}
-
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0
 
 /**
- * The project path a node's content URL plays, when it is a project file.
- * @param content - a node's `metadata.content`.
- * @returns the film-relative path, or `null`.
- */
-export function projectPathOfContent(content: unknown): string | null {
-  if (typeof content !== 'string') return null
-  const match = /^(?:https?:\/\/[^/]+)?\/api\/projects\/[^/]+\/raw\/(.+?)(?:[?#].*)?$/.exec(content)
-  if (match?.[1] === undefined) return null
-  try {
-    return match[1].split('/').map(part => decodeURIComponent(part)).join('/')
-  } catch {
-    return null
-  }
-}
-
-/**
- * The kind of media a file is, by extension, when the timeline can take it.
+ * The kind of media a file is, by extension, when the board can show it.
  * @param path - a file path.
  * @returns the kind, or `null`.
  */
@@ -63,39 +33,6 @@ export function mediaKindOfPath(path: string): BoardMediaKind | null {
   if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) return 'image'
   if (['mp3', 'wav', 'm4a'].includes(extension)) return 'audio'
   return null
-}
-
-/**
- * Every media node of the board that plays a project file, in board order. A
- * node still holding a browser blob is not material yet and is left out.
- * @param document - the board.
- * @returns its media.
- */
-export function listBoardMedia(document: unknown): BoardMedia[] {
-  const nodes = record(document)?.nodes
-  if (!Array.isArray(nodes)) return []
-  const media: BoardMedia[] = []
-  for (const raw of nodes) {
-    const node = record(raw)
-    if (node === null || typeof node.id !== 'string') continue
-    if (node.type !== 'video' && node.type !== 'image' && node.type !== 'audio') continue
-    const metadata = record(node.metadata)
-    const path = projectPathOfContent(metadata?.content)
-    if (path === null) continue
-    // The file decides what the cut can do with it, not the node's type.
-    const kind = mediaKindOfPath(path)
-    if (kind === null) continue
-    media.push({
-      nodeId: node.id,
-      title: typeof node.title === 'string' && node.title.trim() !== '' ? node.title.trim() : path.split('/').pop() ?? node.id,
-      path,
-      kind,
-      ...(positive(metadata?.durationMs) ? { durationSeconds: metadata.durationMs / 1000 } : {}),
-      ...(positive(metadata?.naturalWidth) ? { width: metadata.naturalWidth } : {}),
-      ...(positive(metadata?.naturalHeight) ? { height: metadata.naturalHeight } : {}),
-    })
-  }
-  return media
 }
 
 /** How wide a landed node may be. */
@@ -141,7 +78,7 @@ export interface LandFileInput {
   height?: number
   durationSeconds?: number
   size?: number
-  /** More of the node's metadata (a rendered cut's `timelineRevision`). */
+  /** More of the node's metadata. */
   metadata?: Record<string, unknown>
 }
 

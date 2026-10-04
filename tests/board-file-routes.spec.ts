@@ -1,10 +1,12 @@
-/** The board's import: a workspace media or model file copied into the film (C8). */
+/** The board's file routes: a workspace media or model file copied into the film (C8), the agent's attach, and the 0.1 paths that are gone. */
 
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { CanvasDocumentStore } from '../src/canvas/documents.js'
 import { invalidateWorkspaceMedia } from '../src/media.js'
+import { createProject } from '../src/project.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
 
@@ -138,6 +140,64 @@ describe('POST /api/canvas/assets/:boardId/import', () => {
       await expect(stat(join(cwd, 'film', 'canvas'))).rejects.toThrow()
     } finally {
       await rm(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('POST /api/canvas/assets/:boardId/attach', () => {
+  async function filmWithNode(): Promise<string> {
+    const { project } = await createProject(cwd, { title: 'A', aspectRatio: '16:9' })
+    await new CanvasDocumentStore(cwd, project.id).update(current => ({ ...current!, nodes: [{ id: 'img-1', type: 'image', position: { x: 10, y: 20 }, metadata: {} }] }))
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'still.png'), 'png')
+    return project.id
+  }
+
+  it('puts a film file into a node, or lands it as a new node, and tells open pages', async () => {
+    const id = await filmWithNode()
+    const seen: Array<{ type: string }> = []
+    const events = new ProjectEvents()
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    router = createStudioRouter({ events })
+    const attached = await call(`/api/canvas/assets/${id}/attach?project=${id}`, { method: 'POST', json: { path: 'canvas/media/still.png', targetNodeId: 'img-1', expectedContent: '' } })
+    expect(attached).toMatchObject({ status: 200, body: { landed: { nodeId: 'img-1', landedNodeId: 'img-1', kind: 'image', path: 'canvas/media/still.png', size: 3 } } })
+    const board = await new CanvasDocumentStore(cwd, id).read(id)
+    expect((board!.nodes as Array<{ id: string; metadata: Record<string, unknown> }>).find(node => node.id === 'img-1')!.metadata.content)
+      .toBe(`/api/projects/${id}/raw/canvas/media/still.png`)
+    const landed = await call(`/api/canvas/assets/${id}/attach?project=${id}`, { method: 'POST', json: { path: 'canvas/media/still.png' } })
+    expect(landed.body.landed.landedNodeId).toMatch(/^image-/u)
+    expect(seen.filter(event => event.type === 'story-canvas-changed')).toHaveLength(2)
+  })
+
+  it('refuses a path outside the film, a file that is not there and a type the board cannot show', async () => {
+    const id = await filmWithNode()
+    const attach = async (body: Record<string, unknown>) => {
+      const { status, body: answer } = await call(`/api/canvas/assets/${id}/attach?project=${id}`, { method: 'POST', json: body })
+      return [status, answer.code]
+    }
+    expect(await attach({ path: '../secret.png' })).toEqual([400, 'CANVAS_MEDIA_ATTACH_INVALID'])
+    expect(await attach({ path: 'canvas/media/notes.txt' })).toEqual([400, 'CANVAS_MEDIA_ATTACH_INVALID'])
+    expect(await attach({ path: 'canvas/media/none.png' })).toEqual([422, 'CANVAS_MEDIA_FILE_NOT_FOUND'])
+    expect(await attach({ path: 'canvas/media/still.png', targetNodeId: 'img-1' })).toEqual([400, 'CANVAS_MEDIA_TARGET_INVALID'])
+  })
+})
+
+describe('the 0.1 editing desk paths', () => {
+  it('are not available in this workbench', async () => {
+    await createProject(cwd, { title: 'A', aspectRatio: '16:9' })
+    const gone = [
+      ['GET', '/api/canvas/timelines/film-1'],
+      ['GET', '/api/canvas/timelines/film-1/material'],
+      ['GET', '/api/canvas/timelines/film-1/media'],
+      ['POST', '/api/canvas/timelines/film-1/media'],
+      ['POST', '/api/canvas/timelines/film-1/render'],
+      ['GET', '/api/community/media'],
+      ['GET', '/api/media/video-editor-models'],
+    ]
+    for (const [method, path] of gone) {
+      const answer = await call(path!, { method: method!, ...(method === 'POST' ? { json: {} } : {}) })
+      expect(answer.status, path).toBe(404)
+      expect(answer.body.error.message, path).toMatch(/not available in this workbench/u)
     }
   })
 })

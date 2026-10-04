@@ -125,7 +125,7 @@ export function createDirectorReviewService(deps:DirectorReviewDeps) {
         if(!Number.isInteger(input.expectedRevision)||input.expectedRevision!==review.revision)return fail('批注或确认已被其他操作更新，请刷新',409,'DIRECTOR_REVIEW_CONFLICT');
         if(input.action==='handoff') {
           checkFingerprint(scene,input.expectedFingerprint);checkFingerprint(scene,review.fingerprint);
-          if(review.decision!=='approved'||review.comments.some(comment=>!comment.resolvedAt))return fail('先确认这一版预演，再交给生成或剪辑',409,'DIRECTOR_REVIEW_NOT_APPROVED');
+          if(review.decision!=='approved'||review.comments.some(comment=>!comment.resolvedAt))return fail('先确认这一版预演，再交给画布生成',409,'DIRECTOR_REVIEW_NOT_APPROVED');
           if(typeof input.dryRun!=='boolean'||typeof input.operationId!=='string'||!input.operationId.trim()||input.operationId.length>200)return fail('交接需要 dryRun 和 operationId');
           for(const file of review.files){const identity=await mediaIdentity(scene.source.project,file.path);if(identity.sha256!==file.sha256||identity.bytes!==file.bytes)return fail('审阅文件已经改变，请重新生成这一版',409,'DIRECTOR_REVIEW_MEDIA_CHANGED');}
           checkFingerprint(await deps.readScene(scene.source),review.fingerprint);

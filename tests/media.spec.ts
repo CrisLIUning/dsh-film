@@ -7,7 +7,7 @@ import { FilmError } from '../src/errors.js'
 import { RANGE_CHUNK, parseRange } from '../src/files.js'
 import {
   WORKSPACE_CACHE_MS, WORKSPACE_MEDIA_DEPTH, WORKSPACE_MODEL_LIMIT, WorkspaceMediaError, checkWorkspaceFilePath, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia,
-  isSkippedDirName, listAssets, listFilmMedia, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceFile, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia,
+  isSkippedDirName, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceFile, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia,
   workspaceMediaUrl, workspaceModelTypeOf,
 } from '../src/media.js'
 import { ProjectEvents } from '../src/studio/events.js'
@@ -262,14 +262,15 @@ describe('serveMedia', () => {
     expect(await code(request('id.png', {}, join(outside, 'harmless')))).toBe('WORKSPACE_REFUSED')
   })
 
-  it('plays every file the film\'s own listing lists, build- and out-named folders under film/ too', async () => {
-    for (const path of ['film/out/x.png', 'film/build/y.png', 'film/models/m/dist/z.png', 'film/canvas/media/a.png']) await file(path)
+  it('plays the film\'s own files in build- and out-named folders under film/ too, but not inside node_modules', async () => {
+    const played = ['film/out/x.png', 'film/build/y.png', 'film/models/m/dist/z.png', 'film/canvas/media/a.png']
+    for (const path of played) await file(path)
     await file('film/models/m/node_modules/hidden.png')
-    for (const listed of await listFilmMedia(cwd)) {
-      const response = await serveMedia(request(`film/${listed.path}`))
-      expect(response.status, listed.path).toBe(200)
+    for (const path of played) {
+      const response = await serveMedia(request(path))
+      expect(response.status, path).toBe(200)
     }
-    expect((await listFilmMedia(cwd)).map(entry => entry.path).sort()).toEqual(['canvas/media/a.png', 'build/y.png', 'models/m/dist/z.png', 'out/x.png'].sort())
+    await expect(serveMedia(request('film/models/m/node_modules/hidden.png'))).rejects.toThrow(/never listed/u)
   })
 
   it('builds the URL pages play a workspace file from', () => {
@@ -411,53 +412,5 @@ describe('the workspace scanner', () => {
   it('names folders it never enters', () => {
     expect(['.git', 'node_modules', 'NODE_MODULES', 'dist.', 'pack-x', '.ssh', '.anything'].every(isSkippedDirName)).toBe(true)
     expect(['media', 'packages', 'footage', 'outputs', 'wt'].some(isSkippedDirName)).toBe(false)
-  })
-})
-
-describe('the film\'s listing', () => {
-  it('lists every media file under film/, past any count the workspace scan stops at', async () => {
-    for (let index = 0; index < 30; index++) await file(`film/canvas/media/${index}.png`)
-    await file('film/.versions/old.png')
-    await file('film/models/m/node_modules/x.png')
-    await file('film/models/m/build/capture.png')
-    await file('media/outside.png')
-    const listed = paths(await listFilmMedia(cwd))
-    expect(listed).toHaveLength(31)
-    expect(listed).toContain('models/m/build/capture.png')
-    expect(listed.every(path => !path.startsWith('.') && !path.includes('node_modules'))).toBe(true)
-  })
-})
-
-describe('listAssets', () => {
-  beforeEach(async () => {
-    await filmIn(cwd)
-  })
-
-  it('lists the film\'s media and the workspace\'s own, newest first', async () => {
-    await file('media/images/old.png', 'p', new Date('2026-10-01T00:00:00Z'))
-    await file('media/videos/new.mp4', 'v', new Date('2026-10-03T00:00:00Z'))
-    await file('film/media/voice.wav', 'a', new Date('2026-10-02T00:00:00Z'))
-    await file('footage/take.mov', 'm', new Date('2026-09-30T00:00:00Z'))
-    await file('media/.cache/hidden.png', 'h')
-    await file('media/node_modules/pkg/logo.png', 'n')
-    const { assets, truncated } = await listAssets(cwd)
-    expect(truncated).toBe(false)
-    expect(assets.map(asset => [asset.path, asset.kind, asset.bytes])).toEqual([
-      ['media/videos/new.mp4', 'video', 1],
-      ['film/media/voice.wav', 'audio', 1],
-      ['media/images/old.png', 'image', 1],
-      ['footage/take.mov', 'video', 1],
-    ])
-  })
-
-  it('stops at the limit and says so', async () => {
-    for (let index = 0; index < 5; index++) await file(`media/${index}.png`)
-    const { assets, truncated } = await listAssets(cwd, 3)
-    expect(assets).toHaveLength(3)
-    expect(truncated).toBe(true)
-  })
-
-  it('returns nothing for a workspace without media', async () => {
-    expect(await listAssets(cwd)).toEqual({ assets: [], truncated: false })
   })
 })

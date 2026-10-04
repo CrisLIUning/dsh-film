@@ -2,7 +2,7 @@
  * What a media file is, read from the file itself: length, picture size and
  * whether it carries sound.
  * mediabunny (MPL-2.0) reads the container in-process, so the Host half needs
- * no ffmpeg on the machine. A file it cannot read gives no facts, not an error.
+ * no media tools on the machine. A file it cannot read gives no facts, not an error.
  * @module dsh-film/media/probe
  */
 
@@ -14,7 +14,7 @@ export interface MediaFacts {
   /** Display size of the first picture track. */
   width?: number
   height?: number
-  /** Whether the file has a sound track (a rendered clip's own sound joins the mix only then). */
+  /** Whether the file has a sound track. */
   hasAudio?: boolean
 }
 
@@ -37,14 +37,4 @@ export async function probeMedia(path: string): Promise<MediaFacts> {
   } finally {
     input.dispose()
   }
-}
-
-/**
- * Whether a file carries a sound track, read without ffprobe (Studio asks
- * ffprobe; the Host need not have it).
- * @param path - the absolute file path.
- * @returns the answer, or `undefined` when the file could not be read.
- */
-export async function probeHasAudio(path: string): Promise<boolean | undefined> {
-  return (await probeMedia(path)).hasAudio
 }

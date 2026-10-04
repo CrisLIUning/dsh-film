@@ -8,10 +8,10 @@
  * Tasks are kept in `film/.tasks/<id>.json`, so a board reopened after a
  * restart can still pick up a running video.
  *
- * The same store holds local tasks — work the Host runs itself, such as
- * rendering the cut or recognising its speech — with the same wait and cancel
- * routes. A local task ends once: a cancel or a restart leaves it interrupted,
- * and a run that finishes afterwards cannot overwrite that.
+ * 0.1 kept local tasks here too (work the Host ran itself for the cut it had
+ * then). Their records still parse: the optional `kind`, `request`,
+ * `interruption` and `cancellation` fields stay, and a restart leaves an
+ * unfinished one interrupted, so an old task reads as interrupted.
  *
  * A reference may also be a Studio URL of the film's own files: a bound
  * screenplay reference version (`/api/projects/<id>/story/documents/<doc>/
@@ -73,7 +73,7 @@ export interface MediaTaskLike {
 
 export type FilmTaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'interrupted'
 
-/** The produced file, project-relative (the project is the workspace's `film/`), plus what a local task adds (a recognition's draft). */
+/** The produced file, project-relative (the project is the workspace's `film/`), plus what an old local task added. */
 export interface FilmTaskFile {
   name: string
   size: number
@@ -92,7 +92,8 @@ export interface FilmTaskError {
   stage?: string
 }
 
-export type FilmTaskSurface = 'image' | 'video' | 'audio' | 'video-editor'
+/** What a task generates. An old local task's record may name a surface no longer listed here. */
+export type FilmTaskSurface = 'image' | 'video' | 'audio'
 
 /** One task as it is stored. */
 export interface FilmTask {
@@ -108,37 +109,14 @@ export interface FilmTask {
   error?: FilmTaskError | null
   /** dsh-media's task, for videos. */
   mediaTaskId?: string
-  /** Work the Host runs itself. */
+  /** Work the Host ran itself (0.1 records only). */
   kind?: 'local'
-  /** What a local task was asked to do: its capability, idempotency key and parameters. */
+  /** What an old local task was asked to do: its capability, idempotency key and parameters. */
   request?: { capability: string; requestId?: string; parameters?: Record<string, unknown> }
-  /** What a restart of the Host leaves a running local task as. */
+  /** What a restart of the Host leaves an old running local task as. */
   interruption?: FilmTaskError
-  /** What a cancel leaves a local task as. */
+  /** What a cancel left an old local task as. */
   cancellation?: FilmTaskError
-}
-
-/** A local task to start. */
-export interface LocalTaskSpec {
-  surface: FilmTaskSurface
-  model: string
-  capability: string
-  requestId?: string
-  parameters?: Record<string, unknown>
-  /** The first progress line. */
-  started?: string
-  /** What a restart of the Host leaves the task as (default: a generic interruption). */
-  interruption?: FilmTaskError
-  /** What a cancel leaves the task as (default: `MEDIA_TASK_CANCELED`). */
-  cancellation?: FilmTaskError
-}
-
-/** What a local task's body works with. */
-export interface LocalTaskContext {
-  taskId: string
-  signal: AbortSignal
-  /** Add a progress line (a repeat of the last one is dropped). */
-  progress(line: string): void
 }
 
 /** One answer to a wait: new progress lines since `since`, and where to continue. */
@@ -279,23 +257,7 @@ function errorOf(error: unknown): FilmTaskError {
   }
 }
 
-/** A local task's failure: its own HTTP status when it names one (a recognition timeout is 504, not a gateway 502). */
-function localErrorOf(error: unknown): FilmTaskError {
-  const status = (error as { status?: unknown } | undefined)?.status
-  const base = errorOf(error)
-  // A local task's own error already says what happened (why a recognition or a render stopped, say):
-  // keep its words instead of the generic dsh-media message for the same code.
-  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600
-    ? { ...base, ...(error instanceof Error ? { message: base.code !== undefined && error.message.startsWith(`${base.code}: `) ? error.message.slice(base.code.length + 2) : error.message } : {}), status }
-    : base
-}
-
-/** What a cancelled local task reports: its own cancellation, or the generic one. */
-function canceledError(task: FilmTask): FilmTaskError {
-  return task.cancellation ?? { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 }
-}
-
-/** What a local task the Host stopped reports (a restart, or the plugin unloading): its own interruption, or the generic one. */
+/** What a task the Host stopped reports (a restart): its own interruption, or the generic one. */
 function interruptedError(task: FilmTask): FilmTaskError {
   return task.interruption ?? { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
 }
@@ -584,7 +546,7 @@ export class FilmMediaTasks {
         const remote = await media.task(task.mediaTaskId).catch(() => undefined)
         if (remote !== undefined) this.follow(cwd, task, media, remote)
       } else if (task.mediaTaskId === undefined) {
-        // An image request, a render or a recognition does not survive a restart of the Host.
+        // An image request, or an old local task, does not survive a restart of the Host.
         this.change(cwd, task, { status: 'interrupted', error: interruptedError(task) }, '已中断')
       }
     }
@@ -641,52 +603,9 @@ export class FilmMediaTasks {
    * @param taskId - the canvas task.
    */
   async cancel(cwd: string, taskId: string): Promise<void> {
-    const task = await this.load(cwd, taskId)
+    // Loading settles an old task left unfinished by a restart (it reads as interrupted).
+    await this.load(cwd, taskId)
     this.running.get(this.key(cwd, taskId))?.abort(new Error('cancelled'))
-    // A local task stops here and now; its body's late end changes nothing.
-    if (task?.kind === 'local' && !TERMINAL.has(task.status)) {
-      this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
-    }
-  }
-
-  /**
-   * Start work the Host runs itself, as a task the canvas, the editing desk
-   * and the agent can wait on and cancel.
-   * @param cwd - the workspace.
-   * @param projectId - the film's project id (echoed in snapshots).
-   * @param spec - what the task is.
-   * @param run - the work; its result is the task's file, its failure the task's error.
-   * @returns the task id.
-   */
-  async startLocal(cwd: string, projectId: string, spec: LocalTaskSpec, run: (context: LocalTaskContext) => Promise<FilmTaskFile>): Promise<{ taskId: string; status: FilmTaskStatus }> {
-    const taskId = randomUUID()
-    const task: FilmTask = {
-      taskId, projectId, surface: spec.surface, model: spec.model, status: 'running', startedAt: Date.now(), endedAt: null,
-      progress: [spec.started ?? '已开始'], error: null, kind: 'local',
-      request: { capability: spec.capability, ...(spec.requestId !== undefined ? { requestId: spec.requestId } : {}), ...(spec.parameters !== undefined ? { parameters: spec.parameters } : {}) },
-      ...(spec.interruption !== undefined ? { interruption: spec.interruption } : {}),
-      ...(spec.cancellation !== undefined ? { cancellation: spec.cancellation } : {}),
-    }
-    const key = this.key(cwd, taskId)
-    this.tasks.set(key, task)
-    await this.save(cwd, task)
-    const controller = new AbortController()
-    this.running.set(key, controller)
-    const context: LocalTaskContext = { taskId, signal: controller.signal, progress: (line) => { this.change(cwd, task, {}, line) } }
-    void (async () => {
-      try {
-        const file = await run(context)
-        this.change(cwd, task, { status: 'done', file }, '完成')
-      } catch (error) {
-        // Stopped because the plugin is unloading: what a restart leaves it as, not a cancel the person made.
-        if (controller.signal.reason instanceof TasksDisposedError) this.change(cwd, task, { status: 'interrupted', error: interruptedError(task) }, '已中断')
-        else if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
-        else this.change(cwd, task, { status: 'failed', error: localErrorOf(error) }, '失败')
-      } finally {
-        if (this.running.get(key) === controller) this.running.delete(key)
-      }
-    })()
-    return { taskId, status: task.status }
   }
 
   /**
@@ -717,7 +636,7 @@ export class FilmMediaTasks {
     return tasks.sort((left, right) => right.startedAt - left.startedAt)
   }
 
-  /** Stop following dsh-media tasks and stop the running work (the plugin is unloading): a local task ends interrupted, as after a restart. */
+  /** Stop following dsh-media tasks and stop the running work (the plugin is unloading). */
   dispose(): void {
     for (const stop of this.following.values()) stop()
     this.following.clear()

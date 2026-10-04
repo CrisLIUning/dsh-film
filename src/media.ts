@@ -74,7 +74,7 @@ export function workspaceModelTypeOf(path: string): { format: WorkspaceModelForm
 
 /** One media file of the workspace. */
 export interface MediaAsset {
-  /** Relative to the workspace (or to `film/` for {@link listFilmMedia}), with `/` separators. */
+  /** Relative to the workspace, with `/` separators. */
   path: string
   kind: MediaKind
   bytes: number
@@ -147,7 +147,7 @@ export class WorkspaceMediaError extends Error {
 /**
  * Check a workspace-relative media path without touching the disk: what the
  * scanners could list, and nothing else — the workspace scan outside `film/`,
- * the film's own listing ({@link listFilmMedia}) below it.
+ * the film's own files below it.
  * @param raw - the path as sent, with `/` or `\` separators.
  * @returns the path with `/` separators and no leading `./`.
  */
@@ -484,42 +484,6 @@ export async function listWorkspaceMedia(cwd: string): Promise<WorkspaceMediaLis
 export function invalidateWorkspaceMedia(cwd?: string): void {
   if (cwd === undefined) cache.clear()
   else cache.delete(resolve(cwd))
-}
-
-/**
- * Every media file of the film (under `film/`), newest first, with paths
- * relative to `film/`. No count limit: a film file left out of the editing
- * desk's list is a clip it drops on its next save. Only hidden entries and
- * `node_modules` are skipped, the same rule {@link checkWorkspaceMediaPath}
- * applies below `film/`, so every file listed here can be played.
- * @param cwd - the workspace directory.
- * @returns the files.
- */
-export async function listFilmMedia(cwd: string): Promise<MediaAsset[]> {
-  const { files } = await walkMedia(join(cwd, FILM_DIR), {
-    depth: 32,
-    files: Number.POSITIVE_INFINITY,
-    entries: Number.POSITIVE_INFINITY,
-    deadline: Number.POSITIVE_INFINITY,
-    skip: isFilmSkippedDirName,
-  })
-  return files.sort(newestFirst)
-}
-
-/** The workbench shelf lists at most this many files. */
-export const ASSET_LIMIT = 500
-
-/**
- * The workbench shelf: the film's media (as `film/…`) and the workspace's own,
- * newest first.
- * @param cwd - the workspace directory.
- * @param limit - the most files to return.
- * @returns the files and whether the list is incomplete.
- */
-export async function listAssets(cwd: string, limit = ASSET_LIMIT): Promise<{ assets: MediaAsset[]; truncated: boolean }> {
-  const [film, workspace] = await Promise.all([listFilmMedia(cwd), listWorkspaceMedia(cwd)])
-  const all = [...film.map(file => ({ ...file, path: `${FILM_DIR}/${file.path}` })), ...workspace.files].sort(newestFirst)
-  return { assets: all.slice(0, limit), truncated: workspace.truncated || all.length > limit }
 }
 
 /** The route that plays workspace media. */

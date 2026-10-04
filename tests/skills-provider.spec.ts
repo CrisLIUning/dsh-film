@@ -104,7 +104,7 @@ describe('the plugin and the skill registry', () => {
     const ctx = new Context()
     ctx.provide('skills')
     ctx.set('skills', skills)
-    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
+    const fiber = await ctx.plugin(Film, { appsDir: cwd })
     expect(skills.providers).toHaveLength(1)
     expect((await skills.providers[0]!.list({ cwd })).map(skill => skill.name)).toEqual(['film-screenwriting'])
     await fiber.dispose()
@@ -112,7 +112,7 @@ describe('the plugin and the skill registry', () => {
 
   it('loads without a skill registry', async () => {
     const ctx = new Context()
-    const fiber = await ctx.plugin(Film, { appsDir: cwd, modelsDir: join(cwd, 'models') })
+    const fiber = await ctx.plugin(Film, { appsDir: cwd })
     await fiber.dispose()
   })
 })

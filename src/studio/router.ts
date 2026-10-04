@@ -1,6 +1,6 @@
 /**
  * A Studio-compatible API for the original apps this plugin hosts (canvas,
- * editing desk, director desk) and for the workbench's own screens. The apps
+ * director desk) and for the workbench's own screens. The apps
  * keep calling Studio's daemon paths; in their DSH build a small fetch wrapper
  * sends every such call to one Host route instead:
  *

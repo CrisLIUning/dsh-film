@@ -1,6 +1,6 @@
 /**
- * Hosting the original film apps — the storyboard canvas, the editing desk
- * and the director desk — inside the Host. Each app's built files live in
+ * Hosting the original film apps — the storyboard canvas, with the director
+ * desk inside it — inside the Host. Each app's built files live in
  * the package under `apps/<app>/` and are served from
  * `/api/dsh-film/apps/<app>/<path>`, which the workbench loads in a frame.
  *

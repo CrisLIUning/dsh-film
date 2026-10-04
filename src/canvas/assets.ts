@@ -98,7 +98,7 @@ export function mediaKindFor(filePath: string): string | null {
   return KIND_BY_EXTENSION.get(extensionOf(filePath)) ?? null
 }
 
-/** The identity a file has as an asset, shared with the editing desk's cut segments. */
+/** The identity a file has as an asset in the library. */
 export const canvasAssetIdFor = (filePath: string): string => `canvas-file:${filePath}`
 
 interface ScannedFile { filePath: string; sizeBytes: number; mtimeMs: number }
@@ -248,8 +248,8 @@ export interface CanvasWorkspaceFile {
 /**
  * The workspace's own media the board can show (the canvas's image, video
  * and audio types), newest first, from the shared workspace scan. A file the
- * film already imported and that has not changed since is left out, as the
- * editing desk's material leaves it out: the library shows the film's copy.
+ * film already imported and that has not changed since is left out: the
+ * library shows the film's copy.
  * @param cwd - the workspace directory.
  * @returns the files.
  */
