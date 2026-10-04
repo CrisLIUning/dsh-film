@@ -25,4 +25,7 @@ export const FILM_GUIDANCE = [
   '',
   '### Cut',
   'timeline_query first: its revision is what timeline_edit quotes, and clip ids are real ids. Preview with dryRun:true, then apply with the same operationId. timeline_edit sound with script {storyDocumentId} turns a screenplay\'s dialogue into captions on the cut.',
+  '',
+  '### Director desk',
+  'A director node on the board holds a 3D blocking scene. director_query reads it (structure, sample, events for the fingerprint, diagnostics, actions) and director_stage changes it from a plan of ops: dryRun first, apply with the fingerprint you read, and read the diagnostics before calling it done. Both work with the 导演 tab closed (on the saved node) and with it open (on the desk\'s live scene). director_render, director_render_status/cancel, director_inspect_model and review versions need the desk open in the 导演 tab: if a call says it is not, ask the person to open it. Look at renders with read_image. A review is confirmed only when the person accepts that exact version.',
 ].join('\n')

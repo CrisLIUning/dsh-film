@@ -53,7 +53,7 @@ async function screenplay(): Promise<StoryDocument> {
 describe('the director scene fingerprint', () => {
   it('matches the desk\'s FNV-1a value, on the project as stored, through an envelope', () => {
     // Values computed with the director desk's own src/editor/schema/projectFingerprint.ts.
-    expect(getDirectorProjectFingerprint(scene)).toBe('fnv1a32-8465d5af')
+    expect(getDirectorProjectFingerprint(scene as never)).toBe('fnv1a32-8465d5af')
     expect(fingerprintOfStoredScene({ project: scene })).toBe('fnv1a32-8465d5af')
     expect(fingerprintOfStoredScene({ project: { ...scene, activeCameraId: 'different' } })).toBe('fnv1a32-b840cd79')
     expect(fingerprintOfStoredScene({ ...scene, version: 16 })).toBeNull()

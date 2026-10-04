@@ -30,6 +30,7 @@ import { CanvasTextModels } from './canvas/text-models.js'
 import type { TextServices } from './canvas/text-models.js'
 import { addTimelineRoutes } from './studio/timeline-routes.js'
 import { addModelRoutes } from './studio/model-routes.js'
+import { addDirectorRoutes } from './studio/director-routes.js'
 import type { EditorModels } from './models/service.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
@@ -138,6 +139,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addStoryExchangeRoutes(router, { story, events })
   addStoryProductionRoutes(router, { story, events, boardAgent })
   addCanvasRoutes(router, events, boardAgent)
+  addDirectorRoutes(router, { events, boardAgent })
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)

@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { canvasTools } from './canvas-tools.js'
 import type { FilmToolServices } from './context.js'
+import { directorTools } from './director-tools.js'
 import { FILM_GUIDANCE } from './guidance.js'
 import { installFilmAgentTools } from './install.js'
 import { filmProjectTool } from './project-tool.js'
@@ -32,6 +33,7 @@ export function filmAgentTools(services: FilmToolServices): ToolDefinition[] {
     ...storyExchangeTools(services),
     ...storyProductionTools(services),
     ...canvasTools(services), ...timelineTools(services),
+    ...directorTools(services),
   ]
 }
 

@@ -46,6 +46,10 @@ export function refusal(status: number, payload: unknown): FilmToolError {
   if (Array.isArray(body.diagnostics) && body.diagnostics.length > 0) notes.push(`diagnostics: ${JSON.stringify(body.diagnostics.slice(0, 10))}`)
   if (Array.isArray(body.paths) && body.paths.length > 0) notes.push(`paths: ${JSON.stringify(body.paths.slice(0, 20))}`)
   if (typeof body.operationId === 'string') notes.push(`operation: ${body.operationId}`)
+  // Director refusals name what the next call needs: the nodes to choose from, the step that failed, the scene's current fingerprint.
+  if (Array.isArray(body.directorNodes)) notes.push(`directorNodes: ${JSON.stringify(body.directorNodes.slice(0, 20))}`)
+  if (typeof body.op === 'number') notes.push(`op index: ${body.op}`)
+  if (typeof body.fingerprint === 'string') notes.push(`current fingerprint: ${body.fingerprint}`)
   return new FilmToolError(code, `${code}: ${message}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`)
 }
 
