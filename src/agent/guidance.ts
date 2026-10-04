@@ -25,6 +25,7 @@ export const FILM_GUIDANCE = [
   '',
   '### Cut',
   'timeline_query first: its revision is what timeline_edit quotes, and clip ids are real ids. Preview with dryRun:true, then apply with the same operationId. timeline_edit sound with script {storyDocumentId} turns a screenplay\'s dialogue into captions on the cut.',
+  'For captions of the original dialogue use timeline_transcribe, then media_get_task, then timeline_apply_captions (review the draft, reviewed:true dryRun:true, apply, read back). Recognition is a background task; a done task is a saved draft, not applied captions, and if the cut moved on since, read it again and recognise again. Engines: whisper (free, local, runs in a hidden page of an open window, needs model consent) or gateway (Mandarin only, paid per minute, audio uploaded); there is no fallback between them, so a failure is reported, not routed around. Never substitute script text for recognised speech.',
   '',
   '### Director desk',
   'The director_* tools are the director tool group: a conversation starts with it when the board has a director node; otherwise enable it with film_tools.',

@@ -40,6 +40,42 @@ export interface MediaServiceLike {
   startVideo(request: VideoServiceRequest, target: MediaTarget, signal: AbortSignal): Promise<MediaTaskLike>
   task(id: string): Promise<MediaTaskLike | undefined>
   onTask(id: string, listener: (task: MediaTaskLike) => void): () => void
+  /** Transcribe one recording through the gateway (dsh-media 0.1.3+; feature-detect it). */
+  transcribe?(request: TranscribeServiceRequest, target: { cwd: string }, signal: AbortSignal, spending?: TranscribeSpending): Promise<TranscribeServiceResult>
+}
+
+/** One transcription (dsh-media's `TranscribeRequest`). */
+export interface TranscribeServiceRequest {
+  file?: string
+  data?: Uint8Array
+  mimeType?: string
+  name?: string
+  language?: string
+  model?: string
+  /** The same key with the same file name and bytes answers with the same gateway task (no second charge). */
+  idempotencyKey?: string
+  background?: boolean
+  timestamps?: boolean
+}
+
+/** Whether the cost was confirmed, or the agent tool call dsh-media's setting asks through (dsh-media's `HostSpending`). */
+export interface TranscribeSpending {
+  confirmed?: boolean
+  agent?: unknown
+  callId?: string
+}
+
+/** A finished transcription (dsh-media's `TranscribeResult`); `segments` only when the gateway returns timings. */
+export interface TranscribeServiceResult {
+  model: string
+  text: string
+  language: string
+  name: string
+  seconds?: number
+  segments?: readonly { start: number; end: number; text: string }[]
+  taskId?: string
+  estimatedCny?: string
+  chargedCny?: string
 }
 
 export interface MediaTarget { cwd: string; folder: string; stem: string }
@@ -272,6 +308,13 @@ function errorOf(error: unknown): FilmTaskError {
     status,
     ...typeof coded?.details?.retryable === 'boolean' ? { retryable: coded.details.retryable } : {},
   }
+}
+
+/** A local task's failure: its own HTTP status when it names one (a recognition timeout is 504, not a gateway 502). */
+function localErrorOf(error: unknown): FilmTaskError {
+  const status = (error as { status?: unknown } | undefined)?.status
+  const base = errorOf(error)
+  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600 ? { ...base, status } : base
 }
 
 /** The screenplay services a task resolves bound references with, when none are given. */
@@ -629,7 +672,7 @@ export class FilmMediaTasks {
         this.change(cwd, task, { status: 'done', file }, '完成')
       } catch (error) {
         if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 } }, '已取消')
-        else this.change(cwd, task, { status: 'failed', error: errorOf(error) }, '失败')
+        else this.change(cwd, task, { status: 'failed', error: localErrorOf(error) }, '失败')
       } finally {
         if (this.running.get(key) === controller) this.running.delete(key)
       }

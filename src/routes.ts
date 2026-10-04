@@ -7,6 +7,7 @@
  *   an existing project is answered with 409 and left as it is.
  * - `GET  /api/dsh-film/assets?cwd=` — media files under `media/` and `film/`.
  * - `GET|HEAD /api/dsh-film/media?path=` — one media file, with byte ranges.
+ * - `/api/dsh-film/caption-runner/*` — the caption runner's windows (see captions/runner).
  * @module dsh-film/routes
  */
 
@@ -34,6 +35,10 @@ import { addDirectorRoutes } from './studio/director-routes.js'
 import type { EditorModels } from './models/service.js'
 import { addModelingRoutes } from './studio/modeling-routes.js'
 import type { ModelEnvironment } from './modeling/contracts/model-project.js'
+import { captionRunnerRoutes } from './captions/runner.js'
+import type { CaptionRunnerHub } from './captions/runner.js'
+import type { CaptionService } from './captions/service.js'
+import { addCaptionRoutes } from './studio/caption-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -109,9 +114,10 @@ async function assets(request: Request): Promise<Response> {
  * The routes this plugin registers.
  * @param studio - the Studio-compatible API.
  * @param projectCreated - told when a workspace gets its film project (the agent's film tools come with it).
+ * @param captionRunner - the caption runner, whose windows' routes are served too.
  * @returns the route list.
  */
-export function filmRoutes(studio: StudioRouter = createStudioRouter(), projectCreated: (cwd: string) => void = () => {}): ConnectionFetchRoute[] {
+export function filmRoutes(studio: StudioRouter = createStudioRouter(), projectCreated: (cwd: string) => void = () => {}, captionRunner?: CaptionRunnerHub): ConnectionFetchRoute[] {
   return [
     { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(projectRoute(projectCreated)) },
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
@@ -122,6 +128,8 @@ export function filmRoutes(studio: StudioRouter = createStudioRouter(), projectC
     // with a body is refused before it reaches the handler.
     { path: `${ROUTE_PREFIX}/studio`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: request => studio.dispatch(request) },
     { path: `${ROUTE_PREFIX}/studio-write`, methods: ['POST'], requestBody: 'streaming', fetch: request => studio.dispatch(request) },
+    // The caption runner serves every workspace from each open window, so its routes take no cwd.
+    ...(captionRunner !== undefined ? captionRunnerRoutes(captionRunner) : []),
   ]
 }
 
@@ -150,6 +158,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     return video?.nativeAudio
   })
   if (options.models !== undefined) addModelRoutes(router, options.models)
+  if (options.captions !== undefined) addCaptionRoutes(router, options.captions)
   addModelingRoutes(router, { events, ...(options.modelEnvironment !== undefined ? { environment: options.modelEnvironment } : {}) })
   return router
 }
@@ -169,4 +178,6 @@ export interface StudioRouterOptions {
   models?: EditorModels
   /** The procedural-model panel's environment probe (tests replace it). */
   modelEnvironment?: () => Promise<ModelEnvironment>
+  /** Original-audio captions; without it the caption endpoints are not offered. */
+  captions?: CaptionService
 }

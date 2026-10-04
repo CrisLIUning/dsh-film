@@ -116,12 +116,22 @@ describe('dsh-film plugin', () => {
       'GET,HEAD /api/dsh-film/media',
       'GET,HEAD /api/dsh-film/studio',
       'POST /api/dsh-film/studio-write',
+      'GET /api/dsh-film/caption-runner/events',
+      'POST /api/dsh-film/caption-runner/claim',
+      'POST /api/dsh-film/caption-runner/progress',
+      'POST /api/dsh-film/caption-runner/result',
+      'GET,HEAD /api/dsh-film/caption-runner/source',
     ])
     // One route per file of every model the editor may download.
     const files = packagedModelManifests().flatMap(model => model.artifacts.map(artifact => `GET,HEAD /api/dsh-film/models/${model.id}/${model.revision}/${artifact.id}`))
     expect(registered.filter(isModelFile)).toEqual(files)
     await fiber.dispose()
-    expect(removed.filter(path => !isModelFile(path)).sort()).toEqual(['/api/dsh-film/assets', '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write'])
+    expect(removed.filter(path => !isModelFile(path)).sort()).toEqual([
+      '/api/dsh-film/assets',
+      '/api/dsh-film/caption-runner/claim', '/api/dsh-film/caption-runner/events', '/api/dsh-film/caption-runner/progress',
+      '/api/dsh-film/caption-runner/result', '/api/dsh-film/caption-runner/source',
+      '/api/dsh-film/media', '/api/dsh-film/project', '/api/dsh-film/studio', '/api/dsh-film/studio-write',
+    ])
     expect(removed.filter(isModelFile)).toHaveLength(files.length)
   })
 

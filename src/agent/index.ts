@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { CANVAS_DOCUMENT_FILE } from '../canvas/documents.js'
 import { canvasTools } from './canvas-tools.js'
+import { captionTools } from './caption-tools.js'
 import { jsonOutput, plain } from './context.js'
 import type { FilmToolServices } from './context.js'
 import { directorTools } from './director-tools.js'
@@ -42,6 +43,7 @@ export function filmCoreTools(services: FilmToolServices): ToolDefinition[] {
     ...storyExchangeTools(services),
     ...storyProductionTools(services),
     ...canvasTools(services), ...timelineTools(services),
+    ...captionTools(services),
   ]
 }
 

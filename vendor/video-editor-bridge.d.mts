@@ -33,3 +33,34 @@ export type VideoEditorCommandExecutionResult =
   | { ok: false; code: string; message: string; operationId?: string }
 
 export function executeVideoEditorCommandPlan(document: JsonObject, plan: VideoEditorCommandPlan): VideoEditorCommandExecutionResult
+
+/** What a cut's final mix plays, by the render's audibility rules (captions plan their sources from it). */
+export interface NativeTimelineMediaRequirements {
+  visuals: Record<string, unknown>[]
+  overlays: Record<string, unknown>[]
+  stickers: Record<string, unknown>[]
+  audioSegments: Record<string, unknown>[]
+  musicSegments: Record<string, unknown>[]
+  /** Clips whose own sound plays: the processed source-audio lane's segments, then visuals with embedded sound. */
+  sourceAudio: Record<string, unknown>[]
+  analyses: Record<string, unknown>[]
+}
+
+export function getNativeTimelineFfmpegMediaRequirements(project: Record<string, unknown>): NativeTimelineMediaRequirements
+
+/** The timing fields of a clip that map timeline time to source time (constant speed or a speed curve). */
+export interface TimelineSourceClip {
+  duration: number
+  sourceStart?: number
+  sourceDuration?: number
+  playbackRate?: number
+  speedCurve?: unknown
+  [key: string]: unknown
+}
+
+/** Source seconds at `t` seconds into the clip. */
+export function getTimelineSourceTime(clip: TimelineSourceClip, t: number): number
+/** Seconds into the clip at which source second `s` plays. */
+export function getTimelineLocalTime(clip: TimelineSourceClip, s: number): number
+/** Whether a value is a version 3 Timeline Studio archive. */
+export function isTimelineArchive(value: unknown): boolean
