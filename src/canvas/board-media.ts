@@ -189,3 +189,69 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
 class BoardGoneError extends Error {
   override name = 'BoardGoneError'
 }
+
+/** Why a file could not be attached to a node (Studio's `CanvasTimelinePlaceError` codes). */
+export class BoardAttachError extends Error {
+  override name = 'BoardAttachError'
+
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message)
+  }
+}
+
+export interface AttachFileInput extends LandFileInput {
+  /** The reviewed media node the file goes into. */
+  targetNodeId: string
+  /** The node's content as it was read (empty for an empty node); anything else means it changed meanwhile. */
+  expectedContent: string
+  /** The file's SHA-256, so attaching the same file again changes nothing. */
+  sha256: string
+}
+
+/**
+ * Put an already saved project file into an existing media node — the node
+ * a screenplay handoff or a staged flow made — keeping its place, links and
+ * source (Studio's `attachBoardMedia`). It goes through the board's own
+ * writer, so it works with the page closed; an open page merges it in.
+ * @param store - the board's store.
+ * @param boardId - the board.
+ * @param projectId - the project id the board's URLs name.
+ * @param input - the file, the node and the content the node was read with.
+ * @returns the node's id.
+ */
+export async function attachFileToNode(store: CanvasDocumentStore, boardId: string, projectId: string, input: AttachFileInput): Promise<string> {
+  const content = `/api/projects/${encodeURIComponent(projectId)}/raw/${input.path.split('/').map(encodeURIComponent).join('/')}`
+  await store.update((current): CanvasDocument => {
+    if (current === null || current.id !== boardId) throw new BoardAttachError(404, 'CANVAS_DOCUMENT_NOT_FOUND', 'The target board no longer exists.')
+    const nodes = current.nodes as Array<Record<string, unknown>>
+    const target = nodes.find(node => node.id === input.targetNodeId)
+    if (target === undefined) throw new BoardAttachError(404, 'CANVAS_MEDIA_TARGET_NOT_FOUND', 'The target node no longer exists. Re-read canvas_get_state.')
+    if (target.type !== input.kind) throw new BoardAttachError(422, 'CANVAS_MEDIA_TARGET_KIND', 'The file type does not match the target media node.')
+    const metadata = record(target.metadata) ?? {}
+    if (metadata.content === content && record(metadata.attachedMedia)?.sha256 === input.sha256) return current
+    if ((typeof metadata.content === 'string' ? metadata.content : '') !== input.expectedContent || metadata.status === 'loading') {
+      throw new BoardAttachError(409, 'CANVAS_MEDIA_TARGET_CHANGED', 'The target changed or is generating. Re-read it before attaching this file.')
+    }
+    const { error: _error, errorDetails: _errorDetails, ...kept } = metadata
+    return {
+      ...current,
+      updatedAt: new Date().toISOString(),
+      nodes: nodes.map(node => node !== target ? node : {
+        ...node,
+        metadata: {
+          ...kept,
+          content,
+          storageKey: '',
+          status: 'success',
+          mimeType: input.mimeType,
+          ...(positive(input.size) ? { bytes: input.size } : {}),
+          ...(positive(input.width) ? { naturalWidth: input.width } : {}),
+          ...(positive(input.height) ? { naturalHeight: input.height } : {}),
+          ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
+          attachedMedia: { path: input.path, sha256: input.sha256 },
+        },
+      }),
+    }
+  })
+  return input.targetNodeId
+}

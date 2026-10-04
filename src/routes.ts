@@ -18,6 +18,7 @@ import { StoryService } from './screenwriter/service.js'
 import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
+import type { CanvasBoardAgent } from './canvas/board-agent.js'
 import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
@@ -81,11 +82,12 @@ async function jsonBody(request: Request): Promise<unknown> {
   }
 }
 
-async function project(request: Request): Promise<Response> {
+const projectRoute = (created: (cwd: string) => void) => async (request: Request): Promise<Response> => {
   if (request.method === 'POST') {
     const body = await jsonBody(request)
     const cwd = await workspaceDirectory(typeof body === 'object' && body !== null ? (body as { cwd?: string }).cwd : undefined)
     const result = await createProject(cwd, parseNewProject(body))
+    if (result.created) created(cwd)
     return result.created
       ? json(201, { project: result.project })
       : json(409, { error: { code: 'PROJECT_EXISTS', message: 'This workspace already has a film project.' }, project: result.project })
@@ -101,11 +103,13 @@ async function assets(request: Request): Promise<Response> {
 
 /**
  * The routes this plugin registers.
+ * @param studio - the Studio-compatible API.
+ * @param projectCreated - told when a workspace gets its film project (the agent's film tools come with it).
  * @returns the route list.
  */
-export function filmRoutes(studio: StudioRouter = createStudioRouter()): ConnectionFetchRoute[] {
+export function filmRoutes(studio: StudioRouter = createStudioRouter(), projectCreated: (cwd: string) => void = () => {}): ConnectionFetchRoute[] {
   return [
-    { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(project) },
+    { path: `${ROUTE_PREFIX}/project`, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: answering(projectRoute(projectCreated)) },
     { path: `${ROUTE_PREFIX}/assets`, methods: ['GET'], requestBody: 'buffered', fetch: answering(assets) },
     { path: `${ROUTE_PREFIX}/media`, methods: ['GET', 'HEAD'], requestBody: 'buffered', fetch: answering(serveMedia) },
     // The Studio-compatible API on two routes: reads, and writes with streamed
@@ -123,12 +127,12 @@ export function filmRoutes(studio: StudioRouter = createStudioRouter()): Connect
  */
 export function createStudioRouter(options: StudioRouterOptions = {}): StudioRouter {
   const router = new StudioRouter()
-  const events = new ProjectEvents()
+  const events = options.events ?? new ProjectEvents()
   const media = options.media ?? (() => undefined)
   addScreenwriterRoutes(router, new StoryService(), (cwd, documentId, revision) => {
     events.emit(cwd, { type: 'story-changed', documentId, revision })
   })
-  addCanvasRoutes(router, events)
+  addCanvasRoutes(router, events, options.boardAgent)
   addMediaRoutes(router, options.tasks ?? new FilmMediaTasks(media), media)
   addProjectRoutes(router, events)
   addTimelineRoutes(router, events)
@@ -141,6 +145,10 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
 }
 
 export interface StudioRouterOptions {
+  /** The project event bus, shared with the agent's film tools so their edits reach open pages. */
+  events?: ProjectEvents
+  /** The open canvas pages, shared with the agent's canvas tools. */
+  boardAgent?: CanvasBoardAgent
   /** dsh-media's `vibedevMedia` service, when it is running. */
   media?: () => MediaServiceLike | undefined
   /** The canvas's media tasks (one per plugin instance, disposed with it). */

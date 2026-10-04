@@ -23,9 +23,11 @@
  * @module dsh-film/studio/timeline-routes
  */
 
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { copyFile, lstat, mkdir, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
-import { landFileOnBoard, listBoardMedia, mediaKindOfPath } from '../canvas/board-media.js'
+import { BoardAttachError, attachFileToNode, landFileOnBoard, listBoardMedia, mediaKindOfPath } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
 import { listAssets, mediaTypeOf } from '../media.js'
 import type { MediaKind } from '../media.js'
@@ -76,6 +78,16 @@ export interface WorkspaceMediaFile {
 }
 
 const editorMedia = (path: string): boolean => EDITOR_MEDIA.has(extname(path).slice(1).toLowerCase())
+
+function sha256File(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    createReadStream(path)
+      .on('data', chunk => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => { resolve(hash.digest('hex')) })
+  })
+}
 
 /**
  * The film's media as the editor's authorization list, and the workspace's
@@ -141,7 +153,7 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
       if (error instanceof TimelineConflictError) throw new StudioReply(409, { error: error.message, code: error.code, current: await store.read() })
       if (error instanceof TimelineInvalidError) throw new StudioReply(400, { error: error.message, code: error.code })
       if (error instanceof TimelineCommandError) throw new StudioReply(422, { error: error.message, code: error.code, ...(error.operationId !== undefined ? { operationId: error.operationId } : {}) })
-      if (error instanceof TimelinePlaceError || error instanceof TimelineVersionError || error instanceof TimelineSoundError) throw new StudioReply(error.status, { error: error.message, code: error.code })
+      if (error instanceof TimelinePlaceError || error instanceof TimelineVersionError || error instanceof TimelineSoundError || error instanceof BoardAttachError) throw new StudioReply(error.status, { error: error.message, code: error.code })
       if (error instanceof CanvasDocumentUpdateError) throw new StudioReply(409, { error: error.message, code: error.code })
       throw error
     }
@@ -255,6 +267,9 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
 
   router.add('POST', '/api/canvas/timelines/:boardId/media', async (request) => {
     const body = await request.json()
+    if (body.targetNodeId !== undefined && (typeof body.targetNodeId !== 'string' || body.targetNodeId === '' || typeof body.expectedContent !== 'string')) {
+      throw new StudioReply(400, { error: 'targetNodeId requires expectedContent from the reviewed node (empty string for an empty node)', code: 'CANVAS_MEDIA_TARGET_INVALID' })
+    }
     const path = typeof body.path === 'string' ? body.path.trim().replaceAll('\\', '/').replace(/^\.\//, '') : ''
     if (path === '' || path.startsWith('/') || path.split('/').some(part => part === '..' || part === '.' || part === '')) {
       throw new StudioReply(400, { error: 'path must be a project-relative file inside the project', code: 'CANVAS_TIMELINE_PLACE_INVALID' })
@@ -271,7 +286,7 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
     const height = given('height') ?? probed.height
     const durationSeconds = given('durationSeconds') ?? probed.durationSeconds
     const title = typeof body.title === 'string' && body.title.trim() !== '' ? body.title.trim().slice(0, 120) : path.split('/').pop() ?? path
-    const landedNodeId = await answering(request, storeOf(request), () => landFileOnBoard(boardOf(request), request.params.boardId!, projectOf(request), {
+    const file = {
       path,
       kind,
       mimeType: mediaTypeOf(path)?.type ?? 'application/octet-stream',
@@ -280,7 +295,13 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
       ...(height !== undefined ? { height } : {}),
       ...(durationSeconds !== undefined ? { durationSeconds } : {}),
       size: info.size,
-    }))
+    }
+    const targetNodeId = typeof body.targetNodeId === 'string' ? body.targetNodeId : undefined
+    const landedNodeId = await answering(request, storeOf(request), async () => targetNodeId === undefined
+      ? landFileOnBoard(boardOf(request), request.params.boardId!, projectOf(request), file)
+      : attachFileToNode(boardOf(request), request.params.boardId!, projectOf(request), {
+        ...file, targetNodeId, expectedContent: body.expectedContent as string, sha256: await sha256File(absolute),
+      }))
     if (landedNodeId !== null) events.emit(request.cwd, { type: 'story-canvas-changed', projectId: projectOf(request), boardId: request.params.boardId! })
     return {
       landed: {

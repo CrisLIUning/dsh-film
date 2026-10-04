@@ -103,7 +103,11 @@ export function addCanvasRoutes(router: StudioRouter, events: ProjectEvents, age
   })
   router.add('POST', '/api/canvas/agent/result', async (request) => {
     try {
-      const accepted = agent.resolve(parseLease(await request.json()))
+      const body = await request.json()
+      const answer = typeof body.requestId === 'string' && body.requestId !== ''
+        ? { requestId: body.requestId, result: body.result, error: body.error, sequence: body.sequence }
+        : undefined
+      const accepted = agent.resolve(parseLease(body), answer)
       if (!accepted) throw new StudioReply(409, { ok: false, code: 'CANVAS_BOARD_RESULT_UNCONFIRMED' })
       return { ok: true }
     } catch (error) {

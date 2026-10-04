@@ -1,0 +1,413 @@
+/** The agent's film tools, called the way the agent loop calls them, against a real workspace. */
+
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { filmAgentTools } from '../src/agent/index.js'
+import type { FilmToolServices } from '../src/agent/index.js'
+import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
+import { filmProjectTool } from '../src/agent/project-tool.js'
+import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
+import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
+import { applyBoardOps } from '../src/canvas/board-ops.js'
+import type { BoardOp, BoardSnapshot } from '../src/canvas/board-ops.js'
+import { createStudioRouter } from '../src/routes.js'
+import { ProjectEvents } from '../src/studio/events.js'
+import type { ProjectEvent } from '../src/studio/events.js'
+import type { EventStream } from '../src/studio/sse.js'
+
+let cwd: string
+let events: ProjectEvents
+let boardAgent: CanvasBoardAgent
+let services: FilmToolServices
+let created: string[]
+let tools: Map<string, ToolDefinition>
+
+beforeEach(async () => {
+  cwd = await mkdtemp(join(tmpdir(), 'dsh-film-agent-'))
+  events = new ProjectEvents()
+  boardAgent = new CanvasBoardAgent()
+  created = []
+  services = { studio: createStudioRouter({ events, boardAgent }), boardAgent, events, projectCreated: (dir) => { created.push(dir) } }
+  tools = new Map([filmProjectTool(services), ...filmAgentTools(services)].map(tool => [tool.name, tool]))
+})
+
+afterEach(async () => {
+  await rm(cwd, { recursive: true, force: true })
+})
+
+function exec(folder: string | undefined = cwd): ToolRunContext {
+  return {
+    agent: { session: { header: { cwd: folder } } },
+    signal: new AbortController().signal,
+    callId: 'call-1', rootCallId: 'call-1', name: 'test', arguments: {}, token: Symbol('call'),
+    deferContext() {}, concludeTurn() {},
+  } as unknown as ToolRunContext
+}
+
+async function run(name: string, args: Record<string, unknown> = {}, folder?: string): Promise<any> {
+  const tool = tools.get(name)
+  if (tool === undefined) throw new Error(`no tool ${name}`)
+  return tool.execute(args, exec(folder ?? cwd))
+}
+
+async function startFilm(): Promise<{ id: string; title: string }> {
+  return (await run('film_project', { action: 'create', title: '雨夜来客' })).project
+}
+
+const savedBoard = async (): Promise<any> => JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8'))
+
+describe('the tool set', () => {
+  it('defines every tool once, with schemas the registry accepts', () => {
+    expect([...tools.keys()]).toEqual([
+      'film_project',
+      'story_query', 'story_create', 'story_apply_ops', 'story_history', 'story_checkpoint', 'story_restore', 'story_revert',
+      'canvas_list_clients', 'canvas_get_state', 'canvas_get_selection', 'canvas_read_node', 'canvas_get_generation_status', 'canvas_get_document',
+      'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
+      'canvas_apply_ops', 'canvas_attach_media',
+      'timeline_query', 'timeline_edit',
+    ])
+    for (const tool of tools.values()) {
+      expect(tool.parameters).toMatchObject({ type: 'object' })
+      expect(tool.description.length).toBeGreaterThan(40)
+    }
+  })
+
+  it('refuses arguments that do not match the schema before running', async () => {
+    await startFilm()
+    await expect(run('story_apply_ops', { documentId: 'doc_1', operations: [] })).rejects.toThrow(/expectedRevision/)
+  })
+})
+
+describe('film_project', () => {
+  it('reads the workspace\'s film and starts one once', async () => {
+    expect(await run('film_project', { action: 'status' })).toEqual({ project: null, note: 'This workspace has no film project.' })
+    const made = await run('film_project', { action: 'create', title: '雨夜来客', aspectRatio: '9:16' })
+    expect(made).toMatchObject({ created: true, project: { title: '雨夜来客', aspectRatio: '9:16' } })
+    expect(created).toEqual([cwd])
+    expect(await run('film_project', { action: 'create', title: '别的' })).toMatchObject({ created: false, project: { title: '雨夜来客' } })
+    expect(created).toEqual([cwd])
+    expect((await run('film_project', { action: 'status' })).project.id).toBe(made.project.id)
+  })
+
+  it('names a new film after its folder when no title is given', async () => {
+    const folder = join(cwd, '短片计划')
+    await mkdir(folder)
+    expect((await run('film_project', { action: 'create' }, folder)).project.title).toBe('短片计划')
+  })
+
+  it('leaves the other tools to a workspace with a film', async () => {
+    await expect(run('story_query')).rejects.toThrow(/FILM_NO_PROJECT/)
+    await expect(run('canvas_get_state')).rejects.toThrow(/FILM_NO_PROJECT/)
+  })
+})
+
+describe('screenplay tools', () => {
+  it('create, read, preview, apply, name, revert — through the screenwriter\'s revisions', async () => {
+    await startFilm()
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    const made = await run('story_create', { title: '第一集' })
+    expect(made).toMatchObject({ changed: true, document: { title: '第一集', kind: 'short', filePath: expect.stringMatching(/^film\/story\/doc_.+\.md$/u) } })
+    const { documentId, revision } = made.document as { documentId: string; revision: string }
+    expect(revision).toMatch(/^[a-f0-9]{64}$/u)
+    expect((await run('story_query')).documents).toEqual([expect.objectContaining({ documentId, title: '第一集' })])
+    expect(await run('story_query', { documentId })).toMatchObject({ documentId, revision, kind: 'index' })
+
+    const operations = [{ kind: 'appendBlock', block: { id: 'block_open', kind: 'action', markdown: '雨夜，客栈的门被推开。\n' } }]
+    const preview = await run('story_apply_ops', { documentId, expectedRevision: revision, operations, dryRun: true, operationId: 'op_open' })
+    expect(preview).toMatchObject({ changed: true, dryRun: true, changedIds: ['block_open'], preview: [{ id: 'block_open', kind: 'action', markdown: expect.stringContaining('客栈') }] })
+    expect((await run('story_query', { documentId })).revision).toBe(revision)
+
+    const applied = await run('story_apply_ops', { documentId, expectedRevision: revision, operations, operationId: 'op_open' })
+    expect(applied).toMatchObject({ changed: true, operationId: 'op_open', changedIds: ['block_open'] })
+    const next = applied.document.revision as string
+    expect(next).not.toBe(revision)
+    expect(seen).toContainEqual({ type: 'story-changed', documentId, revision: next })
+    // The same request again is answered, not applied twice.
+    expect(await run('story_apply_ops', { documentId, expectedRevision: revision, operations, operationId: 'op_open' })).toMatchObject({ changed: false })
+    await expect(run('story_apply_ops', { documentId, expectedRevision: revision, operations: [{ kind: 'appendBlock', block: { id: 'block_two', kind: 'action', markdown: '又一段。\n' } }] }))
+      .rejects.toThrow(/STORY_CONFLICT.*current revision: [a-f0-9]{64}/u)
+    expect((await run('story_query', { documentId, kind: 'content' })).content).toContain('客栈的门被推开')
+
+    expect((await run('story_history', { documentId })).versions.length).toBeGreaterThan(1)
+    expect((await run('story_checkpoint', { documentId, expectedRevision: next, label: '初稿' })).version).toMatchObject({ label: '初稿' })
+    expect(await run('story_revert', { documentId, expectedRevision: next, operationId: 'op_open' })).toMatchObject({ changed: true })
+    expect((await run('story_query', { documentId, kind: 'content' })).content).not.toContain('客栈的门被推开')
+  })
+})
+
+describe('storyboard tools with no page open', () => {
+  it('build, read and change the saved board, and announce each change', async () => {
+    const film = await startFilm()
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    expect(await run('canvas_get_state')).toMatchObject({ source: 'persisted', empty: true, nodes: [] })
+    expect(await run('canvas_list_clients')).toMatchObject({ boardId: film.id, clients: [], note: 'No storyboard page is open.' })
+
+    const made = await run('canvas_create_text_nodes', { items: [{ text: '第一镜：雨夜门口', title: '镜 1' }, { text: '第二镜：来客进门' }] })
+    expect(made).toMatchObject({ source: 'persisted', resultView: 'changes', totalNodeCount: 2, removedNodeIds: [] })
+    expect(made.nodes).toHaveLength(2)
+    const board = await savedBoard()
+    expect(board).toMatchObject({ id: film.id, title: '雨夜来客' })
+    expect(board.nodes.map((node: any) => [node.type, node.title, node.metadata.content, node.position])).toEqual([
+      ['text', '镜 1', '第一镜：雨夜门口', { x: 0, y: 0 }],
+      ['text', '文本', '第二镜：来客进门', { x: 380, y: 0 }],
+    ])
+    expect(seen).toContainEqual({ type: 'story-canvas-changed', projectId: film.id, boardId: film.id })
+
+    const [first, second] = board.nodes as Array<{ id: string }>
+    expect((await run('canvas_get_state')).nodes).toHaveLength(2)
+    expect((await run('canvas_connect_nodes', { connections: [{ fromNodeId: first!.id, toNodeId: second!.id }] })).connections).toHaveLength(1)
+    const renamed = await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: first!.id, patch: { title: '开场' } }] })
+    expect(renamed.nodes).toEqual([expect.objectContaining({ id: first!.id, title: '开场' })])
+    await expect(run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'nope' }] })).rejects.toThrow(/CANVAS_OP_INVALID.*does not exist/u)
+    await expect(run('canvas_apply_ops', { ops: [{ type: 'add_node', nodeType: 'pack:custom' }] })).rejects.toThrow(/only be added while the storyboard is open/u)
+    await expect(run('canvas_run_generation', { nodeId: first!.id })).rejects.toThrow(/CANVAS_BOARD_NOT_OPEN/)
+    await expect(run('canvas_create_generation_flow', { prompt: '雨夜', autoRun: true })).rejects.toThrow(/CANVAS_BOARD_NOT_OPEN/)
+
+    const flow = await run('canvas_create_generation_flow', { prompt: '雨夜客栈门口，电影感', referenceNodeIds: [first!.id], mode: 'video' })
+    const flowNodes = flow.nodes as Array<{ id: string; type: string; metadata: Record<string, unknown> }>
+    expect(flowNodes.map(node => node.type)).toEqual(['text', 'config'])
+    const config = flowNodes[1]!
+    expect(config.metadata).toMatchObject({ generationMode: 'video', status: 'idle', prompt: `@[node:${flowNodes[0]!.id}]\n@[node:${first!.id}]` })
+    expect(flow.connections).toHaveLength(2)
+    expect(await run('canvas_get_generation_status', { nodeIds: [config.id, 'missing'] })).toMatchObject({
+      source: 'persisted', missingNodeIds: ['missing'], nodes: [{ id: config.id, type: 'config', outputNodeIds: [] }],
+    })
+
+    expect(await run('canvas_read_node', { nodeId: first!.id, field: 'content' })).toMatchObject({ content: '第一镜：雨夜门口', nextOffset: null })
+    expect(await run('canvas_get_document', { limit: 2 })).toMatchObject({ source: 'persisted', totalNodes: 4, nextOffset: 2 })
+    expect((await run('canvas_delete_nodes', { ids: [second!.id] })).removedNodeIds).toEqual([second!.id])
+    expect((await savedBoard()).nodes).toHaveLength(3)
+  })
+
+  it('shortens long text and leaves out bulky metadata in what the model reads', async () => {
+    await startFilm()
+    const long = '长'.repeat(500)
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'note', nodeType: 'text', metadata: { content: long } },
+      { type: 'add_node', id: 'desk', nodeType: 'director', metadata: { directorProject: { shots: Array.from({ length: 200 }, (_, index) => ({ id: `shot-${index}` })) } } },
+    ] })
+    const state = await run('canvas_get_state')
+    const note = state.nodes.find((node: any) => node.id === 'note')
+    expect(note.metadata.content).toHaveLength(121)
+    expect(note.truncatedFields).toEqual([{ field: 'content', totalLength: 500, previewLength: 120 }])
+    const desk = state.nodes.find((node: any) => node.id === 'desk')
+    expect(desk.metadata.directorProject).toBe('[object omitted]')
+    expect(desk.omittedFields).toEqual(['directorProject'])
+    const pages = [await run('canvas_read_node', { nodeId: 'note', field: 'content', limit: 300 })]
+    pages.push(await run('canvas_read_node', { nodeId: 'note', field: 'content', offset: pages[0].nextOffset, contentDigest: pages[0].contentDigest }))
+    expect(pages.map(page => page.content).join('')).toBe(long)
+  })
+})
+
+describe('storyboard tools with a page open', () => {
+  /** A canvas page: it takes its lease, reports its board and answers calls with the board's executor. */
+  function openPage(projectId: string, behaviour: { refuse?: string; silent?: boolean } = {}) {
+    const sent: Array<{ event: string; data: any }> = []
+    let board: BoardSnapshot = { projectId, title: '雨夜来客', nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } }
+    let lease!: BoardLease
+    let sequence = 1
+    let closed = false
+    const stream: EventStream = {
+      send(event, data) {
+        if (closed) return false
+        sent.push({ event, data })
+        if (event === 'tool_call' && behaviour.silent !== true) {
+          const call = data as { requestId: string; input: { ops: BoardOp[] } }
+          queueMicrotask(() => {
+            if (behaviour.refuse !== undefined) {
+              boardAgent.resolve(lease, { requestId: call.requestId, error: behaviour.refuse })
+              return
+            }
+            board = applyBoardOps(board, call.input.ops)
+            boardAgent.resolve(lease, { requestId: call.requestId, result: board, sequence: ++sequence })
+          })
+        }
+        return true
+      },
+      close() { closed = true },
+      get closed() { return closed },
+    }
+    const target: BoardTarget = { projectId, clientId: 'page-1', incarnation: 'load-1' }
+    const release = boardAgent.connect(target, stream)
+    const hello = sent[0]!.data as { generation: string; writeToken: string }
+    lease = { target, generation: hello.generation, writeToken: hello.writeToken }
+    boardAgent.setSnapshot(lease, board, sequence)
+    return { sent, target, lease, release, board: () => board }
+  }
+
+  it('sends writes to the page and reads the board it reports', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    expect((await run('canvas_list_clients')).clients).toEqual([{ target: page.target, boardId: film.id, ready: true, selectedNodeIds: [] }])
+    const made = await run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })
+    expect(made).toMatchObject({ source: 'live', target: page.target, totalNodeCount: 1 })
+    expect(page.sent.find(item => item.event === 'tool_call')!.data).toMatchObject({
+      target: page.target, name: 'canvas_apply_ops', input: { boardId: film.id, project: film.id, ops: [{ type: 'add_node', nodeType: 'text' }] },
+    })
+    // The page saves its own board; the tool wrote nothing behind it.
+    await expect(readFile(join(cwd, 'film', 'canvas', 'document.json'))).rejects.toThrow()
+    // The answer is the page's new board: reads see it straight away.
+    expect(await run('canvas_get_state')).toMatchObject({ source: 'live', nodes: [{ metadata: { content: '镜 1' } }] })
+    expect((await run('canvas_get_selection')).nodes).toEqual([expect.objectContaining({ metadata: expect.objectContaining({ content: '镜 1' }) })])
+  })
+
+  it('reports a page\'s refusal, and a page that closes before it answers', async () => {
+    const film = await startFilm()
+    const refusing = openPage(film.id, { refuse: '没有这个节点' })
+    await expect(run('canvas_run_generation', { nodeId: 'n1' })).rejects.toThrow(/CANVAS_BOARD_REFUSED: 没有这个节点/u)
+    refusing.release()
+    const silent = openPage(film.id, { silent: true })
+    const pending = run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    silent.release()
+    await expect(pending).rejects.toThrow(/CANVAS_BOARD_GONE/)
+  })
+
+  it('refuses to write around a page that is still loading its board', async () => {
+    const film = await startFilm()
+    const sent: unknown[] = []
+    boardAgent.connect({ projectId: film.id, clientId: 'page-2', incarnation: 'load-2' }, { send: (_event, data) => { sent.push(data); return true }, close() {}, closed: false })
+    await expect(run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })).rejects.toThrow(/CANVAS_BOARD_NOT_READY/)
+  })
+})
+
+describe('canvas_attach_media', () => {
+  it('fills a reviewed node in place, once, and refuses a node that changed', async () => {
+    const film = await startFilm()
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'still.png'), 'png one')
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'other.png'), 'png two')
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'img-1', nodeType: 'image', position: { x: 10, y: 20 } }] })
+    const attached = await run('canvas_attach_media', { targetNodeId: 'img-1', path: 'canvas/media/still.png', expectedContent: '' })
+    expect(attached.landed).toMatchObject({ landedNodeId: 'img-1', kind: 'image', path: 'canvas/media/still.png' })
+    const url = `/api/projects/${film.id}/raw/canvas/media/still.png`
+    const node = (await savedBoard()).nodes.find((item: any) => item.id === 'img-1')
+    expect(node).toMatchObject({ position: { x: 10, y: 20 }, metadata: { content: url, status: 'success', mimeType: 'image/png', attachedMedia: { path: 'canvas/media/still.png' } } })
+    // The same file again changes nothing; another file against the old content is refused.
+    await run('canvas_attach_media', { targetNodeId: 'img-1', path: 'film/canvas/media/still.png', expectedContent: '' })
+    await expect(run('canvas_attach_media', { targetNodeId: 'img-1', path: 'canvas/media/other.png', expectedContent: '' })).rejects.toThrow(/CANVAS_MEDIA_TARGET_CHANGED/)
+    await expect(run('canvas_attach_media', { targetNodeId: 'missing', path: 'canvas/media/other.png', expectedContent: '' })).rejects.toThrow(/CANVAS_MEDIA_TARGET_NOT_FOUND/)
+  })
+
+  it('copies a file the media tools saved in the workspace into the film first', async () => {
+    await startFilm()
+    await mkdir(join(cwd, 'media'), { recursive: true })
+    await writeFile(join(cwd, 'media', 'gen.png'), 'generated')
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'img-2', nodeType: 'image' }] })
+    const attached = await run('canvas_attach_media', { targetNodeId: 'img-2', path: join(cwd, 'media', 'gen.png'), expectedContent: '' })
+    expect(attached.landed.path).toBe('canvas/media/gen.png')
+    expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'gen.png'), 'utf8')).toBe('generated')
+    await expect(run('canvas_attach_media', { targetNodeId: 'img-2', path: join(tmpdir(), 'elsewhere.png'), expectedContent: '' })).rejects.toThrow(/outside this workspace/u)
+  })
+})
+
+describe('timeline tools', () => {
+  it('reads the cut and the board\'s material, previews and applies a placement on the revision', async () => {
+    const film = await startFilm()
+    expect(await run('timeline_query')).toEqual({ revision: 0, empty: true, note: 'This film has no cut yet.' })
+    expect(await run('timeline_query', { kind: 'board' })).toEqual({ media: [], scripts: [] })
+    await mkdir(join(cwd, 'film', 'canvas', 'media'), { recursive: true })
+    await writeFile(join(cwd, 'film', 'canvas', 'media', 'still.png'), 'png')
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'img-1', nodeType: 'image', title: '客栈外景', metadata: { content: `/api/projects/${film.id}/raw/canvas/media/still.png` } },
+      { type: 'add_node', id: 'script', nodeType: 'text', metadata: { content: '老板：客官里面请。\n来客：一碗热汤。' } },
+    ] })
+    const offered = await run('timeline_query', { kind: 'board' })
+    expect(offered.media).toEqual([expect.objectContaining({ nodeId: 'img-1', kind: 'image', path: 'canvas/media/still.png' })])
+    expect(offered.scripts).toEqual([expect.objectContaining({ id: 'script', source: 'board', lineCount: 2 })])
+
+    await expect(run('timeline_edit', { place: { nodeId: 'img-1' } })).rejects.toThrow(/baseRevision/)
+    await expect(run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1' }, sound: { loudness: -14 } })).rejects.toThrow(/exactly one/)
+    const preview = await run('timeline_edit', { dryRun: true, place: { nodeId: 'img-1', durationSeconds: 3 } })
+    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+    expect(preview.result.before).toBeUndefined()
+    expect(preview.result.after).toBeUndefined()
+    const placed = await run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1', durationSeconds: 3 }, operationId: 'op-place' })
+    expect(placed).toMatchObject({ result: { committed: true, revision: 1 }, placed: { clipId: 'op-place-visuals', track: 'visuals', durationSeconds: 3 } })
+    expect(await run('timeline_query')).toMatchObject({ revision: 1, visuals: [{ id: 'op-place-visuals', start: 0, duration: 3 }] })
+    await expect(run('timeline_edit', { baseRevision: 0, place: { nodeId: 'img-1' } })).rejects.toThrow(/CANVAS_TIMELINE_CONFLICT.*current revision: 1/u)
+  })
+
+  it('previews a raw command plan against the current cut', async () => {
+    await startFilm()
+    const preview = await run('timeline_edit', { dryRun: true, operations: [{ id: 'ratio-1', type: 'project.set_ratio', ratio: '9:16' }] })
+    expect(preview.result).toMatchObject({ committed: false, revision: 0 })
+  })
+})
+
+describe('installing the tools into film conversations', () => {
+  type FakeAgent = { id: string; session: { header: { cwd?: string } }; tools: Set<string>; sections: Set<string>; ctx: unknown }
+
+  function fakeHost() {
+    const listeners = new Map<string, Array<(payload: { agent: FakeAgent }) => unknown>>()
+    const disposers: Array<() => unknown> = []
+    const live: FakeAgent[] = []
+    const ctx = {
+      agents: { list: () => [...live] },
+      on: (name: string, listener: (payload: { agent: FakeAgent }) => unknown) => { listeners.set(name, [...(listeners.get(name) ?? []), listener]) },
+      effect: (start: () => () => unknown) => { disposers.push(start()) },
+      logger: { warn: () => {} },
+    }
+    const agent = (id: string, folder: string | undefined): FakeAgent => {
+      const fake: FakeAgent = {
+        id, session: { header: { cwd: folder } }, tools: new Set(), sections: new Set(),
+        ctx: {
+          tools: { register: (tool: ToolDefinition) => { fake.tools.add(tool.name); return () => { fake.tools.delete(tool.name) } } },
+          get: (name: string) => name !== 'systemPrompt' ? undefined : {
+            getSectionOrder: () => 3000,
+            section: (section: { name: string }) => { fake.sections.add(section.name); return () => { fake.sections.delete(section.name) } },
+          },
+        },
+      }
+      return fake
+    }
+    const emit = async (name: string, target: FakeAgent): Promise<void> => {
+      if (name === 'agent/created') live.push(target)
+      if (name === 'agent/disposed') live.splice(live.indexOf(target), 1)
+      for (const listener of listeners.get(name) ?? []) await listener({ agent: target })
+    }
+    return { ctx, agent, live, emit, dispose: () => { for (const dispose of disposers) dispose() } }
+  }
+
+  const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 20))
+
+  it('gives the tools to agents in a film workspace, and to others when their workspace gets a film', async () => {
+    await startFilm()
+    const plainFolder = join(cwd, 'notes')
+    await mkdir(plainFolder)
+    const host = fakeHost()
+    const early = host.agent('early', cwd)
+    host.live.push(early)
+    const refresh = installFilmAgentTools(host.ctx as never, { tools: () => filmAgentTools(services), guidance: 'film guidance' })
+    await settle()
+    expect(early.tools.size).toBe(22)
+    expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
+
+    const other = host.agent('other', plainFolder)
+    const homeless = host.agent('homeless', undefined)
+    await host.emit('agent/created', other)
+    await host.emit('agent/created', homeless)
+    expect(other.tools.size).toBe(0)
+    expect(homeless.tools.size).toBe(0)
+
+    await run('film_project', { action: 'create', title: '笔记' }, plainFolder)
+    // At once: the agent that made the film has the tools on its very next step.
+    refresh(plainFolder)
+    expect(other.tools.has('story_apply_ops')).toBe(true)
+    // Refreshing again installs nothing twice.
+    refresh(plainFolder)
+    await settle()
+    expect(other.tools.size).toBe(22)
+
+    await host.emit('agent/disposed', early)
+    expect(early.tools.size).toBe(0)
+    expect(early.sections.size).toBe(0)
+    host.dispose()
+    expect(other.tools.size).toBe(0)
+  })
+})
