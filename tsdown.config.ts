@@ -14,7 +14,7 @@
  * scripts/check-client.mjs then verifies the files the Host will load.
  */
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { transform } from 'lightningcss'
 import { defineConfig } from 'tsdown'
 import type { TsdownPlugin } from 'tsdown'
@@ -27,9 +27,23 @@ const CLIENT_EXTERNALS = ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-
 /** Lazily loaded file names the loader accepts. */
 const CHUNK_FILE = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
-/** Virtual ids keep module CSS away from tsdown's own CSS pipeline; the suffix must not end in `.css`. */
+/**
+ * Virtual ids keep module CSS away from tsdown's own CSS pipeline; the suffix must not end in `.css`.
+ * The id carries the stylesheet's path relative to the project (tsdown runs from it, as `entry`
+ * assumes): the bundler writes module ids into the output as region comments, and an absolute
+ * path would ship the build machine's directories. The relative path is also what lightningcss
+ * hashes for class names, so they no longer depend on where the checkout is.
+ */
 const CSS_PREFIX = '\0dsh-film-css:'
 const CSS_SUFFIX = '.mjs'
+const projectRoot = process.cwd()
+
+/** A stylesheet's path relative to the project, with '/' separators. */
+function projectPath(file: string): string {
+  const path = relative(projectRoot, file)
+  if (path.startsWith('..') || isAbsolute(path)) throw new Error(`${file} is outside the project`)
+  return path.split(sep).join('/')
+}
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -76,15 +90,16 @@ function cssModules(): TsdownPlugin {
     resolveId(source, importer) {
       if (!source.endsWith('.module.css')) return null
       const path = importer === undefined ? resolve(source) : resolve(dirname(importer), source)
-      return `${CSS_PREFIX}${path}${CSS_SUFFIX}`
+      return `${CSS_PREFIX}${projectPath(path)}${CSS_SUFFIX}`
     },
     async load(virtualId) {
       if (!virtualId.startsWith(CSS_PREFIX)) return null
       const fileId = virtualId.slice(CSS_PREFIX.length, -CSS_SUFFIX.length)
-      this.addWatchFile(fileId)
+      const file = resolve(projectRoot, fileId)
+      this.addWatchFile(file)
       const { code, exports } = transform({
         filename: fileId,
-        code: await readFile(fileId),
+        code: await readFile(file),
         cssModules: { pattern: 'dshfilm_[hash]_[local]' },
         minify: true,
       })
