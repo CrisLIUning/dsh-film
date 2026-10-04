@@ -30,6 +30,7 @@ import { CanvasBoardAgent } from './canvas/board-agent.js'
 import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
+import { addBoardFileRoutes } from './studio/board-file-routes.js'
 import { StudioRouter } from './studio/router.js'
 import { addScreenwriterRoutes, screenwriterServices } from './studio/screenwriter-routes.js'
 import { addStoryExchangeRoutes } from './studio/story-exchange-routes.js'
@@ -189,6 +190,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   const tasks = options.tasks ?? new FilmMediaTasks(media)
   addMediaRoutes(router, tasks, media)
   addProjectRoutes(router, events)
+  addBoardFileRoutes(router, events)
   addTimelineRoutes(router, events)
   addRenderRoutes(router, events, { ...options.renderer, tasks, models: options.models, ffmpegPath: options.ffmpegPath })
   addTextRoutes(router, new CanvasTextModels(options.text ?? (() => ({}))), async (model) => {

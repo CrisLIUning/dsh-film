@@ -46,6 +46,18 @@ export async function resolveFilmFile(cwd: string, path: string): Promise<FilmFi
   return { absolute: real, size: info.size, mtimeMs: info.mtimeMs, mime: appFileType(path) }
 }
 
+/**
+ * The URL Studio gives a project file; boards and desk scenes keep these, so
+ * they stay readable by Studio too (the DSH pages re-address them to the
+ * plugin's routes when they fetch).
+ * @param projectId - the film project's id.
+ * @param path - the film-relative path, `/`-separated.
+ * @returns the URL.
+ */
+export function projectRawUrl(projectId: string, path: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/raw/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
 /** `real` is `root` or below it (both real paths). */
 function inside(root: string, real: string): boolean {
   const offset = relative(root, real)

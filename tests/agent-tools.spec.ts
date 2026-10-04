@@ -658,7 +658,7 @@ describe('canvas_attach_media', () => {
     expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['inn.png'])
     await mkdir(join(cwd, 'node_modules', 'pkg'), { recursive: true })
     await writeFile(join(cwd, 'node_modules', 'pkg', 'logo.png'), 'logo')
-    await expect(run('canvas_attach_media', { targetNodeId: 'img-4', path: 'node_modules/pkg/logo.png', expectedContent: '' })).rejects.toThrow(/CANVAS_TIMELINE_IMPORT_INVALID/u)
+    await expect(run('canvas_attach_media', { targetNodeId: 'img-4', path: 'node_modules/pkg/logo.png', expectedContent: '' })).rejects.toThrow(/CANVAS_IMPORT_INVALID/u)
   })
 })
 

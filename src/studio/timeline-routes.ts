@@ -10,8 +10,8 @@
  * - `GET /api/canvas/timelines/:boardId/material` — the film's media as the
  *   editor's authorized assets, and the workspace's own media (outside
  *   `film/`) as files it may import (see `material.ts`).
- * - `POST /api/canvas/timelines/:boardId/import` — copy a workspace media file into the film
- *   (a film workspace only, outside hidden and credential folders).
+ * - (`POST /api/canvas/timelines/:boardId/import`, the import the canvas and the
+ *   agent use, is the board's: see `board-file-routes.ts`.)
  * - `GET /api/canvas/timelines/:boardId/media` — the board's media nodes;
  *   `POST .../media` lands a film file on the board (an exported cut);
  *   `POST .../place` puts a board node (or a film file) on the cut.
@@ -29,8 +29,7 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BoardAttachError, attachFileToNode, landFileOnBoard, listBoardMedia, mediaKindOfPath } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
-import { WorkspaceMediaError, mediaTypeOf } from '../media.js'
-import { requireFilmWorkspace } from '../project.js'
+import { mediaTypeOf } from '../media.js'
 import { probeMedia } from '../media/probe.js'
 import { TimelinePlaceError, placeBoardMediaOnTimeline } from '../timeline/place.js'
 import { TimelineSoundError, listScriptNodes, listStoryScripts, placeSoundOnTimeline, readStories, storyScriptLines } from '../timeline/sound.js'
@@ -41,7 +40,8 @@ import { TimelineCommandError, executeTimelineCommands } from '../timeline/comma
 import { TimelineConflictError, TimelineInvalidError, TimelineStore } from '../timeline/store.js'
 import { projectOf } from './canvas-routes.js'
 import type { ProjectEvents } from './events.js'
-import { importWorkspaceMedia, sha256File, timelineMaterial } from './material.js'
+import { sha256File } from '../canvas/workspace-import.js'
+import { timelineMaterial } from './material.js'
 import { PROJECT_DIR, projectPath } from './project-routes.js'
 import { StudioReply } from './router.js'
 import type { StudioRequest, StudioRouter } from './router.js'
@@ -277,20 +277,4 @@ export function addTimelineRoutes(router: StudioRouter, events: ProjectEvents): 
   // The editor's library asks Studio's community catalogue first; there is
   // none under DSH, and an empty list leaves the panel to its other sources.
   router.add('GET', '/api/community/media', async () => ({ items: [] }))
-
-  router.add('POST', '/api/canvas/timelines/:boardId/import', async (request) => {
-    // It reads outside film/: only a film workspace, outside hidden and credential folders, is read from.
-    await requireFilmWorkspace(request.cwd)
-    const body = await request.json()
-    let imported
-    try {
-      imported = await importWorkspaceMedia(request.cwd, typeof body.path === 'string' ? body.path : '')
-    } catch (error) {
-      if (!(error instanceof WorkspaceMediaError)) throw error
-      if (error.problem === 'not-found') throw new StudioReply(404, { error: error.message, code: 'CANVAS_TIMELINE_IMPORT_NOT_FOUND' })
-      throw new StudioReply(400, { error: `${error.message} Only the workspace's own image, video and audio files can be imported.`, code: 'CANVAS_TIMELINE_IMPORT_INVALID' })
-    }
-    if (imported.created) events.emit(request.cwd, { type: 'file-changed', projectId: projectOf(request), path: imported.file.name })
-    return { file: imported.file, ...(imported.reused === true ? { reused: true } : {}) }
-  })
 }

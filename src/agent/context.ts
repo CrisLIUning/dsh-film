@@ -107,7 +107,7 @@ export interface FilmPathOptions {
  * workspace file into the film first. Accepted: `film/…`; a path relative to
  * `film/` (a film file of that name wins); any media file of the workspace,
  * relative to it (`media/…` where the media tools save, or anywhere else
- * outside `film/`), which the editing desk's import copies into
+ * outside `film/`), which the board's import copies into
  * `film/canvas/media/` — once: the same bytes again answer the earlier copy;
  * and an absolute path inside the workspace. A path that names no file is
  * returned as written, for the route to refuse in its own words.
@@ -132,7 +132,7 @@ export async function filmPathFor(film: FilmWorkspace, path: string, options: Fi
   await options.beforeImport?.(clean)
   const imported = await callStudio(options.studio, film.cwd, {
     method: 'POST',
-    path: `/api/canvas/timelines/${segment(film.boardId)}/import?project=${segment(film.projectId)}`,
+    path: `/api/canvas/assets/${segment(film.boardId)}/import?project=${segment(film.projectId)}`,
     body: { path: clean },
   }, options.signal)
   const file = imported.file !== null && typeof imported.file === 'object' ? imported.file as Record<string, unknown> : {}

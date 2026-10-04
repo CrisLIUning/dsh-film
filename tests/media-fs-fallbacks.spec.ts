@@ -50,7 +50,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
-const { importWorkspaceMedia } = await import('../src/studio/material.js')
+const { importWorkspaceFile } = await import('../src/canvas/workspace-import.js')
 const { invalidateWorkspaceMedia, listFilmMedia, scanWorkspaceMedia } = await import('../src/media.js')
 const { CanvasAssetStore } = await import('../src/canvas/assets.js')
 
@@ -78,8 +78,8 @@ async function file(relative: string, content = 'x'): Promise<void> {
 describe('importing', () => {
   it('copies the file — a clone where the file system has them, never a hard link — and answers the copy for the same bytes again', async () => {
     await file('footage/take.mp4', 'take')
-    const imported = await importWorkspaceMedia(cwd, 'footage/take.mp4')
-    expect(imported).toEqual({ file: { name: 'canvas/media/take.mp4', size: 4, mime: 'video/mp4' }, created: true })
+    const imported = await importWorkspaceFile(cwd, 'footage/take.mp4')
+    expect(imported).toEqual({ file: { name: 'canvas/media/take.mp4', size: 4, mime: 'video/mp4' }, kind: 'video', created: true })
     expect(fs.linkCalls).toBe(0)
     expect(fs.copyModes).toEqual([constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE])
     const [source, copy] = await Promise.all([stat(join(cwd, 'footage', 'take.mp4'), { bigint: true }), stat(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), { bigint: true })])
@@ -87,17 +87,17 @@ describe('importing', () => {
     expect(source.nlink).toBe(1n)
     expect(await readFile(join(cwd, 'film', 'canvas', 'media', 'take.mp4'), 'utf8')).toBe('take')
     // The copy has the same bytes, so importing again answers it.
-    expect(await importWorkspaceMedia(cwd, 'footage/take.mp4')).toMatchObject({ reused: true, file: { name: 'canvas/media/take.mp4' } })
+    expect(await importWorkspaceFile(cwd, 'footage/take.mp4')).toMatchObject({ reused: true, file: { name: 'canvas/media/take.mp4' } })
     expect(fs.copyModes).toHaveLength(1)
   })
 
   it('leaves no half-copied file under the name when the copy fails', async () => {
     await file('footage/take.mp4', 'take')
     fs.copyFailure = 'ENOSPC'
-    await expect(importWorkspaceMedia(cwd, 'footage/take.mp4')).rejects.toMatchObject({ code: 'ENOSPC' })
+    await expect(importWorkspaceFile(cwd, 'footage/take.mp4')).rejects.toMatchObject({ code: 'ENOSPC' })
     expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual([])
     fs.copyFailure = undefined
-    expect((await importWorkspaceMedia(cwd, 'footage/take.mp4')).file.name).toBe('canvas/media/take.mp4')
+    expect((await importWorkspaceFile(cwd, 'footage/take.mp4')).file.name).toBe('canvas/media/take.mp4')
   })
 })
 
