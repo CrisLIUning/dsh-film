@@ -1,6 +1,6 @@
 /** The media edit routes (C9): probe, cut, join and extract audio as film tasks, landing on a closed board. */
 
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -154,6 +154,21 @@ describe('POST /api/canvas/video/:boardId/cut', () => {
     await writeFile(media('broken.mp4'), 'nope')
     expect(await cut('b0000000-0007', 'canvas/media/broken.mp4')).toMatchObject({ status: 422, body: { code: 'MEDIA_EDIT_UNSUPPORTED' } })
     expect(await readdir(join(cwd, 'film', 'canvas', 'media'))).toEqual(['broken.mp4', 'src.mp4'])
+  })
+
+  it('deletes the temporary files a killed Host left behind, once, and none an edit may still be writing', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    const left = '.edit-0b5a3c1e-2f4d-4e6a-8b7c-9d0e1f2a3b4c.mp4.tmp'
+    const writing = '.edit-1c6b4d2f-3a5e-4f7b-9c8d-0e1f2a3b4c5d.mp4.tmp'
+    await writeFile(media(left), 'partial')
+    await writeFile(media(writing), 'partial')
+    await writeFile(media('notes.tmp'), 'mine')
+    const hourAgo = new Date(Date.now() - 60 * 60_000)
+    await utimes(media(left), hourAgo, hourAgo)
+    await utimes(media('notes.tmp'), hourAgo, hourAgo)
+    const started = await call('/api/canvas/video/film-1/cut', { requestId: 'a6f1c8e2-0000-4000-8000-000000000009', source: { path: 'canvas/media/src.mp4' }, inMs: 0, outMs: 1000 })
+    const done = await finished(started.body.taskId)
+    expect((await readdir(join(cwd, 'film', 'canvas', 'media'))).sort()).toEqual([writing, done.file.name.split('/').pop(), 'notes.tmp', 'src.mp4'].sort())
   })
 
   it('answers 503 MEDIA_EDIT_BUSY past two running edits in a workspace', async () => {

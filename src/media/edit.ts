@@ -331,10 +331,9 @@ async function settle(temporary: string, wanted: string): Promise<string> {
       await link(temporary, candidate)
       return candidate
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === 'EEXIST') continue
-      // A file system without hard links (exFAT, some network drives): rename onto a name nothing holds.
-      if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EOPNOTSUPP' && code !== 'ENOSYS') throw error
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+      // A file system without hard links answers in its own way (FAT32/exFAT on Windows: EISDIR; others EPERM,
+      // ENOTSUP, ENOSYS, EINVAL): rename onto a name nothing holds. A real problem with the file fails the rename too.
       if (await lstat(candidate).then(() => true, () => false)) continue
       await rename(temporary, candidate)
       return candidate
@@ -345,6 +344,34 @@ async function settle(temporary: string, wanted: string): Promise<string> {
 
 /** A hidden temporary file beside `target`. */
 const temporaryFor = (target: string): string => join(dirname(target), `.edit-${randomUUID()}${extname(target)}.tmp`)
+
+/** The names {@link temporaryFor} gives. */
+const TEMPORARY_NAME = /^\.edit-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9]+\.tmp$/
+
+/** How long a temporary file must have gone unwritten before a sweep takes it for left behind. */
+export const STALE_TEMPORARY_MS = 10 * 60_000
+
+/**
+ * Delete the temporary files of edits a crashed or killed Host left behind
+ * (a cancelled or failed edit deletes its own). Only files nothing has
+ * written to for {@link STALE_TEMPORARY_MS} go, so an edit still writing —
+ * in this Host or another on the same workspace — keeps its file.
+ * @param folder - the folder edits write their results to.
+ * @param olderThanMs - how long a file must have gone unwritten.
+ * @returns how many were deleted.
+ */
+export async function sweepEditTemporaries(folder: string, olderThanMs = STALE_TEMPORARY_MS): Promise<number> {
+  const names = await readdir(folder).catch(() => [] as string[])
+  let deleted = 0
+  for (const name of names) {
+    if (!TEMPORARY_NAME.test(name)) continue
+    const path = join(folder, name)
+    const info = await lstat(path).catch(() => undefined)
+    if (info?.isFile() !== true || Date.now() - info.mtimeMs < olderThanMs) continue
+    if (await rm(path).then(() => true, () => false)) deleted++
+  }
+  return deleted
+}
 
 async function resultFacts(path: string): Promise<EditResult> {
   const [info, probe] = await Promise.all([stat(path), probeDetailed(path)])

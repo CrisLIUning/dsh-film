@@ -36,7 +36,7 @@ import { landFileOnBoard, mediaKindOfPath } from '../canvas/board-media.js'
 import type { BoardMediaKind } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
 import { mediaTypeOf } from '../media.js'
-import { MediaEditError, checkRange, copyProblem, copyTarget, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed } from '../media/edit.js'
+import { MediaEditError, checkRange, copyProblem, copyTarget, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed, sweepEditTemporaries } from '../media/edit.js'
 import type { EditProbe, EditResult } from '../media/edit.js'
 import { FilmMediaError, filmUrlOf } from '../media/tasks.js'
 import type { FilmMediaTasks, FilmTaskFile, LocalCapability } from '../media/tasks.js'
@@ -201,6 +201,9 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     }
   }
 
+  /** Workspaces whose left-behind temporary files have been swept. */
+  const swept = new Set<string>()
+
   const accepted = (started: { taskId: string; status: string }): Response => new Response(JSON.stringify({ taskId: started.taskId, status: started.status }), {
     status: 202,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
@@ -237,8 +240,14 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     const projectId = projectOf(request)
     const boardId = request.params.boardId!
     const absoluteTarget = join(cwd, PROJECT_DIR, ...edit.target.split('/'))
+    const folder = join(cwd, PROJECT_DIR, ...OUTPUT_FOLDER.split('/'))
+    if (!swept.has(cwd)) {
+      // Once per workspace in this process: the temporary files of edits a crashed or killed Host left behind.
+      swept.add(cwd)
+      await sweepEditTemporaries(folder)
+    }
     const started = await tasks.startLocal(cwd, projectId, { capability: edit.capability, requestId: edit.requestId, parameters: edit.parameters, surface: edit.surface }, async (signal, progress) => {
-      await mkdir(join(cwd, PROJECT_DIR, ...OUTPUT_FOLDER.split('/')), { recursive: true })
+      await mkdir(folder, { recursive: true })
       const result = await edit.run(absoluteTarget, { signal, onProgress: writingProgress(progress) })
       const name = relative(join(cwd, PROJECT_DIR), result.path).split(sep).join('/')
       events.emit(cwd, { type: 'file-changed', projectId, path: name })
