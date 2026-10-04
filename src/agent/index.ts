@@ -1,7 +1,7 @@
 /**
  * The agent's film tools: `film_project` in every conversation, and the
- * screenplay, storyboard and cut tools in the conversations whose workspace
- * is a film.
+ * screenplay, storyboard, cut and modeling tools in the conversations whose
+ * workspace is a film.
  * @module dsh-film/agent
  */
 
@@ -13,6 +13,7 @@ import type { FilmToolServices } from './context.js'
 import { directorTools } from './director-tools.js'
 import { FILM_GUIDANCE } from './guidance.js'
 import { installFilmAgentTools } from './install.js'
+import { modelingTools } from './modeling-tools.js'
 import { filmProjectTool } from './project-tool.js'
 import { storyTools } from './story-tools.js'
 import { storyExchangeTools } from './story-exchange-tools.js'
@@ -34,6 +35,7 @@ export function filmAgentTools(services: FilmToolServices): ToolDefinition[] {
     ...storyProductionTools(services),
     ...canvasTools(services), ...timelineTools(services),
     ...directorTools(services),
+    ...modelingTools(services),
   ]
 }
 

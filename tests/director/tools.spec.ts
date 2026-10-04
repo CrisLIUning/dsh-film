@@ -107,11 +107,9 @@ describe('director tools', () => {
     expect((await readFile(join(cwd, 'film', compiled.file.filePath))).subarray(0, 4).toString()).toBe('glTF')
   })
 
-  it('review, and prepare modeling briefs for the film and for a director target', async () => {
+  it('review, and prepare a modeling brief for a director target', async () => {
     await board([desk(scene())])
     expect(await run('director_review', { action: 'list' })).toMatchObject({ versions: [], currentFingerprint: getDirectorProjectFingerprint(scene()) })
-    const plain = await run('model_brief', { kind: 'prop', description: '旧木椅' })
-    expect(plain).toMatchObject({ projectId: film, skillIds: ['img2threejs'], note: expect.stringContaining('film/models/') })
     const targeted = await run('director_modeling_brief', { kind: 'scene', description: '客栈大堂', context: { nodeId: 'desk', objectIds: ['a'] } })
     expect(targeted.context).toMatchObject({ projectId: film, boardId: film, view: 'director', director: { nodeId: 'desk', objectIds: ['a'] } })
     expect(targeted.skillIds).toEqual(['director', 'img2threejs'])

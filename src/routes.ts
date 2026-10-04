@@ -32,6 +32,8 @@ import { addTimelineRoutes } from './studio/timeline-routes.js'
 import { addModelRoutes } from './studio/model-routes.js'
 import { addDirectorRoutes } from './studio/director-routes.js'
 import type { EditorModels } from './models/service.js'
+import { addModelingRoutes } from './studio/modeling-routes.js'
+import type { ModelEnvironment } from './modeling/contracts/model-project.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -148,6 +150,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     return video?.nativeAudio
   })
   if (options.models !== undefined) addModelRoutes(router, options.models)
+  addModelingRoutes(router, { events, ...(options.modelEnvironment !== undefined ? { environment: options.modelEnvironment } : {}) })
   return router
 }
 
@@ -164,4 +167,6 @@ export interface StudioRouterOptions {
   text?: () => TextServices
   /** The editing desk's AI models; without it the model endpoints are not offered. */
   models?: EditorModels
+  /** The procedural-model panel's environment probe (tests replace it). */
+  modelEnvironment?: () => Promise<ModelEnvironment>
 }

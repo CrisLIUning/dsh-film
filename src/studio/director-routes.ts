@@ -22,7 +22,6 @@ import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/docume
 import { FILM_DIR } from '../project.js'
 import { MotionCompileError, compileMotionIntoFilm } from '../director/authored-motion.js'
 import { verifyDirectorAssetSource } from '../director/asset-source.js'
-import { buildModelingBrief } from '../director/contracts/index.js'
 import type {
   DirectorInspectModelResponse, DirectorRenderResponse, DirectorRenderStatusResponse, DirectorReviewRequest, DirectorReviewSource,
   DirectorSceneResponse, DirectorSceneWriteResponse, DirectorStageResponse,
@@ -299,16 +298,6 @@ export function addDirectorRoutes(router: StudioRouter, deps: DirectorRouteDeps)
       ...(dryRun || inline || body.includeProject === true ? { project: staged.project } : {}),
     }
     return answer
-  })
-
-  // Preparing a brief does not run an agent or charge a generation.
-  router.add('POST', '/api/projects/:projectId/modeling-brief', async (request) => {
-    const body = await request.json()
-    try {
-      return buildModelingBrief(body, await filmBoardOf(request))
-    } catch (error) {
-      throw new StudioReply(400, { code: 'MODELING_BRIEF_INVALID', error: error instanceof Error ? error.message : String(error) })
-    }
   })
 
   handle('POST', '/api/projects/:projectId/director/motions', async (request, film) => compileMotionIntoFilm(film.root, film.projectId, await request.json()))

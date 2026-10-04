@@ -70,7 +70,8 @@ describe('the tool set', () => {
       'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
       'canvas_apply_ops', 'canvas_attach_media',
       'timeline_query', 'timeline_edit',
-      'director_query', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief', 'model_brief',
+      'director_query', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
+      'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
     ])
     for (const tool of tools.values()) {
       expect(tool.parameters).toMatchObject({ type: 'object' })

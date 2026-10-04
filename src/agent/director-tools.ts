@@ -314,14 +314,5 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
       isConcurrencySafe: () => true,
       execute: (args, exec) => brief(exec, args, { objectIds: [], ...args.context }),
     }),
-    defineTool({
-      name: 'model_brief',
-      description: 'Prepare a film-owned img2threejs modeling task; no director desk is needed. Returns the brief to this conversation for staged creation, '
-        + 'preview and visual review; it runs no code and starts no other agent.',
-      parameters: briefParameters,
-      output: jsonOutput,
-      isConcurrencySafe: () => true,
-      execute: (args, exec) => brief(exec, args),
-    }),
   ]
 }
