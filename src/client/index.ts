@@ -10,6 +10,7 @@
  * external package depends on no monorepo-internal types.
  */
 
+import { startCaptionRunner } from './caption-runner.ts'
 import { en, zh } from './locales.ts'
 import { TabBody } from './TabBody.tsx'
 import type { Translate } from './types.ts'
@@ -60,6 +61,8 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { zh, en }), 'dsh-film: dictionaries')
+  // Every window runs caption jobs (the Host has no browser of its own), whichever tab is open.
+  ctx.effect(() => startCaptionRunner(), 'dsh-film: caption runner')
   const t = ctx.locale.bind(LOCALE_NAMESPACE)
   for (const part of PARTS) {
     ctx.effect(() => ctx.sidebarRightTabs.register({

@@ -105,9 +105,10 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
       description: 'Read the film\'s cut — what the editing desk (剪辑 tab) is editing it into. kind=cut (default): the revision every write must quote, the frame, '
         + 'the loudness target, and each track\'s clips with their id, name, start, seconds and the file each plays. kind=board: what the board offers the cut '
         + 'but has not given it yet — its media nodes and the scripts (the 剧本 tab\'s screenplays with dialogue, and text nodes that read as scripts). Read '
-        + 'before writing: clip ids are real ids, never names invented from a file.',
+        + 'before writing: clip ids are real ids, never names invented from a file. kind=caption-tasks: the cut\'s latest original-audio recognitions '
+        + '(timeline_transcribe) with status, engine and whether each draft is applied; read a draft with media_get_task.',
       parameters: {
-        kind: { type: 'string', enum: ['cut', 'board'] },
+        kind: { type: 'string', enum: ['cut', 'board', 'caption-tasks'] },
       },
       output: jsonOutput,
       isConcurrencySafe: () => true,
@@ -115,6 +116,7 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
         const film = await filmWorkspace(exec)
         const base = `/api/canvas/timelines/${segment(film.boardId)}`
         const query = `?project=${segment(film.projectId)}`
+        if (args.kind === 'caption-tasks') return plain(await callStudio(services.studio, film.cwd, { method: 'GET', path: `${base}/captions/tasks${query}` }, exec.signal))
         if (args.kind === 'board') {
           const [media, scripts] = await Promise.all([
             callStudio(services.studio, film.cwd, { method: 'GET', path: `${base}/media${query}` }, exec.signal).catch((error: unknown) => {
