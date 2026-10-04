@@ -426,7 +426,9 @@ async function convert(
   const input = openInput(source)
   const output = new Output({ format, target: new FilePathTarget(temporary) })
   let running: Conversion | undefined
-  const stop = (): void => { void running?.cancel().catch(() => undefined) }
+  // A cancel closes the temporary file in the background (the output reads as canceled at once): kept to be awaited before the file is deleted.
+  let cancelling: Promise<void> | undefined
+  const stop = (): void => { cancelling = running?.cancel().catch(() => undefined) }
   signal?.addEventListener('abort', stop, { once: true })
   try {
     running = await Conversion.init({
@@ -458,6 +460,8 @@ async function convert(
     throw error
   } finally {
     signal?.removeEventListener('abort', stop)
+    // Until the cancel has closed the file, Windows will not delete it.
+    await cancelling
     input.dispose()
     await rm(temporary, { force: true }).catch(() => undefined)
   }
