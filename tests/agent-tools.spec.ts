@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { filmAgentTools } from '../src/agent/index.js'
+import { filmAgentTools, filmCoreTools, filmToolGroups, filmToolsTool } from '../src/agent/index.js'
 import type { FilmToolServices } from '../src/agent/index.js'
 import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
@@ -46,6 +46,9 @@ function exec(folder: string | undefined = cwd): ToolRunContext {
     deferContext() {}, concludeTurn() {},
   } as unknown as ToolRunContext
 }
+
+const execFor = (folder: string): ToolRunContext => exec(folder)
+const modelingToolCount = 7
 
 async function run(name: string, args: Record<string, unknown> = {}, folder?: string): Promise<any> {
   const tool = tools.get(name)
@@ -607,9 +610,11 @@ describe('installing the tools into film conversations', () => {
     const host = fakeHost()
     const early = host.agent('early', cwd)
     host.live.push(early)
-    const refresh = installFilmAgentTools(host.ctx as never, { tools: () => filmAgentTools(services), guidance: 'film guidance' })
+    const core = filmCoreTools(services)
+    const installer = installFilmAgentTools(host.ctx as never, { tools: () => core, groups: filmToolGroups(services), guidance: 'film guidance' })
     await settle()
-    expect(early.tools.size).toBe(filmAgentTools(services).length)
+    expect(early.tools.size).toBe(core.length)
+    expect(early.tools.has('director_query')).toBe(false)
     expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
 
     const other = host.agent('other', plainFolder)
@@ -618,20 +623,57 @@ describe('installing the tools into film conversations', () => {
     await host.emit('agent/created', homeless)
     expect(other.tools.size).toBe(0)
     expect(homeless.tools.size).toBe(0)
+    expect(installer.enable(other as never, ['director'])).toBeUndefined()
 
     await run('film_project', { action: 'create', title: '笔记' }, plainFolder)
     // At once: the agent that made the film has the tools on its very next step.
-    refresh(plainFolder)
+    installer.projectCreated(plainFolder)
     expect(other.tools.has('story_apply_ops')).toBe(true)
-    // Refreshing again installs nothing twice.
-    refresh(plainFolder)
+    // Again installs nothing twice.
+    installer.projectCreated(plainFolder)
     await settle()
-    expect(other.tools.size).toBe(filmAgentTools(services).length)
+    expect(other.tools.size).toBe(core.length)
+
+    // Groups come when asked for, once.
+    expect(installer.enable(early as never, ['modeling', 'modeling'])).toEqual(['modeling'])
+    expect(early.tools.has('space_plan_compile')).toBe(true)
+    expect(early.tools.size).toBe(core.length + modelingToolCount)
 
     await host.emit('agent/disposed', early)
     expect(early.tools.size).toBe(0)
     expect(early.sections.size).toBe(0)
     host.dispose()
     expect(other.tools.size).toBe(0)
+  })
+
+  it('starts a conversation with the director group when the board has a director node', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'desk', nodeType: 'director' }] })
+    const host = fakeHost()
+    installFilmAgentTools(host.ctx as never, { tools: () => filmCoreTools(services), groups: filmToolGroups(services), guidance: 'film guidance' })
+    const agent = host.agent('desk-chat', cwd)
+    await host.emit('agent/created', agent)
+    expect(agent.tools.has('director_query')).toBe(true)
+    expect(agent.tools.has('space_plan_compile')).toBe(false)
+    host.dispose()
+  })
+
+  it('film_tools lists the groups and enables them for the calling conversation', async () => {
+    await startFilm()
+    const host = fakeHost()
+    const groups = filmToolGroups(services)
+    let installer: ReturnType<typeof installFilmAgentTools> | undefined
+    installer = installFilmAgentTools(host.ctx as never, { tools: () => filmCoreTools(services), groups, guidance: 'film guidance' })
+    const agent = host.agent('chat', cwd)
+    await host.emit('agent/created', agent)
+    const tool = filmToolsTool(groups, () => installer)
+    const exec = { ...execFor(cwd), agent } as never
+    const listed = await tool.execute({}, exec) as { groups: Array<{ name: string; enabled: boolean; tools: string[] }> }
+    expect(listed.groups.map(group => [group.name, group.enabled])).toEqual([['director', false], ['modeling', false]])
+    const enabled = await tool.execute({ enable: ['director'] }, exec) as { groups: Array<{ name: string; enabled: boolean }>; note: string }
+    expect(enabled.groups.find(group => group.name === 'director')?.enabled).toBe(true)
+    expect(agent.tools.has('director_stage')).toBe(true)
+    await expect(tool.execute({ enable: ['nope'] }, exec)).rejects.toThrow(/enable/u)
+    host.dispose()
   })
 })
