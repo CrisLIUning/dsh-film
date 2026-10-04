@@ -30,13 +30,22 @@ let tasks: FilmMediaTasks
 let tools: Map<string, ToolDefinition>
 let film: { id: string }
 let seen: ProjectEvent[]
+/** Runs while a tool waits for the Host's probe (between reading the board and writing it). */
+let duringProbe: (() => Promise<void>) | undefined
 
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-editing-'))
   events = new ProjectEvents()
   boardAgent = new CanvasBoardAgent()
   tasks = new FilmMediaTasks(() => undefined)
-  const services: FilmToolServices = { studio: createStudioRouter({ events, boardAgent, tasks }), boardAgent, events, projectCreated: () => {} }
+  duringProbe = undefined
+  const studio = createStudioRouter({ events, boardAgent, tasks })
+  const dispatch = studio.dispatch.bind(studio)
+  studio.dispatch = async (request) => {
+    if ((new URL(request.url).searchParams.get('path') ?? '').includes('/probe')) await duringProbe?.()
+    return dispatch(request)
+  }
+  const services: FilmToolServices = { studio, boardAgent, events, projectCreated: () => {} }
   tools = new Map([filmProjectTool(services), ...filmAgentTools(services)].map(tool => [tool.name, tool]))
   film = (await run('film_project', { action: 'create', title: '雨夜来客' })).project
   seen = []
@@ -191,6 +200,32 @@ describe('video_clip', () => {
     await onBoard(mediaNodeOp('broken', 'broken.mp4'))
     expect((await refused('video_clip', { nodeId: 'broken', expectedContent: url('broken.mp4'), inMs: 0, outMs: 900 })).code).toBe('CANVAS_CLIP_TARGET')
     expect((await savedNode('shot')).metadata.clip).toBeUndefined()
+  })
+
+  it('decides the saved board\'s edit from the node as it is under the board\'s lock', async () => {
+    await writeFixture(media('src.mp4'), { frames: 75 })
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { clip: { inMs: 200, outMs: 900 } }))
+    const change = (metadata: Record<string, unknown>) => async (): Promise<void> => {
+      duringProbe = undefined
+      await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'shot', metadata }] })
+    }
+    // Someone moves the mark while the tool reads the file's length: an edge left out keeps the new mark's.
+    duringProbe = change({ clip: { inMs: 400, outMs: 900 } })
+    expect((await run('video_clip', { nodeId: 'shot', expectedContent: url('src.mp4'), outMs: 1500 })).clip).toEqual({ inMs: 400, outMs: 1500 })
+    expect((await savedNode('shot')).metadata.clip).toEqual({ inMs: 400, outMs: 1500 })
+    // The file changes meanwhile: nothing is written.
+    await onBoard({ type: 'update_node', id: 'shot', metadata: { durationMs: null } })
+    duringProbe = change({ content: url('other.mp4') })
+    expect((await refused('video_clip', { nodeId: 'shot', expectedContent: url('src.mp4'), inMs: 0, outMs: 500 })).code).toBe('CANVAS_CLIP_TARGET_CHANGED')
+    expect((await savedNode('shot')).metadata).toMatchObject({ clip: { inMs: 400, outMs: 1500 }, content: url('other.mp4') })
+    // A split checks the mark again too.
+    await onBoard(mediaNodeOp('second', 'src.mp4', { clip: { inMs: 0, outMs: 2000 } }, { position: { x: 100, y: 600 } }))
+    duringProbe = async () => {
+      duringProbe = undefined
+      await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'second', metadata: { clip: { inMs: 1500, outMs: 2000 } } }] })
+    }
+    expect((await refused('video_split', { nodeId: 'second', expectedContent: url('src.mp4'), atMs: 1000 })).message).toMatch(/CANVAS_CLIP_INVALID: .*1500–2000 ms/u)
+    expect((await savedBoard()).nodes).toHaveLength(2)
   })
 
   it('marks through the open page with an update_node op the page runs, leaving the saved board to the page', async () => {

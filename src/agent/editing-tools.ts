@@ -242,29 +242,37 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         const { page, snapshot } = await board(film, args.target)
         const node = mediaNode(snapshot, args.nodeId, ['video', 'audio'])
         expectContent(node, args.expectedContent)
-        let next: ClipMark | null = null
-        let durationMs: number | undefined
-        if (!clear) {
-          durationMs = await lengthOf(film, node, exec.signal)
-          const current = readClip(node.metadata, durationMs) ?? { inMs: 0, outMs: durationMs }
-          const inMs = args.inMs ?? current.inMs
-          const outMs = args.outMs ?? current.outMs
-          if (inMs < 0 || outMs > durationMs || outMs - inMs < MIN_CLIP_MS) {
-            throw invalid(`A mark lies inside the file (0–${durationMs} ms) and is at least ${MIN_CLIP_MS} ms long; ${inMs}–${outMs} ms is not.`)
+        const durationMs = clear ? undefined : await lengthOf(film, node, exec.signal)
+        /** The mark to store on the node as it is (an edge left out keeps the node's current one). */
+        const plan = (source: BoardNode): { next: ClipMark | null; recordLength: boolean; unchanged: boolean } => {
+          let next: ClipMark | null = null
+          if (durationMs !== undefined) {
+            const current = readClip(source.metadata, durationMs) ?? { inMs: 0, outMs: durationMs }
+            const inMs = args.inMs ?? current.inMs
+            const outMs = args.outMs ?? current.outMs
+            if (inMs < 0 || outMs > durationMs || outMs - inMs < MIN_CLIP_MS) {
+              throw invalid(`A mark lies inside the file (0–${durationMs} ms) and is at least ${MIN_CLIP_MS} ms long; ${inMs}–${outMs} ms is not.`)
+            }
+            next = storedClip({ inMs, outMs }, durationMs)
           }
-          next = storedClip({ inMs, outMs }, durationMs)
+          const recordLength = durationMs !== undefined && source.metadata?.durationMs !== durationMs
+          const stored = source.metadata?.clip
+          const unchanged = sameClip(readClip(source.metadata, durationMs) ?? null, next) && !recordLength && (next !== null || stored === undefined || stored === null)
+          return { next, recordLength, unchanged }
         }
-        const recordLength = durationMs !== undefined && node.metadata?.durationMs !== durationMs
-        const unchanged = sameClip(readClip(node.metadata, durationMs) ?? null, next) && !recordLength && (next !== null || node.metadata?.clip === undefined || node.metadata.clip === null)
-        const facts = { nodeId: node.id, clip: next, ...(durationMs !== undefined ? { durationMs } : {}) }
-        if (unchanged) return plain({ ...where(page), changed: false, ...facts })
+        let planned = plan(node)
+        const facts = (): Record<string, unknown> => ({ nodeId: node.id, clip: planned.next, ...(durationMs !== undefined ? { durationMs } : {}) })
+        if (planned.unchanged) return plain({ ...where(page), changed: false, ...facts() })
         const receipt = await applyEdit(film, page, snapshot!, (current) => {
-          expectContent(mediaNode(current, node.id, ['video', 'audio']), args.expectedContent)
-          return [{ type: 'update_node', id: node.id, metadata: { clip: next, ...(recordLength ? { durationMs } : {}) } }]
+          // On the saved board this runs under its lock: the node as it is now.
+          const source = mediaNode(current, node.id, ['video', 'audio'])
+          expectContent(source, args.expectedContent)
+          planned = plan(source)
+          return [{ type: 'update_node', id: node.id, metadata: { clip: planned.next, ...(planned.recordLength ? { durationMs } : {}) } }]
         }, exec.signal)
         return plain({
-          ...where(page), ...receipt, changed: true, ...facts,
-          ...(next === null && !clear ? { note: 'The mark covers the whole file, so it is stored as none.' } : {}),
+          ...where(page), ...receipt, changed: true, ...facts(),
+          ...(planned.next === null && !clear ? { note: 'The mark covers the whole file, so it is stored as none.' } : {}),
         })
       }),
     }),
@@ -287,14 +295,20 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         const node = mediaNode(snapshot, args.nodeId, ['video'])
         expectContent(node, args.expectedContent)
         const durationMs = await lengthOf(film, node, exec.signal)
-        const range = readClip(node.metadata, durationMs) ?? { inMs: 0, outMs: durationMs }
-        const parts = splitClip(range, args.atMs)
-        if (parts === null) throw invalid(`atMs must be at least ${MIN_CLIP_MS} ms inside the part the node plays (${range.inMs}–${range.outMs} ms of its file); ${args.atMs} is not.`)
-        const [kept, rest] = parts
+        /** The two parts of the node as it is: [in, at] stays, [at, out] goes to the sibling. */
+        const partsOf = (source: BoardNode): [ClipMark, ClipMark] => {
+          const range = readClip(source.metadata, durationMs) ?? { inMs: 0, outMs: durationMs }
+          const parts = splitClip(range, args.atMs)
+          if (parts === null) throw invalid(`atMs must be at least ${MIN_CLIP_MS} ms inside the part the node plays (${range.inMs}–${range.outMs} ms of its file); ${args.atMs} is not.`)
+          return parts
+        }
+        let [kept, rest] = partsOf(node)
         const newNodeId = `video-${randomUUID()}`
         const receipt = await applyEdit(film, page, snapshot!, (current) => {
+          // On the saved board this runs under its lock: the node as it is now.
           const source = mediaNode(current, node.id, ['video'])
           expectContent(source, args.expectedContent)
+          ;[kept, rest] = partsOf(source)
           const size = { width: positive(source.width) ? source.width : 420, height: positive(source.height) ? source.height : 236 }
           const position = derivedNodePosition(current.nodes ?? [], source.id, size) ?? { x: source.position.x + size.width + DERIVED_GAP, y: source.position.y }
           return [
