@@ -234,6 +234,70 @@ describe('POST /api/canvas/video/:boardId/join', () => {
   })
 })
 
+describe('what a landed result carries over from its sources', () => {
+  /** A saved board whose two videos have a prompt, subtitle cues and a director sequence. */
+  async function richBoard(): Promise<CanvasDocumentStore> {
+    const store = new CanvasDocumentStore(cwd, 'film')
+    const node = (id: string, file: string, y: number, metadata: Record<string, unknown>) => ({
+      id, type: 'video', title: id, position: { x: 100, y }, width: 320, height: 180, metadata: { content: `/api/projects/film/raw/canvas/media/${file}`, ...metadata },
+    })
+    await store.write('film-1', {
+      ...emptyFilmBoard('film-1', 'A'),
+      nodes: [
+        node('src', 'src.mp4', 50, {
+          prompt: '雨夜门口', videoTaskId: 'task-1',
+          subtitleEntries: [{ id: 'a', startMs: 300, endMs: 800, text: '一' }, { id: 'b', startMs: 1200, endMs: 1800, text: '二' }],
+          directorSequence: { directorNodeId: 'desk', renderId: 'r1', shots: [{ shotId: 's1', cameraId: 'c1', sourceIn: 0, sourceOut: 2, start: 0, end: 2 }] },
+        }),
+        node('second', 'b.mp4', 400, { subtitleEntries: null, directorSequence: { directorNodeId: 'desk', renderId: 'r2', shots: [{ shotId: 's9', cameraId: 'c9', sourceIn: 4, sourceOut: 6, start: 0, end: 2 }] } }),
+      ],
+      connections: [],
+    })
+    return store
+  }
+
+  it('a cut takes its source\'s prompt and the cues and shots of its range, in its own time; the page\'s cuts (no land) carry nothing', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    const store = await richBoard()
+    const started = await call('/api/canvas/video/film-1/cut', { requestId: 'f0000000-0001', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 1000, outMs: 2000, land: { nearNodeId: 'src', connectFrom: ['src'] } })
+    const done = await finished(started.body.taskId)
+    const node = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === done.file.landedNodeId) as any
+    const placed = done.file.derivedFrom.sources[0]
+    expect(placed).toMatchObject({ inMs: 1000, atMs: 0 })
+    expect(node.metadata).toMatchObject({
+      prompt: '雨夜门口',
+      subtitleEntries: [{ id: 'b', startMs: 200, endMs: 800, text: '二' }],
+      directorSequence: { directorNodeId: 'desk', renderId: 'r1', shots: [{ shotId: 's1', sourceIn: 1, start: 0, end: (placed.outMs - 1000) / 1000 }] },
+    })
+    expect(node.metadata.videoTaskId).toBeUndefined()
+    // Without land the Host lands nothing, so it carries nothing either.
+    const page = await finished((await call('/api/canvas/video/film-1/cut', { requestId: 'f0000000-0002', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 0, outMs: 1000 })).body.taskId)
+    expect(page.file.landedNodeId).toBeUndefined()
+    expect((await store.read('film-1'))!.nodes).toHaveLength(3)
+  })
+
+  it('a join takes every clip\'s cues and shots, placed where the clip starts; a sound copy takes none', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    await writeFixture(media('b.mp4'), { frames: 50 })
+    const store = await richBoard()
+    const joined = await finished((await call('/api/canvas/video/film-1/join', {
+      requestId: 'f0000000-0003', clips: [{ nodeId: 'src', path: 'canvas/media/src.mp4' }, { nodeId: 'second', path: 'canvas/media/b.mp4' }], land: { nearNodeId: 'second', connectFrom: ['src', 'second'] },
+    })).body.taskId)
+    const node = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === joined.file.landedNodeId) as any
+    const secondAt = joined.file.derivedFrom.sources[1].atMs as number
+    expect(node.metadata.prompt).toBeUndefined()
+    expect(node.metadata.subtitleEntries).toEqual([{ id: 'a', startMs: 300, endMs: 800, text: '一' }, { id: 'b', startMs: 1200, endMs: 1800, text: '二' }])
+    // Two renders: the shots stay, the render identity does not.
+    expect(node.metadata.directorSequence).toEqual({ shots: [
+      { shotId: 's1', cameraId: 'c1', sourceIn: 0, sourceOut: 2, start: 0, end: 2 },
+      { shotId: 's9', cameraId: 'c9', sourceIn: 4, sourceOut: 6, start: secondAt / 1000, end: secondAt / 1000 + 2 },
+    ] })
+    const sound = await finished((await call('/api/canvas/video/film-1/extract-audio', { requestId: 'f0000000-0004', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, land: { nearNodeId: 'src', connectFrom: ['src'] } })).body.taskId)
+    const audio = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === sound.file.landedNodeId) as any
+    for (const key of ['prompt', 'subtitleEntries', 'directorSequence']) expect(audio.metadata[key], key).toBeUndefined()
+  })
+})
+
 describe('POST /api/canvas/video/:boardId/extract-audio', () => {
   it('copies the sound into an .m4a and lands an audio node beside the video', async () => {
     await writeFixture(media('src.mp4'), { frames: 50 })

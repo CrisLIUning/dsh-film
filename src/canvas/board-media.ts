@@ -6,10 +6,11 @@
  * raw URL. A file is put into an existing node, or landed on the board as a
  * new node, right of everything there — or, for a file made from other nodes
  * (a cut, a join, a sound copy), right of the node it came from, with an edge
- * from each source. Studio asks the open board page to add that node; here
- * the Host writes it into `film/canvas/document.json` under the board's lock
- * and announces the change, and an open canvas merges it in (its story-sync
- * refresh), so it works whether or not the page is open.
+ * from each source and what it carries over from them. Studio asks the open
+ * board page to add that node; here the Host writes it into
+ * `film/canvas/document.json` under the board's lock and announces the
+ * change, and an open canvas merges it in (its story-sync refresh), so it
+ * works whether or not the page is open.
  * @module dsh-film/canvas/board-media
  */
 
@@ -86,6 +87,12 @@ export interface LandFileInput {
   nearNodeId?: string
   /** Nodes the new node comes from: each gets an edge to it (id `derived:<new>:<from>`); missing ones are skipped. */
   connectFrom?: readonly string[]
+  /**
+   * More metadata worked out from the board's nodes as they are under its lock:
+   * what the new node carries over from its sources (their cues, director
+   * shots, prompt). `metadata` still wins over it.
+   */
+  carry?: (nodes: readonly unknown[]) => Record<string, unknown>
 }
 
 /** The gap between a node and one landed beside it. */
@@ -155,6 +162,7 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
         ...(positive(input.size) ? { bytes: input.size } : {}),
         mimeType: input.mimeType,
         ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
+        ...input.carry?.(current.nodes),
         ...input.metadata,
       },
     }

@@ -19,10 +19,14 @@
  * the media task routes. A repeated `requestId` answers with the task it
  * started. With `land: { nearNodeId, connectFrom, title? }` the Host puts the
  * result on the board right of `nearNodeId` with an edge from each of
- * `connectFrom` and `metadata.derivedFrom` (C1); without it the page lands it
- * itself. `derivedFrom.sources` (also on the task's file) give the range of
- * each source the result really holds and `atMs`, where it starts in the
- * result, for remapping subtitles and director cues. A path is the file
+ * `connectFrom` and `metadata.derivedFrom` (C1), and — like the page's own
+ * landing — what it carries over from its sources as the board holds them: a
+ * cut its source's prompt, a cut or a join their subtitle cues and director
+ * shots moved to the result's time (canvas/media-time.ts); without `land` the
+ * page lands it itself (the agent's video_* tools ask for `land`).
+ * `derivedFrom.sources` (also on the task's file) give the range of each
+ * source the result really holds and `atMs`, where it starts in the result,
+ * for remapping subtitles and director cues. A path is the file
  * relative to `film/` (or the board's raw URL of it) and never leaves `film/`.
  *
  * Errors answer `{ error: <text>, code }` like Studio's canvas routes.
@@ -35,6 +39,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { landFileOnBoard, mediaKindOfPath } from '../canvas/board-media.js'
 import type { BoardMediaKind } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
+import { cutCues, cutShots, joinCues, joinShots } from '../canvas/media-time.js'
 import { mediaTypeOf } from '../media.js'
 import { MediaEditError, checkRange, copyProblem, copyTarget, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed, sweepEditTemporaries } from '../media/edit.js'
 import type { EditProbe, EditResult } from '../media/edit.js'
@@ -184,6 +189,38 @@ interface DerivedSource {
   atMs: number
 }
 
+/** The metadata of one of the board's nodes, by id (an empty id names none). */
+function metadataOf(nodes: readonly unknown[], nodeId: string): Body | undefined {
+  if (nodeId === '') return undefined
+  const node = nodes.find(entry => isObject(entry) && entry.id === nodeId)
+  return isObject(node) && isObject(node.metadata) ? node.metadata : undefined
+}
+
+/**
+ * What a landed cut carries over from its source, as the page's 出片 does:
+ * the prompt, and the cues and director shots of the range, in the result's time.
+ */
+function carriedByCut(nodes: readonly unknown[], sources: readonly DerivedSource[]): Body {
+  const source = sources[0]
+  const metadata = source === undefined ? undefined : metadataOf(nodes, source.nodeId)
+  if (source === undefined || metadata === undefined) return {}
+  const cues = cutCues(metadata.subtitleEntries, source)
+  const shots = cutShots(metadata.directorSequence, source)
+  return {
+    ...(typeof metadata.prompt === 'string' && metadata.prompt !== '' ? { prompt: metadata.prompt } : {}),
+    ...(cues.length > 0 ? { subtitleEntries: cues } : {}),
+    ...(shots !== undefined ? { directorSequence: shots } : {}),
+  }
+}
+
+/** What a landed join carries over, as the page's 拼接 does: every clip's cues and director shots, placed where the clip starts. */
+function carriedByJoin(nodes: readonly unknown[], sources: readonly DerivedSource[]): Body {
+  const segments = sources.map(source => ({ ...source, metadata: metadataOf(nodes, source.nodeId) }))
+  const cues = joinCues(segments.map(({ metadata, ...range }) => ({ ...range, items: metadata?.subtitleEntries })))
+  const shots = joinShots(segments.map(({ metadata, ...range }) => ({ ...range, sequence: metadata?.directorSequence })))
+  return { ...(cues.length > 0 ? { subtitleEntries: cues } : {}), ...(shots !== undefined ? { directorSequence: shots } : {}) }
+}
+
 /**
  * Add the media edit routes to a router.
  * @param router - the Studio-compatible router.
@@ -233,6 +270,8 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       sources: (result: EditResult) => DerivedSource[]
       land: Landing | undefined
       metadata?: Body
+      /** What a landed result carries over from its sources, read from the board under its lock. */
+      carry?: (nodes: readonly unknown[], sources: readonly DerivedSource[]) => Body
       run: (absolute: string, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => Promise<EditResult>
     },
   ): Promise<Response> => {
@@ -270,6 +309,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
             metadata: { derivedFrom, ...edit.metadata },
             nearNodeId: edit.land.nearNodeId,
             connectFrom: edit.land.connectFrom,
+            ...(edit.carry !== undefined ? { carry: (nodes: readonly unknown[]) => edit.carry!(nodes, derivedFrom.sources) } : {}),
           })
         } catch (error) {
           // The file is made; a board that cannot be written leaves it for the page to land.
@@ -341,6 +381,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       target: resultPath('clip', extension),
       sources: result => [{ nodeId, path: source.path, ...(result.range ?? range), atMs: 0 }],
       land,
+      carry: carriedByCut,
       run: (target, options) => cutFile(source.absolute, target, range, boundary, options),
     })
   }))
@@ -380,6 +421,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       },
       land,
       metadata: { workflowKind: 'final', videoEditOperation: 'concat' },
+      carry: carriedByJoin,
       run: (target, options) => joinFiles(clips.map(clip => ({ path: clip.absolute, inMs: clip.inMs, outMs: clip.outMs })), target, options),
     })
   }))
