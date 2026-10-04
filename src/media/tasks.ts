@@ -8,6 +8,11 @@
  * Tasks are kept in `film/.tasks/<id>.json`, so a board reopened after a
  * restart can still pick up a running video.
  *
+ * The same store holds local tasks — work the Host runs itself, such as
+ * rendering the cut or recognising its speech — with the same wait and cancel
+ * routes. A local task ends once: a cancel or a restart leaves it interrupted,
+ * and a run that finishes afterwards cannot overwrite that.
+ *
  * A reference may also be a Studio URL of the film's own files: a bound
  * screenplay reference version (`/api/projects/<id>/story/documents/<doc>/
  * references/<asset>/<version>`, what a wired screenplay source card hands
@@ -17,7 +22,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { HostMediaModel } from './catalogue.js'
 import { readProject } from '../project.js'
@@ -67,7 +72,7 @@ export interface MediaTaskLike {
 
 export type FilmTaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'interrupted'
 
-/** The produced file, project-relative (the project is the workspace's `film/`). */
+/** The produced file, project-relative (the project is the workspace's `film/`), plus what a local task adds (a recognition's draft). */
 export interface FilmTaskFile {
   name: string
   size: number
@@ -75,6 +80,7 @@ export interface FilmTaskFile {
   mime: string
   model?: string
   surface?: string
+  [key: string]: unknown
 }
 
 export interface FilmTaskError {
@@ -85,10 +91,13 @@ export interface FilmTaskError {
   stage?: string
 }
 
-interface FilmTask {
+export type FilmTaskSurface = 'image' | 'video' | 'audio' | 'video-editor'
+
+/** One task as it is stored. */
+export interface FilmTask {
   taskId: string
   projectId: string
-  surface: 'image' | 'video' | 'audio'
+  surface: FilmTaskSurface
   model: string
   status: FilmTaskStatus
   startedAt: number
@@ -98,6 +107,33 @@ interface FilmTask {
   error?: FilmTaskError | null
   /** dsh-media's task, for videos. */
   mediaTaskId?: string
+  /** Work the Host runs itself. */
+  kind?: 'local'
+  /** What a local task was asked to do: its capability, idempotency key and parameters. */
+  request?: { capability: string; requestId?: string; parameters?: Record<string, unknown> }
+  /** What a restart of the Host leaves a running local task as. */
+  interruption?: FilmTaskError
+}
+
+/** A local task to start. */
+export interface LocalTaskSpec {
+  surface: FilmTaskSurface
+  model: string
+  capability: string
+  requestId?: string
+  parameters?: Record<string, unknown>
+  /** The first progress line. */
+  started?: string
+  /** What a restart of the Host leaves the task as (default: a generic interruption). */
+  interruption?: FilmTaskError
+}
+
+/** What a local task's body works with. */
+export interface LocalTaskContext {
+  taskId: string
+  signal: AbortSignal
+  /** Add a progress line (a repeat of the last one is dropped). */
+  progress(line: string): void
 }
 
 /** One answer to a wait: new progress lines since `since`, and where to continue. */
@@ -331,6 +367,8 @@ export class FilmMediaTasks {
   }
 
   private change(cwd: string, task: FilmTask, patch: Partial<FilmTask>, line?: string): void {
+    // A task ends once: a late answer after a cancel or a restart is not news.
+    if (TERMINAL.has(task.status) && (patch.status !== undefined || patch.file !== undefined || patch.error !== undefined)) return
     Object.assign(task, patch)
     if (line !== undefined && task.progress.at(-1) !== line) task.progress.push(line)
     if (TERMINAL.has(task.status) && task.endedAt === null) task.endedAt = Date.now()
@@ -494,8 +532,11 @@ export class FilmMediaTasks {
         const remote = await media.task(task.mediaTaskId).catch(() => undefined)
         if (remote !== undefined) this.follow(cwd, task, media, remote)
       } else if (task.mediaTaskId === undefined) {
-        // An image request does not survive a restart of the Host.
-        this.change(cwd, task, { status: 'interrupted', error: { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 } }, '已中断')
+        // An image request, a render or a recognition does not survive a restart of the Host.
+        this.change(cwd, task, {
+          status: 'interrupted',
+          error: task.interruption ?? { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 },
+        }, '已中断')
       }
     }
     return task
@@ -551,8 +592,77 @@ export class FilmMediaTasks {
    * @param taskId - the canvas task.
    */
   async cancel(cwd: string, taskId: string): Promise<void> {
-    await this.load(cwd, taskId)
+    const task = await this.load(cwd, taskId)
     this.running.get(this.key(cwd, taskId))?.abort(new Error('cancelled'))
+    // A local task stops here and now; its body's late end changes nothing.
+    if (task?.kind === 'local' && !TERMINAL.has(task.status)) {
+      this.change(cwd, task, { status: 'interrupted', error: { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 } }, '已取消')
+    }
+  }
+
+  /**
+   * Start work the Host runs itself, as a task the canvas, the editing desk
+   * and the agent can wait on and cancel.
+   * @param cwd - the workspace.
+   * @param projectId - the film's project id (echoed in snapshots).
+   * @param spec - what the task is.
+   * @param run - the work; its result is the task's file, its failure the task's error.
+   * @returns the task id.
+   */
+  async startLocal(cwd: string, projectId: string, spec: LocalTaskSpec, run: (context: LocalTaskContext) => Promise<FilmTaskFile>): Promise<{ taskId: string; status: FilmTaskStatus }> {
+    const taskId = randomUUID()
+    const task: FilmTask = {
+      taskId, projectId, surface: spec.surface, model: spec.model, status: 'running', startedAt: Date.now(), endedAt: null,
+      progress: [spec.started ?? '已开始'], error: null, kind: 'local',
+      request: { capability: spec.capability, ...(spec.requestId !== undefined ? { requestId: spec.requestId } : {}), ...(spec.parameters !== undefined ? { parameters: spec.parameters } : {}) },
+      ...(spec.interruption !== undefined ? { interruption: spec.interruption } : {}),
+    }
+    const key = this.key(cwd, taskId)
+    this.tasks.set(key, task)
+    await this.save(cwd, task)
+    const controller = new AbortController()
+    this.running.set(key, controller)
+    const context: LocalTaskContext = { taskId, signal: controller.signal, progress: (line) => { this.change(cwd, task, {}, line) } }
+    void (async () => {
+      try {
+        const file = await run(context)
+        this.change(cwd, task, { status: 'done', file }, '完成')
+      } catch (error) {
+        if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 } }, '已取消')
+        else this.change(cwd, task, { status: 'failed', error: errorOf(error) }, '失败')
+      } finally {
+        if (this.running.get(key) === controller) this.running.delete(key)
+      }
+    })()
+    return { taskId, status: task.status }
+  }
+
+  /**
+   * One task as stored, request and file included.
+   * @param cwd - the workspace.
+   * @param taskId - the task.
+   * @returns a copy, or `undefined` when there is no such task.
+   */
+  async record(cwd: string, taskId: string): Promise<FilmTask | undefined> {
+    const task = await this.load(cwd, taskId)
+    return task === undefined ? undefined : structuredClone(task)
+  }
+
+  /**
+   * Every task of the workspace, newest first.
+   * @param cwd - the workspace.
+   * @returns copies of the tasks.
+   */
+  async list(cwd: string): Promise<FilmTask[]> {
+    const names = await readdir(join(cwd, ...TASKS_DIR.split('/'))).catch(() => [] as string[])
+    const tasks: FilmTask[] = []
+    for (const name of names) {
+      const match = /^([A-Za-z0-9_-]{1,80})\.json$/u.exec(name)
+      if (match?.[1] === undefined) continue
+      const task = await this.load(cwd, match[1]).catch(() => undefined)
+      if (task !== undefined) tasks.push(structuredClone(task))
+    }
+    return tasks.sort((left, right) => right.startedAt - left.startedAt)
   }
 
   /** Stop following dsh-media tasks (the plugin is unloading). */
