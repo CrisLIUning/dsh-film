@@ -43,6 +43,7 @@ const REQUIRED = [
   ['LICENSE', 'the package would ship without its own licence', 'restore it from git'],
   ['lib/director/vendor/director-math/LICENSE', 'the vendored director math would ship without its licence', 'run `npm run build`'],
   ['apps/canvas/LICENSE', 'the canvas would ship without its licence', REWRITE_NOTICES],
+  ['apps/canvas/NOTICE', 'the canvas would ship without its attributions (Open AI Canvas, tigerowo)', REWRITE_NOTICES],
   ['apps/canvas/THIRD-PARTY-NOTICES.txt', 'the canvas bundle would ship without its third-party notices', REWRITE_NOTICES],
   ['apps/canvas/director-desk/LICENSE', 'the director desk would ship without its licence', REWRITE_NOTICES],
   ['apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt', 'the director desk would ship without its third-party notices', REBUILD_APPS],

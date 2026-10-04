@@ -20,7 +20,8 @@
  * tests) are removed; the step stops if a remaining file still names one.
  *
  * Then the app's licences and notices are written into its folder: the source
- * repository's licence files, and THIRD-PARTY-NOTICES.txt listing every npm
+ * repository's licence files and its NOTICE (the canvas credits the projects
+ * it adapts code from there), and THIRD-PARTY-NOTICES.txt listing every npm
  * package the bundle can contain — the production closure (lockfile entries
  * not marked "dev") of the app's lockfiles, each with its version, licence,
  * repository and the text of its licence files from node_modules. The
@@ -60,15 +61,27 @@ const APPS = {
       'vibedev-director-desk (MIT, Copyright (c) 2026 YZ; its source repository is',
       'not public; licence: director-desk/LICENSE).',
       '',
+      'vibedev-canvas is based on Infinite Canvas by basketikun (MIT) and contains',
+      'portions adapted from Open AI Canvas (MIT, Copyright (c) 2026 ddcat and Open',
+      'AI Canvas contributors) and from tigerowo/infinite-canvas (author TIGERQWQ,',
+      'used under the author\'s permission and licensed to VibeDev under the MIT',
+      'License). NOTICE in this folder, copied from the canvas repository, names',
+      'each source and lists the files derived from it with the commit they came from.',
+      '',
       'The desk\'s own build also writes director-desk/THIRD-PARTY-NOTICES.txt and',
       'director-desk/licenses/ (Mediabunny, MPL-2.0; and, in a build with the glTF',
       'decoders in director-desk/decoders/, the Draco decoder, Apache-2.0;',
       'meshoptimizer, MIT, is listed in the desk\'s notices); the list below covers',
       'the desk\'s npm packages as well.',
     ],
-    /** The source repositories' licence files, copied into the app folder. */
+    /**
+     * The source repositories' licence files, copied into the app folder. The
+     * canvas's NOTICE (beside its LICENSE at the repository root) credits the
+     * projects its code is based on or adapted from.
+     */
     licenses: source => [
       { from: join(source, 'LICENSE'), to: 'LICENSE' },
+      { from: join(source, 'NOTICE'), to: 'NOTICE' },
       { from: join(deskSource(source), 'LICENSE'), to: 'director-desk/LICENSE' },
     ],
     /**
