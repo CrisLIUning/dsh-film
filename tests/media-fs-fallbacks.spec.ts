@@ -1,8 +1,9 @@
 /**
  * What the file system does on some machines and not on the test machine:
  * a copy that fails half way (a full disk), how an import asks for its copy
- * (a clone where the file system has them), and OneDrive's cloud
- * placeholders, which a Windows directory listing reports as links.
+ * (a clone where the file system has them), OneDrive's cloud placeholders,
+ * which a Windows directory listing reports as links, and a drive without
+ * hard links (FAT32/exFAT, where Windows answers a link with EISDIR).
  */
 
 import { constants } from 'node:fs'
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fs = vi.hoisted(() => ({
   linkCalls: 0,
+  linkFailure: undefined as string | undefined,
   copyModes: [] as number[],
   copyFailure: undefined as string | undefined,
   placeholders: new Set<string>(),
@@ -31,6 +33,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...actual,
     link: async (...args: Parameters<typeof actual.link>) => {
       fs.linkCalls++
+      if (fs.linkFailure !== undefined) throw Object.assign(new Error(`${fs.linkFailure}: illegal operation on a directory, link`), { code: fs.linkFailure })
       return actual.link(...args)
     },
     copyFile: async (source: Parameters<typeof actual.copyFile>[0], target: Parameters<typeof actual.copyFile>[1], mode?: number) => {
@@ -53,12 +56,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const { importWorkspaceFile } = await import('../src/canvas/workspace-import.js')
 const { invalidateWorkspaceMedia, scanWorkspaceMedia } = await import('../src/media.js')
 const { CanvasAssetStore } = await import('../src/canvas/assets.js')
+const { cutFile } = await import('../src/media/edit.js')
+const { writeFixture } = await import('./media-edit-fixtures.js')
 
 let cwd: string
 
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-fs-'))
   fs.linkCalls = 0
+  fs.linkFailure = undefined
   fs.copyModes = []
   fs.copyFailure = undefined
   fs.placeholders.clear()
@@ -112,5 +118,21 @@ describe('cloud placeholders', () => {
     expect((await scanWorkspaceMedia(cwd)).files.map(entry => entry.path).sort()).toEqual(['media/cloud.png', 'synced/inside.mp4'])
     const library = await new CanvasAssetStore(cwd).read('film', 'film')
     expect(library.assets.map(asset => asset.filePath)).toEqual(['canvas/media/cloud.mp4'])
+  })
+})
+
+describe('media edits on a drive without hard links', () => {
+  it('name their result by renaming the temporary file onto a free name', async () => {
+    fs.linkFailure = 'EISDIR'
+    const media = join(cwd, 'film', 'canvas', 'media')
+    const source = await writeFixture(join(media, 'src.mp4'), { frames: 50 })
+    const first = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 0, outMs: 1000 }, 'expand')
+    expect(first.path).toBe(join(media, 'clip-1.mp4'))
+    // The name is taken now: the next one goes to the first free name, and the first file is untouched.
+    const second = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 1000, outMs: 2000 }, 'expand')
+    expect(second.path).toBe(join(media, 'clip-1-2.mp4'))
+    expect(fs.linkCalls).toBeGreaterThanOrEqual(2)
+    expect((await readdir(media)).sort()).toEqual(['clip-1-2.mp4', 'clip-1.mp4', 'src.mp4'])
+    expect((await stat(join(media, 'clip-1.mp4'))).size).toBe(first.size)
   })
 })

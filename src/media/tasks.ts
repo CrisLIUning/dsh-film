@@ -8,10 +8,14 @@
  * Tasks are kept in `film/.tasks/<id>.json`, so a board reopened after a
  * restart can still pick up a running video.
  *
- * 0.1 kept local tasks here too (work the Host ran itself for the cut it had
- * then). Their records still parse: the optional `kind`, `request`,
- * `interruption` and `cancellation` fields stay, and a restart leaves an
- * unfinished one interrupted, so an old task reads as interrupted.
+ * Local tasks are work the Host runs itself: since 0.3 the canvas's lossless
+ * media edits (cut, join, extract audio — `startLocal`, media/edit.ts), as
+ * 0.1 ran its own cut. They carry `kind: 'local'` and their `request`
+ * (capability, idempotency key, parameters); a cancel aborts the work and
+ * leaves the task interrupted with its `cancellation` (one that comes after
+ * the result is named is too late, and the task ends done), and a restart
+ * leaves an unfinished one interrupted, so an old 0.1 record reads as
+ * interrupted too. A failed edit's error carries the refusal `reasons`.
  *
  * A reference may also be a Studio URL of the film's own files: a bound
  * screenplay reference version (`/api/projects/<id>/story/documents/<doc>/
@@ -91,6 +95,8 @@ export interface FilmTaskError {
   status?: number
   retryable?: boolean
   stage?: string
+  /** A media edit refused while it ran (`MEDIA_EDIT_NEEDS_TRANSCODE`, `VIDEO_JOIN_NEEDS_TRANSCODE`): the reasons, as the routes' 422 answers give them. */
+  reasons?: Array<{ index: number; reason: string; detail: string }>
 }
 
 /** What a task generates. An old local task's record may name a surface no longer listed here. */
@@ -282,7 +288,48 @@ function errorOf(error: unknown): FilmTaskError {
 
 /** What a task the Host stopped reports (a restart): its own interruption, or the generic one. */
 function interruptedError(task: FilmTask): FilmTaskError {
-  return task.interruption ?? { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
+  if (task.interruption !== undefined) return task.interruption
+  if (task.kind === 'local' && task.request?.capability.startsWith('video.') === true) {
+    return { message: '剪辑过程中宿主重启，请重新操作。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
+  }
+  return { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
+}
+
+/** The media edits the Host runs itself (C10). */
+export type LocalCapability = 'video.cut' | 'video.join' | 'video.extract-audio'
+
+/** What one media edit is asked to do. */
+export interface LocalTaskRequest {
+  capability: LocalCapability
+  /** The caller's idempotency key: the same key again answers with the same task. */
+  requestId: string
+  parameters: Record<string, unknown>
+  surface: 'video' | 'audio'
+}
+
+/** The work of a media edit: produce the file, reporting progress lines; stop when the signal aborts. */
+export type LocalTaskRun = (signal: AbortSignal, progress: (line: string) => void) => Promise<FilmTaskFile>
+
+/** How many media edits may run at once in one workspace. */
+export const LOCAL_TASK_LIMIT = 2
+
+const REQUEST_ID = /^[A-Za-z0-9_-]{8,80}$/
+
+/** Why a local task failed, for the record: with an edit's refusal reasons, so the page knows what to re-encode. */
+function localErrorOf(error: unknown): FilmTaskError {
+  const coded = error as { status?: unknown; code?: unknown; message?: unknown; extra?: { reasons?: unknown } } | undefined
+  const reasons = Array.isArray(coded?.extra?.reasons)
+    ? (coded.extra.reasons as unknown[]).filter((entry): entry is { index: number; reason: string; detail: string } => {
+      const reason = entry as { index?: unknown; reason?: unknown; detail?: unknown } | null
+      return typeof reason?.index === 'number' && typeof reason.reason === 'string' && typeof reason.detail === 'string'
+    }).map(({ index, reason, detail }) => ({ index, reason, detail }))
+    : []
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    ...typeof coded?.code === 'string' ? { code: coded.code } : {},
+    status: typeof coded?.status === 'number' ? coded.status : 500,
+    ...reasons.length > 0 ? { reasons } : {},
+  }
 }
 
 /** Why the running work of a task store that is being disposed stopped. */
@@ -304,6 +351,10 @@ export class FilmMediaTasks {
   private readonly saves = new Map<string, Promise<void>>()
   /** Each spelling of a workspace that has a real path, and that path. */
   private readonly workspaces = new Map<string, string>()
+  /** Media edits running, per workspace (real path). */
+  private readonly localRunning = new Map<string, Set<string>>()
+  /** The task each media edit's request id started, by workspace and request id. */
+  private readonly requests = new Map<string, string>()
 
   /**
    * @param media - dsh-media's service, when the plugin is installed and running.
@@ -365,6 +416,110 @@ export class FilmMediaTasks {
       }
     }
     return `${real}\0${taskId}`
+  }
+
+  /** The workspace's real path, the part of {@link key} before the task id. */
+  private workspace(cwd: string): string {
+    return this.key(cwd, '').slice(0, -1)
+  }
+
+  /**
+   * The task an idempotency key started, in memory or on disk.
+   * @param cwd - the workspace.
+   * @param requestId - the key.
+   * @returns the task, or `undefined`.
+   */
+  private async byRequest(cwd: string, requestId: string): Promise<FilmTask | undefined> {
+    if (!REQUEST_ID.test(requestId)) return undefined
+    const known = this.requests.get(this.key(cwd, requestId))
+    if (known !== undefined) return this.tasks.get(this.key(cwd, known))
+    const stored = (await this.list(cwd)).find(task => task.kind === 'local' && task.request?.requestId === requestId)
+    if (stored === undefined) return undefined
+    this.requests.set(this.key(cwd, requestId), stored.taskId)
+    return this.tasks.get(this.key(cwd, stored.taskId))
+  }
+
+  /**
+   * The media edit a request id started, when it started one: the routes
+   * answer a repeated request with it before checking the request again.
+   * @param cwd - the workspace.
+   * @param requestId - the idempotency key.
+   * @param capability - the edit asked for; a different one is a conflict.
+   * @returns the task id and status, or `undefined`.
+   */
+  async findLocal(cwd: string, requestId: string, capability: LocalCapability): Promise<{ taskId: string; status: FilmTaskStatus } | undefined> {
+    const task = await this.byRequest(cwd, requestId)
+    if (task === undefined) return undefined
+    if (task.request?.capability !== capability) throw new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${requestId} already started a different edit.`)
+    return { taskId: task.taskId, status: task.status }
+  }
+
+  /**
+   * Start a media edit the Host runs itself (a cut, a join, a sound copy) as
+   * a task the canvas waits for and can cancel like a generation. The same
+   * request id again answers with the task it started, running or ended.
+   * At most {@link LOCAL_TASK_LIMIT} run at once per workspace.
+   * @param cwd - the workspace.
+   * @param projectId - the project id the canvas uses (echoed in snapshots).
+   * @param request - what the edit is.
+   * @param run - the work.
+   * @returns the task id, its status, and whether it existed already.
+   */
+  async startLocal(cwd: string, projectId: string, request: LocalTaskRequest, run: LocalTaskRun): Promise<{ taskId: string; status: FilmTaskStatus; existing: boolean }> {
+    if (!REQUEST_ID.test(request.requestId)) throw new FilmMediaError(400, 'MEDIA_EDIT_INVALID', 'requestId must be a UUID.')
+    const found = await this.byRequest(cwd, request.requestId)
+    // Checked again after the wait: the same request may have started meanwhile.
+    const startedMeanwhile = this.requests.get(this.key(cwd, request.requestId))
+    const existing = found ?? (startedMeanwhile === undefined ? undefined : this.tasks.get(this.key(cwd, startedMeanwhile)))
+    if (existing !== undefined) {
+      if (existing.request?.capability !== request.capability) {
+        throw new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${request.requestId} already started a different edit.`)
+      }
+      return { taskId: existing.taskId, status: existing.status, existing: true }
+    }
+    // From here to the task's creation nothing awaits: two requests cannot both pass these checks.
+    const workspace = this.workspace(cwd)
+    let active = this.localRunning.get(workspace)
+    if (active === undefined) this.localRunning.set(workspace, active = new Set())
+    if (active.size >= LOCAL_TASK_LIMIT) throw new FilmMediaError(503, 'MEDIA_EDIT_BUSY', `已有 ${active.size} 个剪辑任务在运行，请等它们完成后再试。`)
+    const taskId = randomUUID()
+    const key = this.key(cwd, taskId)
+    const task: FilmTask = {
+      taskId, projectId, surface: request.surface, model: 'host-copy', status: 'queued', startedAt: Date.now(), endedAt: null, progress: ['已提交'], error: null,
+      kind: 'local', request: { capability: request.capability, requestId: request.requestId, parameters: request.parameters },
+    }
+    this.tasks.set(key, task)
+    this.requests.set(this.key(cwd, request.requestId), taskId)
+    const controller = new AbortController()
+    this.running.set(key, controller)
+    active.add(taskId)
+    await this.save(cwd, task)
+    void (async () => {
+      this.change(cwd, task, { status: 'running' }, '读取片段')
+      try {
+        if (controller.signal.aborted) throw controller.signal.reason
+        const file = await run(controller.signal, (line) => { if (!controller.signal.aborted) this.change(cwd, task, {}, line) })
+        // A cancel that came after the result got its name (while it was measured or landed on the board) is too late:
+        // the file exists and may be on the board, so the task is done with it rather than cancelled with a file left over.
+        this.change(cwd, task, { status: 'done', file }, '完成')
+      } catch (error) {
+        if (controller.signal.aborted) {
+          if (controller.signal.reason instanceof TasksDisposedError) {
+            const interruption: FilmTaskError = { message: '剪辑过程中宿主停止，请重新操作。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
+            this.change(cwd, task, { status: 'interrupted', error: interruption, interruption }, '已中断')
+          } else {
+            const cancellation: FilmTaskError = { message: '已取消。', code: 'ABORTED', status: 499 }
+            this.change(cwd, task, { status: 'interrupted', error: cancellation, cancellation }, '已取消')
+          }
+        } else {
+          this.change(cwd, task, { status: 'failed', error: localErrorOf(error) }, '失败')
+        }
+      } finally {
+        this.running.delete(key)
+        active.delete(taskId)
+      }
+    })()
+    return { taskId, status: task.status, existing: false }
   }
 
   private file(cwd: string, taskId: string): string {
@@ -634,7 +789,8 @@ export class FilmMediaTasks {
 
   /**
    * Stop waiting for a task: an image request is cancelled; a submitted video
-   * cannot be cancelled at the gateway and keeps running.
+   * cannot be cancelled at the gateway and keeps running; a media edit stops
+   * and deletes its partial file (once its result is named it finishes done).
    * @param cwd - the workspace.
    * @param taskId - the canvas task.
    */

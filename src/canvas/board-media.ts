@@ -4,10 +4,13 @@
  * The board is where a film's material collects — generations, renders,
  * files someone dropped in. Its media nodes play project files by Studio's
  * raw URL. A file is put into an existing node, or landed on the board as a
- * new node, right of everything there. Studio asks the open board page to add that node; here
- * the Host writes it into `film/canvas/document.json` under the board's lock
- * and announces the change, and an open canvas merges it in (its story-sync
- * refresh), so it works whether or not the page is open.
+ * new node, right of everything there — or, for a file made from other nodes
+ * (a cut, a join, a sound copy), right of the node it came from, with an edge
+ * from each source and what it carries over from them. Studio asks the open
+ * board page to add that node; here the Host writes it into
+ * `film/canvas/document.json` under the board's lock and announces the
+ * change, and an open canvas merges it in (its story-sync refresh), so it
+ * works whether or not the page is open.
  * @module dsh-film/canvas/board-media
  */
 
@@ -80,6 +83,49 @@ export interface LandFileInput {
   size?: number
   /** More of the node's metadata. */
   metadata?: Record<string, unknown>
+  /** Place the node right of this node (same top) instead of right of everything; a missing node falls back. */
+  nearNodeId?: string
+  /** Nodes the new node comes from: each gets an edge to it (id `derived:<new>:<from>`); missing ones are skipped. */
+  connectFrom?: readonly string[]
+  /**
+   * More metadata worked out from the board's nodes as they are under its lock:
+   * what the new node carries over from its sources (their cues, director
+   * shots, prompt). `metadata` still wins over it.
+   */
+  carry?: (nodes: readonly unknown[]) => Record<string, unknown>
+}
+
+/** The gap between a node and one landed beside it. */
+const BOARD_NODE_GAP = 96
+
+/** Whether two boxes overlap. */
+const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+/**
+ * Where a node derived from another goes: right of it at the same top (Studio's
+ * derived-node pattern), moved down past any node already there.
+ * @param nodes - the board's nodes.
+ * @param nearNodeId - the node it comes from.
+ * @param size - the new node's size.
+ * @returns the top-left corner, or `null` when the node is not on the board.
+ */
+export function derivedNodePosition(nodes: readonly unknown[], nearNodeId: string, size: { width: number; height: number }): { x: number; y: number } | null {
+  const boxes = nodes.flatMap((raw) => {
+    const node = record(raw)
+    const position = record(node?.position)
+    if (node === null || position === null || typeof position.x !== 'number' || typeof position.y !== 'number' || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return []
+    return [{ id: node.id, x: position.x, y: position.y, width: positive(node.width) ? node.width : 0, height: positive(node.height) ? node.height : 0 }]
+  })
+  const near = boxes.find(box => box.id === nearNodeId)
+  if (near === undefined) return null
+  const box = { x: near.x + near.width + BOARD_NODE_GAP, y: near.y, ...size }
+  for (let step = 0; step < 100; step++) {
+    const blocking = boxes.find(other => overlaps(box, other))
+    if (blocking === undefined) break
+    box.y = blocking.y + blocking.height + BOARD_NODE_GAP / 2
+  }
+  return { x: box.x, y: box.y }
 }
 
 /**
@@ -99,11 +145,12 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
     // Checked again under the lock: the board may have gone meanwhile.
     if (current === null || current.id !== boardId) throw new BoardGoneError()
     const size = boardNodeSize(input.width ?? 0, input.height ?? 0)
+    const near = input.nearNodeId === undefined ? null : derivedNodePosition(current.nodes, input.nearNodeId, size)
     const node = {
       id: nodeId,
       type: input.kind,
       title: input.title ?? posix.basename(input.path),
-      position: boardNodePosition(current.nodes),
+      position: near ?? boardNodePosition(current.nodes),
       width: size.width,
       height: size.height,
       metadata: {
@@ -115,11 +162,20 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
         ...(positive(input.size) ? { bytes: input.size } : {}),
         mimeType: input.mimeType,
         ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
+        ...input.carry?.(current.nodes),
         ...input.metadata,
       },
     }
     landed = true
-    return { ...current, nodes: [...current.nodes, node], updatedAt: new Date().toISOString() }
+    const present = new Set(current.nodes.map(raw => record(raw)?.id).filter((id): id is string => typeof id === 'string'))
+    const edges = [...new Set(input.connectFrom ?? [])].filter(from => present.has(from))
+      .map(from => ({ id: `derived:${nodeId}:${from}`, fromNodeId: from, toNodeId: nodeId }))
+    return {
+      ...current,
+      nodes: [...current.nodes, node],
+      ...(edges.length > 0 ? { connections: [...(Array.isArray(current.connections) ? current.connections : []), ...edges] } : {}),
+      updatedAt: new Date().toISOString(),
+    }
   }).catch((error: unknown) => {
     if (!(error instanceof BoardGoneError)) throw error
   })

@@ -1,8 +1,8 @@
 /**
  * The agent's film tools: `film_project` in every conversation; in the
  * conversations whose workspace is a film, the screenplay, storyboard and film
- * task tools plus `film_tools`, and the director desk's and the modeling tools as
- * groups taken on when needed.
+ * task tools plus `film_tools`, and the director desk's, the modeling and the
+ * cutting tools as groups taken on when needed.
  * @module dsh-film/agent
  */
 
@@ -17,6 +17,7 @@ import { canvasTools } from './canvas-tools.js'
 import { jsonOutput, plain } from './context.js'
 import type { FilmToolServices } from './context.js'
 import { directorTools } from './director-tools.js'
+import { EDITING_GROUP_DESCRIPTION, editingTools } from './editing-tools.js'
 import { FILM_GUIDANCE } from './guidance.js'
 import { installFilmAgentTools } from './install.js'
 import type { FilmToolGroup, FilmToolInstaller } from './install.js'
@@ -54,6 +55,17 @@ async function boardHasDirector(cwd: string): Promise<boolean> {
   return Array.isArray(nodes) && nodes.some(node => (node as { type?: unknown } | null)?.type === 'director')
 }
 
+/** Whether the film's saved board holds a video node with a file. */
+async function boardHasVideo(cwd: string): Promise<boolean> {
+  const text = await readFile(join(cwd, ...CANVAS_DOCUMENT_FILE.split('/')), 'utf8').catch(() => '')
+  if (!text.includes('"video"')) return false
+  const nodes = (JSON.parse(text) as { nodes?: unknown }).nodes
+  return Array.isArray(nodes) && nodes.some((node) => {
+    const value = node as { type?: unknown; metadata?: { content?: unknown } | null } | null
+    return value?.type === 'video' && typeof value.metadata?.content === 'string' && value.metadata.content.trim() !== ''
+  })
+}
+
 /**
  * The tool groups a film conversation takes on when it needs them.
  * @param services - the film services.
@@ -69,6 +81,11 @@ export function filmToolGroups(services: FilmToolServices): Record<string, FilmT
     modeling: {
       description: 'Places and procedural models: compile a space plan into a GLB for the desk, prepare model briefs, read and annotate model records (space_plan_compile, model_*).',
       tools: () => modelingTools(services),
+    },
+    editing: {
+      description: EDITING_GROUP_DESCRIPTION,
+      tools: () => editingTools(services),
+      startsEnabled: boardHasVideo,
     },
   }
 }

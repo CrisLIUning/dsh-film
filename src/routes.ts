@@ -27,6 +27,7 @@ import { FilmMediaTasks } from './media/tasks.js'
 import type { MediaServiceLike } from './media/tasks.js'
 import { addCanvasRoutes } from './studio/canvas-routes.js'
 import { CanvasBoardAgent } from './canvas/board-agent.js'
+import { addMediaEditRoutes } from './studio/media-edit-routes.js'
 import { addMediaRoutes } from './studio/media-routes.js'
 import { ProjectEvents } from './studio/events.js'
 import { addProjectRoutes } from './studio/project-routes.js'
@@ -170,6 +171,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
   addDirectorRoutes(router, { events, boardAgent })
   const tasks = options.tasks ?? new FilmMediaTasks(media)
   addMediaRoutes(router, tasks, media)
+  addMediaEditRoutes(router, tasks, events)
   addProjectRoutes(router, events)
   addBoardFileRoutes(router, events)
   addTextRoutes(router, new CanvasTextModels(options.text ?? (() => ({}))), async (model) => {
