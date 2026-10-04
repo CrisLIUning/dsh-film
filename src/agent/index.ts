@@ -27,6 +27,7 @@ import { storyExchangeTools } from './story-exchange-tools.js'
 import { storyProductionTools } from './story-production-tools.js'
 import { FilmToolError } from './studio-client.js'
 import { timelineTools } from './timeline-tools.js'
+import { renderTools } from './render-tools.js'
 
 export type { FilmToolServices, FilmWorkspace } from './context.js'
 export { FilmToolError } from './studio-client.js'
@@ -42,6 +43,7 @@ export function filmCoreTools(services: FilmToolServices): ToolDefinition[] {
     ...storyExchangeTools(services),
     ...storyProductionTools(services),
     ...canvasTools(services), ...timelineTools(services),
+    ...renderTools(services),
   ]
 }
 

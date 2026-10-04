@@ -17,7 +17,7 @@
  *   node scripts/build-apps.mjs [canvas] [editor]
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -38,10 +38,22 @@ const APPS = {
       const bridge = join(source, 'packages', 'video-editor-bridge')
       run('node', ['./esbuild.config.mjs'], bridge)
       cpSync(join(bridge, 'dist', 'index.mjs'), join(root, 'vendor', 'video-editor-bridge.mjs'))
+      assertBridgeExports(join(root, 'vendor', 'video-editor-bridge.mjs'))
       console.log('[apps] editor: bridge contract → vendor/video-editor-bridge.mjs')
       return join(source, 'dist-dsh')
     },
   },
+}
+
+/** What the Host half imports from the bridge (vendor/video-editor-bridge.d.mts): a build without one would fail at load. */
+const BRIDGE_EXPORTS = ['executeVideoEditorCommandPlan', 'buildNativeTimelineFfmpegPlan', 'getNativeTimelineFfmpegMediaRequirements', 'isTimelineArchive']
+
+function assertBridgeExports(file) {
+  const text = readFileSync(file, 'utf8')
+  const exported = /export\s*\{([^}]*)\}\s*;?\s*$/u.exec(text)?.[1] ?? ''
+  const names = new Set(exported.split(',').map(entry => entry.trim().split(/\s+as\s+/u).pop()))
+  const missing = BRIDGE_EXPORTS.filter(name => !names.has(name))
+  if (missing.length > 0) throw new Error(`editor: the bridge build no longer exports ${missing.join(', ')}`)
 }
 
 function run(command, args, cwd) {

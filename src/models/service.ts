@@ -9,14 +9,22 @@
  * Nothing is downloaded before the person agrees; agreements are kept per
  * model in `consents.json` beside the files. A file counts as present only
  * when its size and digest match, and is served only then.
+ *
+ * The same consent and verified download also fetch programs the Host runs
+ * itself (`models/renderer.json`: the FFmpeg the background render uses). Such
+ * a program comes as one pinned archive, offered only on the platforms it is
+ * built for; it is unpacked with Windows' own `tar.exe`, and only the listed
+ * files are kept, each checked against its size and SHA-256, with the licence
+ * and a note of where the source is beside them.
  * @module dsh-film/models/service
  */
 
+import { execFile } from 'node:child_process'
 import { createHash, randomUUID as cryptoRandomUUID } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, win32 } from 'node:path'
 import { STALL_TIMEOUT_MS, VerifiedDownloadFailure, downloadVerifiedFile } from './download.js'
 
 export interface EditorModelArtifact {
@@ -27,16 +35,41 @@ export interface EditorModelArtifact {
   sources: readonly string[]
 }
 
+/** A file kept from a program's archive. */
+export interface EditorModelArchiveFile {
+  /** Where it is in the archive, below its top folder, with `/` separators. */
+  path: string
+  /** Its name beside the program. */
+  fileName: string
+  bytes: number
+  sha256: string
+}
+
+/** How a program's single archive artifact becomes the files it runs from. */
+export interface EditorModelArchive {
+  /** The archive's single top folder. */
+  root: string
+  /** The file to run, among `files`. */
+  program: string
+  files: readonly EditorModelArchiveFile[]
+  /** `SOURCE.txt`, written beside the files: where the program and its source come from. */
+  sourceNote: readonly string[]
+}
+
 export interface EditorModelManifest {
   id: string
   label: string
-  /** The editor capability that uses it (`tts`, `segmentation`, `caption-font`...). */
+  /** The editor capability that uses it (`tts`, `segmentation`, `caption-font`, `renderer`...). */
   capability: string
   revision: string
   license: { name: string; notice?: string; url?: string }
   /** Models agreed to together (all caption fonts share one licence and one question). */
   group?: string
+  /** `<platform>-<arch>` it is built for; offered everywhere when absent. */
+  platforms?: readonly string[]
   artifacts: readonly EditorModelArtifact[]
+  /** A program: the one artifact is an archive unpacked into these files. */
+  archive?: EditorModelArchive
 }
 
 /** What the editor is told about a model: no source URLs, the hosts they are on. */
@@ -54,6 +87,8 @@ export interface EditorModelListing {
   totalBytes: number
   sourceHosts: string[]
   artifacts: { id: string; fileName: string; bytes: number; sha256: string }[]
+  /** A program rather than model files: what is kept once it is unpacked. */
+  program?: { fileName: string; installedBytes: number }
 }
 
 export interface EditorModelTask {
@@ -79,11 +114,18 @@ export class EditorModelError extends Error {
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/
 const SHA256 = /^[0-9a-f]{64}$/
 
-/** Hosts a download may end up on after redirects. */
+/**
+ * Hosts a download may end up on after redirects. GitHub's release hosts
+ * serve the FFmpeg archive's upstream copy; every byte is checked against
+ * the pinned digest whichever host sends it.
+ */
 const TRUSTED_HOSTS: ReadonlySet<string> = new Set([
   'vibedev.jzsaas.com',
   'raw.githubusercontent.com',
   'storage.googleapis.com',
+  'github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
 ])
 
 /** How long a finished task stays readable. */
@@ -97,6 +139,40 @@ export function packagedModelManifests(): EditorModelManifest[] {
   const file = JSON.parse(readFileSync(new URL('../../models/video-editor-models.json', import.meta.url), 'utf8')) as { models: EditorModelManifest[] }
   return file.models
 }
+
+/**
+ * The packaged programs the Host may download (`models/renderer.json`).
+ * @returns their manifests, for every platform.
+ */
+export function rendererManifests(): EditorModelManifest[] {
+  const file = JSON.parse(readFileSync(new URL('../../models/renderer.json', import.meta.url), 'utf8')) as { models: EditorModelManifest[] }
+  return file.models
+}
+
+/** This machine as manifests name platforms (`win32-x64`). */
+const currentPlatform = (): string => `${process.platform}-${process.arch}`
+
+/**
+ * Unpack named entries of a zip with Windows' own `tar.exe` (bsdtar, which
+ * reads zip archives since Windows 10 1803), never a `tar` found on PATH:
+ * Git's GNU tar cannot read zips.
+ * @param archive - the zip.
+ * @param destination - the folder the entries land in, below their archive paths.
+ * @param entries - archive paths, `/`-separated.
+ * @param signal - stops the unpacking.
+ */
+export function extractWithWindowsTar(archive: string, destination: string, entries: readonly string[], signal: AbortSignal): Promise<void> {
+  const tar = win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+  return new Promise((done, fail) => {
+    execFile(tar, ['-xf', archive, '-C', destination, ...entries], { windowsHide: true, signal, timeout: 10 * 60_000 }, (error, _stdout, stderr) => {
+      if (error === null) done()
+      else fail(new Error(`${error.message}${stderr.trim() === '' ? '' : `: ${stderr.trim().split('\n').slice(-3).join(' ')}`}`))
+    })
+  })
+}
+
+/** Unpacks named archive entries into a folder (tests replace the system tool). */
+export type ArchiveExtractor = (archive: string, destination: string, entries: readonly string[], signal: AbortSignal) => Promise<void>
 
 /**
  * Where the models are kept by default: `$DSH_HOME/cache/dsh-film/video-editor-models`,
@@ -132,9 +208,29 @@ function validate(manifest: EditorModelManifest): void {
     if (bad) throw new Error(`invalid editor model artifact: ${manifest.id}/${artifact.id}`)
     ids.add(artifact.id)
   }
+  const archive = manifest.archive
+  if (archive !== undefined) {
+    const names = new Set<string>()
+    const unsafeName = (name: string): boolean => name === '' || name.includes('/') || name.includes('\\') || name.startsWith('.')
+    const bad = manifest.artifacts.length !== 1 || archive.files.length === 0 || !archive.files.some(file => file.fileName === archive.program)
+      || unsafeName(archive.root)
+      || archive.files.some((file) => {
+        const duplicate = names.has(file.fileName.toLowerCase())
+        names.add(file.fileName.toLowerCase())
+        return duplicate || file.fileName === 'SOURCE.txt' || unsafeName(file.fileName)
+          || file.path.includes('\\') || file.path.split('/').some(part => part === '' || part === '.' || part === '..')
+          || !Number.isSafeInteger(file.bytes) || file.bytes <= 0 || !SHA256.test(file.sha256)
+      })
+    if (bad) throw new Error(`invalid editor model archive: ${manifest.id}`)
+  }
 }
 
-async function digestOf(path: string): Promise<{ bytes: number; sha256: string }> {
+/**
+ * A file's size and SHA-256.
+ * @param path - the file.
+ * @returns both.
+ */
+export async function digestOf(path: string): Promise<{ bytes: number; sha256: string }> {
   const hash = createHash('sha256')
   let bytes = 0
   for await (const chunk of createReadStream(path)) {
@@ -166,6 +262,10 @@ export interface EditorModelsOptions {
   isTrustedHost?: (hostname: string) => boolean
   stallTimeoutMs?: number
   now?: () => number
+  /** This machine as manifests name platforms; `<process.platform>-<process.arch>` by default. */
+  platform?: string
+  /** How program archives are unpacked; Windows' `tar.exe` by default. */
+  extract?: ArchiveExtractor
 }
 
 export class EditorModels {
@@ -177,6 +277,7 @@ export class EditorModels {
   private readonly isTrustedHost: (hostname: string) => boolean
   private readonly stallTimeoutMs: number
   private readonly now: () => number
+  private readonly extract: ArchiveExtractor
   private readonly tasks = new Map<string, Task>()
   private readonly preparations = new Map<string, Preparation>()
   /** Files whose digest matched, by path: the size and time they had then. */
@@ -192,8 +293,12 @@ export class EditorModels {
     this.isTrustedHost = options.isTrustedHost ?? (hostname => TRUSTED_HOSTS.has(hostname.toLowerCase()))
     this.stallTimeoutMs = options.stallTimeoutMs ?? STALL_TIMEOUT_MS
     this.now = options.now ?? Date.now
-    for (const manifest of options.manifests ?? packagedModelManifests()) {
+    this.extract = options.extract ?? extractWithWindowsTar
+    const platform = options.platform ?? currentPlatform()
+    for (const manifest of options.manifests ?? [...packagedModelManifests(), ...rendererManifests()]) {
       validate(manifest)
+      // A program built for another platform is not offered here at all.
+      if (manifest.platforms !== undefined && !manifest.platforms.includes(platform)) continue
       if (this.manifests.has(manifest.id)) throw new Error(`duplicate editor model manifest: ${manifest.id}`)
       this.manifests.set(manifest.id, manifest)
       if (manifest.group !== undefined) this.groups.set(manifest.group, [...this.groups.get(manifest.group) ?? [], manifest.id])
@@ -214,6 +319,9 @@ export class EditorModels {
       totalBytes: manifest.artifacts.reduce((total, artifact) => total + artifact.bytes, 0),
       sourceHosts: [...new Set(manifest.artifacts.flatMap(artifact => artifact.sources.map(source => new URL(source).hostname)))],
       artifacts: manifest.artifacts.map(({ sources: _sources, ...artifact }) => artifact),
+      ...(manifest.archive !== undefined
+        ? { program: { fileName: manifest.archive.program, installedBytes: manifest.archive.files.reduce((total, file) => total + file.bytes, 0) } }
+        : {}),
     }))
   }
 
@@ -282,7 +390,7 @@ export class EditorModels {
   }
 
   /** Whether a file is present with the artifact's size and digest; digests are remembered per size and time. */
-  private async present(path: string, artifact: EditorModelArtifact): Promise<boolean> {
+  private async present(path: string, artifact: { bytes: number; sha256: string }): Promise<boolean> {
     let info
     try {
       info = await stat(path)
@@ -307,7 +415,125 @@ export class EditorModels {
     }
   }
 
+  /** Download one artifact to `target`, verified; `onBytes` hears how much of it arrived. */
+  private async fetchArtifact(manifest: EditorModelManifest, artifact: EditorModelArtifact, target: string, preparation: Preparation, onBytes: (loaded: number) => void): Promise<void> {
+    try {
+      await downloadVerifiedFile({
+        sources: artifact.sources,
+        bytes: artifact.bytes,
+        sha256: artifact.sha256,
+        target,
+        signal: preparation.controller.signal,
+        fetch: this.fetch,
+        isTrustedUrl: url => url.protocol === 'https:' && this.isTrustedHost(url.hostname),
+        randomUUID: this.randomUUID,
+        stallTimeoutMs: this.stallTimeoutMs,
+        onBytes,
+      })
+    } catch (error) {
+      if (!(error instanceof VerifiedDownloadFailure)) throw error
+      if (error.integrityFailure) {
+        throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_INTEGRITY_FAILED', `${manifest.label} 的文件 ${artifact.fileName} 校验不通过，已丢弃，请稍后重试。`)
+      }
+      const reason = error.lastError instanceof Error ? error.lastError.message : String(error.lastError)
+      throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_DOWNLOAD_FAILED', `${manifest.label} 下载失败（${reason}），请检查网络后重试。`)
+    }
+    const info = await stat(target)
+    this.verified.set(target, `${info.size}:${info.mtimeMs}`)
+  }
+
+  /** Every task following a preparation is done. */
+  private finish(manifest: EditorModelManifest, preparation: Preparation, cached: boolean): void {
+    for (const taskId of preparation.taskIds) {
+      const task = this.tasks.get(taskId)
+      if (task?.status === 'running') {
+        Object.assign(task, { status: 'done', cached: true, progress: 100, phase: cached ? `${manifest.label} 已在本机` : `${manifest.label} 已下载`, updatedAt: this.now() })
+      }
+    }
+  }
+
+  private programDirectory(manifest: EditorModelManifest): string {
+    return join(this.root, manifest.id, manifest.revision)
+  }
+
+  /** Whether every file a program runs from is present and verified. */
+  private async programPresent(manifest: EditorModelManifest, archive: EditorModelArchive): Promise<boolean> {
+    const directory = this.programDirectory(manifest)
+    for (const file of archive.files) {
+      if (!await this.present(join(directory, file.fileName), file)) return false
+    }
+    return true
+  }
+
+  /**
+   * Get a program ready: when its files are not all present, download the
+   * archive (a verified copy left by an earlier failed unpack is reused),
+   * unpack the listed entries into a scratch folder, check each, and move the
+   * set into place in one rename, so a half-unpacked program never runs.
+   */
+  private async prepareProgram(manifest: EditorModelManifest, archive: EditorModelArchive, preparation: Preparation): Promise<void> {
+    this.update(preparation, { phase: `正在检查本机的 ${manifest.label}` })
+    if (await this.programPresent(manifest, archive)) {
+      this.finish(manifest, preparation, true)
+      return
+    }
+    const artifact = manifest.artifacts[0]!
+    const home = join(this.root, manifest.id)
+    await mkdir(home, { recursive: true })
+    const download = join(home, `.download-${manifest.revision}-${artifact.fileName}`)
+    if (!await this.present(download, artifact)) {
+      await rm(download, { force: true }).catch(() => {})
+      const label = `正在下载 ${manifest.label}（共 ${megabytes(artifact.bytes)}）`
+      this.update(preparation, { phase: label })
+      await this.fetchArtifact(manifest, artifact, download, preparation, (loaded) => {
+        this.update(preparation, { progress: Math.min(90, Math.round((loaded / artifact.bytes) * 90)), phase: label })
+      })
+    }
+    const scratch = join(home, `.extract-${this.randomUUID()}`)
+    const staging = join(home, `.staging-${this.randomUUID()}`)
+    try {
+      this.update(preparation, { progress: 92, phase: `正在解压 ${manifest.label}` })
+      await mkdir(scratch, { recursive: true })
+      await mkdir(staging, { recursive: true })
+      try {
+        await this.extract(download, scratch, archive.files.map(file => `${archive.root}/${file.path}`), preparation.controller.signal)
+      } catch (error) {
+        if (preparation.controller.signal.aborted) throw error
+        throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_EXTRACT_FAILED', `${manifest.label} 解压失败（${error instanceof Error ? error.message : String(error)}）。`)
+      }
+      this.update(preparation, { progress: 96, phase: `正在校验 ${manifest.label}` })
+      for (const file of archive.files) {
+        const unpacked = join(scratch, archive.root, ...file.path.split('/'))
+        const digest = await digestOf(unpacked).catch(() => undefined)
+        if (digest === undefined || digest.bytes !== file.bytes || digest.sha256 !== file.sha256) {
+          // The archive matched its pin, so this is no transfer error: drop it rather than unpack it again.
+          await rm(download, { force: true }).catch(() => {})
+          throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_INTEGRITY_FAILED', `${manifest.label} 的文件 ${file.fileName} 校验不通过，已丢弃，请稍后重试。`)
+        }
+        await rename(unpacked, join(staging, file.fileName))
+      }
+      await writeFile(join(staging, 'SOURCE.txt'), archive.sourceNote.join('\r\n'), 'utf8')
+      const directory = this.programDirectory(manifest)
+      await rm(directory, { recursive: true, force: true })
+      await rename(staging, directory)
+      for (const file of archive.files) {
+        const path = join(directory, file.fileName)
+        const info = await stat(path)
+        this.verified.set(path, `${info.size}:${info.mtimeMs}`)
+      }
+      await rm(download, { force: true }).catch(() => {})
+    } finally {
+      await rm(scratch, { recursive: true, force: true }).catch(() => {})
+      await rm(staging, { recursive: true, force: true }).catch(() => {})
+    }
+    this.finish(manifest, preparation, false)
+  }
+
   private async prepare(manifest: EditorModelManifest, preparation: Preparation): Promise<void> {
+    if (manifest.archive !== undefined) {
+      await this.prepareProgram(manifest, manifest.archive, preparation)
+      return
+    }
     const total = manifest.artifacts.reduce((sum, artifact) => sum + artifact.bytes, 0)
     let done = 0
     let allCached = true
@@ -324,39 +550,13 @@ export class EditorModels {
       await mkdir(join(this.root, manifest.id, manifest.revision), { recursive: true })
       const label = `正在下载 ${manifest.label}（共 ${megabytes(total)}）`
       this.update(preparation, { phase: label })
-      try {
-        await downloadVerifiedFile({
-          sources: artifact.sources,
-          bytes: artifact.bytes,
-          sha256: artifact.sha256,
-          target,
-          signal: preparation.controller.signal,
-          fetch: this.fetch,
-          isTrustedUrl: url => url.protocol === 'https:' && this.isTrustedHost(url.hostname),
-          randomUUID: this.randomUUID,
-          stallTimeoutMs: this.stallTimeoutMs,
-          onBytes: (loaded) => {
-            this.update(preparation, { progress: Math.min(99, Math.round(((done + loaded) / total) * 100)), phase: label })
-          },
-        })
-      } catch (error) {
-        if (!(error instanceof VerifiedDownloadFailure)) throw error
-        if (error.integrityFailure) {
-          throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_INTEGRITY_FAILED', `${manifest.label} 的文件 ${artifact.fileName} 校验不通过，已丢弃，请稍后重试。`)
-        }
-        const reason = error.lastError instanceof Error ? error.lastError.message : String(error.lastError)
-        throw new EditorModelError(502, 'VIDEO_EDITOR_MODEL_DOWNLOAD_FAILED', `${manifest.label} 下载失败（${reason}），请检查网络后重试。`)
-      }
-      const info = await stat(target)
-      this.verified.set(target, `${info.size}:${info.mtimeMs}`)
+      const before = done
+      await this.fetchArtifact(manifest, artifact, target, preparation, (loaded) => {
+        this.update(preparation, { progress: Math.min(99, Math.round(((before + loaded) / total) * 100)), phase: label })
+      })
       done += artifact.bytes
     }
-    for (const taskId of preparation.taskIds) {
-      const task = this.tasks.get(taskId)
-      if (task?.status === 'running') {
-        Object.assign(task, { status: 'done', cached: true, progress: 100, phase: allCached ? `${manifest.label} 已在本机` : `${manifest.label} 已下载`, updatedAt: this.now() })
-      }
-    }
+    this.finish(manifest, preparation, allCached)
   }
 
   private prune(): void {
@@ -459,6 +659,19 @@ export class EditorModels {
     if (!await this.present(path, artifact)) throw new EditorModelError(409, 'VIDEO_EDITOR_MODEL_NOT_READY', `${manifest.label} 还没有下载好。`)
     const info = await stat(path)
     return { path, size: info.size, modified: info.mtime, fileName: artifact.fileName }
+  }
+
+  /**
+   * The program a downloaded tool runs, when every file it needs is present
+   * and verified (digests are remembered per size and time, so only the first
+   * call after a start reads the files).
+   * @param modelId - the program's id.
+   * @returns its path, or `undefined` when it is not downloaded, not offered on this platform or not a program.
+   */
+  async programFile(modelId: string): Promise<string | undefined> {
+    const manifest = this.manifests.get(modelId)
+    if (manifest?.archive === undefined) return undefined
+    return await this.programPresent(manifest, manifest.archive) ? join(this.programDirectory(manifest), manifest.archive.program) : undefined
   }
 
   /** Settles when no download is running. */

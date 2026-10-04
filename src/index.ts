@@ -53,11 +53,14 @@ export interface Config {
   appsDir: string
   /** Where the editing desk's AI models are kept; empty for `$DSH_HOME/cache/dsh-film/video-editor-models`. */
   modelsDir: string
+  /** The ffmpeg the background render runs; empty to find one (the downloaded renderer, VibeDev Studio's, PATH...). */
+  ffmpegPath?: string
 }
 
 export const Config: Schema<Config> = Schema.object({
   appsDir: Schema.string().default(''),
   modelsDir: Schema.string().default(''),
+  ffmpegPath: Schema.string().default(''),
 })
 
 /** The package's built apps. */
@@ -86,7 +89,7 @@ export function apply(ctx: Context, config: Config): void {
   // One API for the pages and the agent: the agent's edits reach open pages as the pages' own do.
   const events = new ProjectEvents()
   const boardAgent = new CanvasBoardAgent()
-  const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent })
+  const studio = createStudioRouter({ media, tasks, text, models, events, boardAgent, ffmpegPath: config.ffmpegPath ?? '' })
   let projectCreated: (cwd: string) => void = () => {}
 
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.

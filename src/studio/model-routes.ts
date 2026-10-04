@@ -10,6 +10,9 @@
  * - `GET  /api/media/video-editor-model-tasks/:id`, `POST .../:id/cancel`.
  * - `GET  /api/media/video-editor-models/:id/artifacts/:artifactId` — a file.
  *
+ * The same consent and prepare routes fetch the renderer program (FFmpeg,
+ * capability `renderer`), which only the Host runs and no route serves.
+ *
  * Model files are also served at their own Host routes,
  * `/api/dsh-film/models/<model>/<revision>/<file id>`, which is what the
  * editor is given: some models name their other files relative to one of
@@ -86,7 +89,8 @@ export const modelFileRoute = (modelId: string, revision: string, artifactId: st
  * @returns the routes.
  */
 export function modelFileRoutes(models: EditorModels): ConnectionFetchRoute[] {
-  return models.list().flatMap(model => model.artifacts.map((artifact): ConnectionFetchRoute => ({
+  // A program (the renderer) runs on the Host and is never fetched by a page.
+  return models.list().filter(model => model.program === undefined).flatMap(model => model.artifacts.map((artifact): ConnectionFetchRoute => ({
     path: modelFileRoute(model.id, model.revision, artifact.id),
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',

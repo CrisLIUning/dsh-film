@@ -141,6 +141,8 @@ export interface LandFileInput {
   height?: number
   durationSeconds?: number
   size?: number
+  /** More of the node's metadata (a rendered cut's `timelineRevision`). */
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -176,6 +178,7 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
         ...(positive(input.size) ? { bytes: input.size } : {}),
         mimeType: input.mimeType,
         ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
+        ...input.metadata,
       },
     }
     landed = true

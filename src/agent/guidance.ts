@@ -25,6 +25,7 @@ export const FILM_GUIDANCE = [
   '',
   '### Cut',
   'timeline_query first: its revision is what timeline_edit quotes, and clip ids are real ids. Preview with dryRun:true, then apply with the same operationId. timeline_edit sound with script {storyDocumentId} turns a screenplay\'s dialogue into captions on the cut.',
+  'To make the film file, timeline_render check:true first, then render with the same baseRevision; report only the finished file it returns (a long render returns a taskId: keep waiting with it, never start a second one). A colour-graded cut renders slowly. Do not retry a refusal unchanged; FFMPEG_UNAVAILABLE means the person downloads the renderer in the 剪辑 tab (their consent, not yours).',
   '',
   '### Director desk',
   'The director_* tools are the director tool group: a conversation starts with it when the board has a director node; otherwise enable it with film_tools.',
