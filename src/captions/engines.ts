@@ -17,7 +17,7 @@ import type { CaptionRunnerHub } from './runner.js'
 /** The desk's recognition model, as Studio names it. */
 export const WHISPER_MODEL = 'whisper-small-q8'
 /** The speech detector the Whisper worker uses. */
-export const VAD_MODEL = 'silero-vad'
+const VAD_MODEL = 'silero-vad'
 
 /** The recognition engine. */
 export interface CaptionEngineDriver {
@@ -54,7 +54,7 @@ export async function missingConsents(models: EditorModels, modelIds: readonly s
 }
 
 /** Refuse a recognition whose models the person has not agreed to download (the desk asks first, then retries). */
-export async function requireConsents(models: EditorModels, modelIds: readonly string[]): Promise<void> {
+async function requireConsents(models: EditorModels, modelIds: readonly string[]): Promise<void> {
   const missing = await missingConsents(models, modelIds)
   if (missing.length === 0) return
   const labels = missing.map(modelId => models.manifest(modelId).label).join('、')
@@ -87,7 +87,7 @@ const delay = (ms: number, signal: AbortSignal): Promise<void> => new Promise((r
  * @param pollMs - how often a preparation is read.
  * @returns the artifact URLs.
  */
-export async function prepareModels(
+async function prepareModels(
   models: EditorModels,
   modelIds: readonly string[],
   context: { signal: AbortSignal; onProgress(update: { progress: number; phase: string }): void },

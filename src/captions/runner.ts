@@ -312,7 +312,7 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
 })
 
 /** The largest result a page may post: a recognition's lines with their raw output and diagnostics. */
-const RESULT_LIMIT = 256 * 1024 * 1024
+const RESULT_LIMIT = 32 * 1024 * 1024
 
 /** A JSON body, refused past `limit` before it is buffered whole; the JSON type keeps plain form posts out. */
 async function jsonBody(request: Request, limit: number): Promise<Record<string, unknown>> {
