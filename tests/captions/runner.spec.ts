@@ -7,7 +7,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { whisperEngine } from '../../src/captions/engines.js'
 import { CaptionRunnerHub, captionRunnerRoutes } from '../../src/captions/runner.js'
 import type { RunnerJobSpec } from '../../src/captions/runner.js'
@@ -159,6 +159,27 @@ describe('caption runner hub', () => {
     await post(slowRoutes, 'claim', { runnerId: slowWindow.runnerId, jobId: slowJob.jobId })
     await expect(late).rejects.toMatchObject({ code: 'CAPTION_RECOGNITION_TIMEOUT', status: 504 })
     expect(await slowWindow.next('cancel')).toEqual({ jobId: slowJob.jobId })
+  })
+
+  it('ends every window\'s stream when disposed, so the windows reconnect to the hub that replaces it', async () => {
+    const window = await open()
+    const job = hub.run(spec(), { signal: new AbortController().signal })
+    await window.next('job')
+    hub.dispose()
+    await expect(job).rejects.toMatchObject({ code: 'CAPTION_RUNTIME_UNAVAILABLE' })
+    expect(await window.next('done')).toMatchObject({ jobId: expect.any(String) })
+    const outcome = await Promise.race([window.ended.then(() => 'ended'), new Promise(resolve => setTimeout(resolve, 2000, 'still open'))])
+    expect(outcome).toBe('ended')
+    expect(hub.connected).toBe(0)
+    // A window that reconnects before the old route is gone is sent on at once, stream and all.
+    const close = vi.fn()
+    hub.connect({ send: () => true, close })
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(hub.connected).toBe(0)
+    const response = await routes.find(route => route.path.endsWith('/events'))!.fetch(new Request('http://host/api/dsh-film/caption-runner/events'))
+    const reader = response.body!.getReader()
+    const read = await Promise.race([reader.read(), new Promise(resolve => setTimeout(resolve, 2000, 'still open'))])
+    expect(read).toMatchObject({ done: true })
   })
 
   it('refuses claims from unknown windows and malformed posts', async () => {

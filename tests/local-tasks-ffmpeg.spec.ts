@@ -1,6 +1,6 @@
 /** Local tasks in the film task store, and finding and running ffmpeg (with a Node script standing in for it). */
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -64,6 +64,61 @@ describe('local tasks', () => {
     expect(await tasks.record(cwd, cancelled.taskId)).toMatchObject({ status: 'interrupted', error: { code: 'MEDIA_TASK_CANCELED' } })
   })
 
+  it('add no progress line after a task has ended', async () => {
+    const tasks = new FilmMediaTasks(() => undefined)
+    let report!: (line: string) => void
+    let finish!: () => void
+    const late = new Promise<void>((resolve) => { finish = resolve })
+    const { taskId } = await tasks.startLocal(cwd, 'film-1', { surface: 'video', model: 'm', capability: 'render', started: '准备渲染' }, async (context) => {
+      report = context.progress
+      await late
+      return { name: 'x', size: 0, kind: 'video', mime: 'video/mp4' }
+    })
+    await tasks.cancel(cwd, taskId)
+    // The body, not yet aware it was stopped, reports on.
+    report('render 80%')
+    finish()
+    await nextTick()
+    expect((await tasks.record(cwd, taskId))?.progress).toEqual(['准备渲染', '已取消'])
+    await tasks.settled()
+    expect(JSON.parse(await readFile(join(cwd, 'film', '.tasks', `${taskId}.json`), 'utf8')).progress).toEqual(['准备渲染', '已取消'])
+  })
+
+  it('leave a local task interrupted, as after a restart, when the plugin unloads under it — not cancelled', async () => {
+    const tasks = new FilmMediaTasks(() => undefined)
+    const { taskId } = await tasks.startLocal(cwd, 'film-1', {
+      surface: 'video', model: 'm', capability: 'render',
+      interruption: { code: 'RENDER_INTERRUPTED', message: '渲染过程中宿主重启，请重新渲染', status: 503 },
+      cancellation: { code: 'RENDER_CANCELED', message: '渲染已取消。', status: 499 },
+    }, context => new Promise((_resolve, reject) => { context.signal.addEventListener('abort', () => { reject(context.signal.reason) }) }))
+    tasks.dispose()
+    await nextTick()
+    expect(await tasks.record(cwd, taskId)).toMatchObject({ status: 'interrupted', error: { code: 'RENDER_INTERRUPTED' }, progress: ['已开始', '已中断'] })
+    await tasks.settled()
+  })
+
+  it('are one live task whichever spelling of the workspace asks after them', async () => {
+    const alias = `${cwd}-alias`
+    await symlink(cwd, alias, 'junction')
+    try {
+      const tasks = new FilmMediaTasks(() => undefined)
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const { taskId } = await tasks.startLocal(cwd, 'film-1', { surface: 'video', model: 'm', capability: 'render' }, async () => {
+        await gate
+        return { name: 'canvas/renders/a.mp4', size: 1, kind: 'video', mime: 'video/mp4' }
+      })
+      // The agent asks by another spelling: the running task, not a stale copy read from disk.
+      expect((await tasks.wait(alias, taskId, 0, 0)).status).toBe('running')
+      release()
+      expect(await tasks.wait(alias, taskId, 1, 1000)).toMatchObject({ status: 'done' })
+      expect((await tasks.record(cwd, taskId))?.status).toBe('done')
+      await tasks.settled()
+    } finally {
+      await rm(alias, { recursive: true, force: true })
+    }
+  })
+
   it('leave a local task interrupted with its own message after a restart', async () => {
     const before = new FilmMediaTasks(() => undefined)
     const { taskId } = await before.startLocal(cwd, 'film-1', {
@@ -112,6 +167,29 @@ describe('running ffmpeg', () => {
     const stuck = await fake(`process.stdout.write('out_time_us=100000\\n'); setInterval(() => {}, 1000)`)
     expect(await runFfmpeg({ binary: stuck.binary, argv: stuck.argv([]), cwd, stallTimeoutMs: 300, maxDurationMs: 10000 })).toMatchObject({ stalled: true })
   })
+
+  it('waits the first-output allowance for the first frame, then the stall timeout between frames', async () => {
+    // An encoder filling its lookahead: nothing for a while, then steady progress.
+    const late = await fake(`
+setTimeout(() => {
+  let us = 0
+  const timer = setInterval(() => {
+    us += 100000
+    process.stdout.write('out_time_us=' + us + '\\n')
+    if (us >= 500000) { clearInterval(timer); process.exit(0) }
+  }, 30)
+}, 1500)
+`)
+    expect(await runFfmpeg({ binary: late.binary, argv: late.argv([]), cwd, stallTimeoutMs: 1000, firstOutputTimeoutMs: 8000, maxDurationMs: 20000 }))
+      .toMatchObject({ code: 0, stalled: false, produced: true })
+    // Without the allowance the same run is taken for stuck.
+    expect(await runFfmpeg({ binary: late.binary, argv: late.argv([]), cwd, stallTimeoutMs: 1000, maxDurationMs: 20000 })).toMatchObject({ stalled: true, produced: false })
+    // A source that never yields a frame is still stopped, once the allowance is over.
+    const never = await fake(`setInterval(() => {}, 1000)`)
+    const started = Date.now()
+    expect(await runFfmpeg({ binary: never.binary, argv: never.argv([]), cwd, stallTimeoutMs: 100, firstOutputTimeoutMs: 400, maxDurationMs: 10000 })).toMatchObject({ stalled: true, produced: false })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(350)
+  }, 20_000)
 
   it('stops the tree on cancellation and says so', async () => {
     const forever = await fake(`setInterval(() => {}, 1000)`)

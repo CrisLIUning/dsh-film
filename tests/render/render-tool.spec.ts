@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FilmToolServices } from '../../src/agent/index.js'
 import { filmProjectTool } from '../../src/agent/project-tool.js'
 import { renderTools } from '../../src/agent/render-tools.js'
+import { refusal } from '../../src/agent/studio-client.js'
 import { CanvasBoardAgent } from '../../src/canvas/board-agent.js'
 import { FilmMediaTasks } from '../../src/media/tasks.js'
 import type { TimelineRenderInput, TimelineRenderOutput } from '../../src/render/timeline-render.js'
@@ -124,6 +125,25 @@ describe('timeline_render', () => {
     const cancelled = await tool.execute({ taskId: started.taskId, cancel: true }, exec()) as Record<string, any>
     expect(cancelled).toMatchObject({ taskId: started.taskId, status: 'interrupted', error: { code: 'RENDER_CANCELED' }, note: expect.stringContaining('stopped') })
     await expect(tool.execute({ cancel: true }, exec())).rejects.toMatchObject({ code: 'TIMELINE_RENDER_INVALID' })
+  })
+
+  it('follows the render already running instead of failing on RENDER_BUSY', async () => {
+    const { tool } = await setUp({ render: slowRender(300) }, 50)
+    const first = await tool.execute({ fileName: '先渲染的' }, exec()) as Record<string, any>
+    expect(first.status).toBe('running')
+    // A second render while the first runs: the route refuses it, the tool follows the first.
+    let second = await tool.execute({ fileName: '后来的' }, exec()) as Record<string, any>
+    expect(second).toMatchObject({ taskId: first.taskId, alreadyRunning: true, note: expect.stringContaining('already rendering') })
+    for (let attempt = 0; attempt < 40 && second.status === 'running'; attempt += 1) second = await tool.execute({ taskId: first.taskId }, exec()) as Record<string, any>
+    expect(second).toMatchObject({ taskId: first.taskId, status: 'done', file: { name: 'canvas/renders/先渲染的.mp4' } })
+    expect(await tasks.list(cwd)).toHaveLength(1)
+  })
+
+  it('keeps a busy render\'s task id in the refusal the model reads and on the error', () => {
+    const error = refusal(409, { error: '这部片子正在渲染', code: 'RENDER_BUSY', taskId: 't-1', detail: { taskId: 't-1' }, current: { revision: 3, document: { big: true } } })
+    expect(error).toMatchObject({ code: 'RENDER_BUSY', body: { taskId: 't-1', detail: { taskId: 't-1' } } })
+    expect(error.message).toContain('taskId: t-1')
+    expect(error.body?.current).toBeUndefined()
   })
 
   it('surfaces a failed render by its code', async () => {

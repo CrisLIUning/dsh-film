@@ -15,13 +15,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { probeMedia } from '../../src/media/probe.js'
 import { ffmpegFilterNames, resolveFfmpeg, runFfmpeg } from '../../src/render/ffmpeg.js'
 import {
+  RENDER_STALL_TIMEOUT_MS,
   TimelineRenderError,
   buildTimelinePlan,
   captionFontIdsOf,
   collectRenderMedia,
+  keepRender,
   normalizeRenderRequest,
   partialPathFor,
   removeStalePartials,
+  renderFirstOutputMs,
   renderOutputPath,
   renderSizeFor,
   renderTimeLimitMs,
@@ -262,9 +265,23 @@ describe('planning the render', () => {
   })
 
   it('gives a long or graded cut more time than Studio\'s fixed 30 minutes', () => {
-    expect(renderTimeLimitMs({ args: ['-filter_complex', 'scale=1:1'], duration: 10 })).toBe(30 * 60_000)
-    expect(renderTimeLimitMs({ args: ['-filter_complex', 'format=gbrp,geq=r=1'], duration: 180 })).toBe(180 * 40_000)
-    expect(renderTimeLimitMs({ args: [], duration: 100_000 })).toBe(6 * 60 * 60_000)
+    const at720p30 = { width: 1280, height: 720, frameRate: 30 }
+    expect(renderTimeLimitMs({ args: ['-filter_complex', 'scale=1:1'], duration: 10, ...at720p30 })).toBe(30 * 60_000)
+    expect(renderTimeLimitMs({ args: ['-filter_complex', 'format=gbrp,geq=r=1'], duration: 180, ...at720p30 })).toBe(180 * 40_000)
+    expect(renderTimeLimitMs({ args: [], duration: 100_000, ...at720p30 })).toBe(6 * 60 * 60_000)
+  })
+
+  it('grows the time limits with the frame size and rate, not the length alone', () => {
+    const graded = ['-filter_complex', 'format=gbrp,geq=r=1']
+    // A one-minute graded cut: 40 minutes at 720p30, nine times the pixels and twice the frames at 4K60.
+    expect(renderTimeLimitMs({ args: graded, duration: 60, width: 1280, height: 720, frameRate: 30 })).toBe(60 * 40_000)
+    expect(renderTimeLimitMs({ args: graded, duration: 20, width: 3840, height: 2160, frameRate: 60 })).toBe(20 * 40_000 * 18)
+    expect(renderTimeLimitMs({ args: [], duration: 600, width: 1920, height: 1080, frameRate: 60 })).toBe(Math.round(600 * 6_000 * 4.5))
+    expect(renderTimeLimitMs({ args: graded, duration: 600, width: 3840, height: 2160, frameRate: 60 })).toBe(6 * 60 * 60_000)
+    // Before the first packet the encoder fills its lookahead: minutes for a large graded frame, the stall timeout otherwise.
+    expect(renderFirstOutputMs({ args: [], duration: 60, width: 1280, height: 720, frameRate: 30 })).toBe(RENDER_STALL_TIMEOUT_MS)
+    expect(renderFirstOutputMs({ args: graded, duration: 60, width: 1920, height: 1080, frameRate: 30 })).toBe(180_000)
+    expect(renderFirstOutputMs({ args: graded, duration: 60, width: 3840, height: 2160, frameRate: 60 })).toBe(720_000)
   })
 })
 
@@ -351,6 +368,52 @@ setInterval(() => { us += 100000; process.stdout.write('out_time_us=' + us + '\\
     // The document is gone: only the handed plan can render.
     const output = await renderTimeline({ document: null, planned, projectDir, ...settings, outputPath: 'canvas/renders/once.mp4', ffmpegBinary: 'ffmpeg', runner: ffmpeg.runner })
     expect(output.path).toBe('canvas/renders/once.mp4')
+  })
+
+  it('never replaces a file that took the reserved name while it rendered: it keeps the next free name and says so', async () => {
+    // Someone saves canvas/renders/taken.mp4 while ffmpeg is still writing the partial.
+    const ffmpeg = await fakeFfmpeg(`
+import { writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+const partial = process.argv.at(-1)
+writeFileSync(join(dirname(partial), 'taken.mp4'), 'somebody else')
+writeFileSync(partial, Buffer.from('0000ftypisom-render'))
+process.stdout.write('out_time_us=1000000\\n')
+`)
+    const output = await renderTimeline({ document: cut([still()]), projectDir, ...settings, outputPath: 'canvas/renders/taken.mp4', ffmpegBinary: 'ffmpeg', runner: ffmpeg.runner })
+    expect(output.path).toBe('canvas/renders/taken-2.mp4')
+    expect(output.absolutePath).toBe(join(projectDir, 'canvas', 'renders', 'taken-2.mp4'))
+    expect(await readFile(join(projectDir, 'canvas', 'renders', 'taken.mp4'), 'utf8')).toBe('somebody else')
+    expect(await readFile(output.absolutePath, 'utf8')).toBe('0000ftypisom-render')
+    expect((await readdir(join(projectDir, 'canvas', 'renders'))).sort()).toEqual(['taken-2.mp4', 'taken.mp4'])
+  })
+
+  it('keeps a render under a free name on a file system without hard links too', async () => {
+    const folder = join(projectDir, 'canvas', 'renders')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'cut.mp4'), 'first')
+    const partial = join(folder, '.cut.partial.mp4')
+    await writeFile(partial, 'rendered')
+    const nolink = async (): Promise<void> => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }) }
+    const kept = await keepRender(partial, join(folder, 'cut.mp4'), { link: nolink })
+    expect(kept).toBe(join(folder, 'cut-2.mp4'))
+    expect(await readFile(join(folder, 'cut.mp4'), 'utf8')).toBe('first')
+    expect(await readFile(kept, 'utf8')).toBe('rendered')
+    expect((await readdir(folder)).sort()).toEqual(['cut-2.mp4', 'cut.mp4'])
+  })
+
+  it('gives ffmpeg the encoder\'s lookahead before the first frame, and says which clock stopped it', async () => {
+    const runs: Array<Parameters<FfmpegRunner>[0]> = []
+    const silent = await fakeFfmpeg(`setInterval(() => {}, 1000)`)
+    const runner: FfmpegRunner = (run) => { runs.push(run); return silent.runner(run) }
+    await expect(renderTimeline({ document: cut([still()]), projectDir, ...settings, outputPath: 'canvas/renders/slow.mp4', ffmpegBinary: 'ffmpeg', runner, stallTimeoutMs: 100, firstOutputTimeoutMs: 400 }))
+      .rejects.toMatchObject({ code: 'FFMPEG_STALLED', message: expect.stringContaining('0.4s 仍没有产出第一帧') })
+    expect(runs[0]).toMatchObject({ stallTimeoutMs: 100, firstOutputTimeoutMs: 400 })
+    // Without an override the allowance comes from the plan: at least the stall timeout.
+    const quick = await fakeFfmpeg(WORKING)
+    const planned: Array<Parameters<FfmpegRunner>[0]> = []
+    await renderTimeline({ document: cut([still()]), projectDir, ...settings, outputPath: 'canvas/renders/quick.mp4', ffmpegBinary: 'ffmpeg', runner: (run) => { planned.push(run); return quick.runner(run) } })
+    expect(planned[0]).toMatchObject({ stallTimeoutMs: RENDER_STALL_TIMEOUT_MS, firstOutputTimeoutMs: RENDER_STALL_TIMEOUT_MS })
   })
 
   it('finds the partials a stopped render left, and only those', async () => {

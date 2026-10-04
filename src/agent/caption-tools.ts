@@ -93,7 +93,8 @@ export function captionTools(services: FilmToolServices): ToolDefinition[] {
         + 'done task holds an unreviewed draft (file.documentResult) with original-source timestamps; apply it only through timeline_apply_captions. '
         + 'engine: whisper (default setting; free, local, runs in a hidden page of an open VibeDev/DSH window, needs the person\'s consent to download its '
         + 'models) or gateway (VibeDev\'s ASR: Mandarin only, paid at about ¥0.05 per minute of speech, the audio is uploaded to a third-party service, '
-        + 'cancelling only stops waiting, and timings come from speech regions). There is no fallback: if the chosen engine cannot run, the call fails — '
+        + 'cancelling only stops waiting, and timings come from speech regions; if dsh-media is set to confirm spending, the person is asked once for the '
+        + 'whole estimate before the task starts, and SPENDING_DECLINED means they said no). There is no fallback: if the chosen engine cannot run, the call fails — '
         + 'report it, do not switch engines without the person. Never infer dialogue from a script or image; missing consent or no open window is an '
         + 'explicit failure to report, not something to work around.',
       parameters: {
@@ -120,7 +121,7 @@ export function captionTools(services: FilmToolServices): ToolDefinition[] {
           ...(language !== undefined ? { language } : {}),
           ...(engine !== undefined ? { engine } : {}),
         }
-        // The gateway's spending confirmation asks through this tool call (dsh-media's setting decides).
+        // The gateway's spending confirmation asks through this tool call, once, before the task starts (dsh-media's setting decides).
         const started = await captionCaller.run({ agent: exec.agent, callId: exec.callId }, () =>
           callStudio(services.studio, film.cwd, { method: 'POST', path: timelinePath(film.boardId, film.projectId, 'transcribe'), body }, exec.signal))
         return plain({ ...started, note: 'Recognition runs in the background. Poll media_get_task with this taskId; a done task is a draft to review, not applied captions.' })

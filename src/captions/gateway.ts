@@ -13,13 +13,22 @@
  * region's start. Timings are never invented; without a window to cut the
  * regions the engine refuses rather than guessing.
  *
- * Each region carries an idempotency key (`dsh-film-asr:<taskId>:<source>:<region>`)
- * and a stable file name, so dsh-media's own retries of a region never charge twice.
+ * Each region carries an idempotency key made from its audio
+ * (`dsh-film-asr:<sha256 of the WAV>`) and a stable file name, so neither
+ * dsh-media's own retries nor a later recognition of the same audio (after a
+ * failure, a cancel or a restart) charges twice; the same audio twice in one
+ * recognition is sent once.
+ *
+ * The cost is confirmed as dsh-media's spending setting says: the desk shows
+ * the price first (`spendingConfirmed`); an agent's recognition is confirmed
+ * once for the whole estimate while its tool call still waits, through
+ * dsh-media's `confirmSpending` (an older dsh-media asks per region instead).
  * @module dsh-film/captions/gateway
  */
 
+import { createHash } from 'node:crypto'
 import type { HostMediaModel } from '../media/catalogue.js'
-import type { MediaServiceLike, TranscribeServiceResult } from '../media/tasks.js'
+import type { MediaServiceLike, TranscribeServiceResult, TranscribeSpending } from '../media/tasks.js'
 import type { EditorModels } from '../models/service.js'
 import type { CaptionEstimate, CaptionRecognition, CaptionRecognizerInput } from './contracts.js'
 import { VAD_MODEL, prepareModels, requireConsents } from './engines.js'
@@ -50,6 +59,7 @@ const MEDIA_FAILURES: Readonly<Record<string, { status: number; message: string 
   AUDIO_TOO_LONG: { status: 413, message: '一段语音超过了网关转写的时长上限。' },
   AUDIO_FORMAT_UNSUPPORTED: { status: 415, message: '网关不接受这段音频的格式。' },
   AUDIO_INPUT_INVALID: { status: 422, message: '网关不接受这段音频。' },
+  ABORTED: { status: 499, message: '网关转写已取消。' },
 }
 
 function mediaFailure(error: unknown): TimelineCaptionError {
@@ -94,6 +104,17 @@ export function gatewayEstimate(model: HostMediaModel | undefined, seconds: numb
       ? 'catalogue price per second × source seconds; an upper bound, only speech is sent'
       : 'retail ¥0.05 per minute × source seconds; an upper bound, only speech is sent',
   }
+}
+
+/**
+ * A region's idempotency key: its WAV bytes' SHA-256, so the same audio sent
+ * again — by a new task after a failure, a cancel or a restart — is answered
+ * from the gateway's idempotency store instead of being charged again.
+ * @param wav - the region's WAV bytes.
+ * @returns `dsh-film-asr:<hex digest>`.
+ */
+export function regionKey(wav: Uint8Array): string {
+  return `dsh-film-asr:${createHash('sha256').update(wav).digest('hex')}`
 }
 
 /** One speech region a runner page cut, in source-file seconds, with its 16 kHz mono WAV. */
@@ -181,7 +202,7 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
   }
   return {
     id: 'gateway',
-    async preflight({ request, plan, signal }) {
+    async preflight({ request, plan, caller, signal }) {
       const language = request.language ?? 'zh'
       if (!/^zh(?:-|$)/.test(language)) throw new TimelineCaptionError('CAPTION_ENGINE_LANGUAGE_UNSUPPORTED', '网关转写只支持普通话（zh）；其他语言请用 engine:\'whisper\'。', 400)
       const media = service()
@@ -189,7 +210,19 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
       await requireConsents(modelsOrFail(), [VAD_MODEL])
       runnerOrFail()
       const seconds = plan.sources.reduce((total, source) => total + source.sourceOut - source.sourceIn, 0)
-      return { model: `gateway:${model.id}`, estimate: gatewayEstimate(model, seconds) }
+      const estimate = gatewayEstimate(model, seconds)
+      // An agent's recognition: dsh-media's setting asks once for the whole estimate, while the tool call
+      // still waits, rather than per region from the background task. An older dsh-media asks per region.
+      const confirm = media.confirmSpending
+      if (request.estimateOnly === true || request.spendingConfirmed === true || caller?.agent === undefined || caller.callId === undefined || typeof confirm !== 'function') {
+        return { model: `gateway:${model.id}`, estimate }
+      }
+      try {
+        await confirm.call(media, { seconds: estimate.seconds, amountCny: estimate.amountCny }, { confirmed: false, agent: caller.agent, callId: caller.callId }, signal)
+      } catch (error) {
+        throw mediaFailure(error)
+      }
+      return { model: `gateway:${model.id}`, estimate, spendingConfirmed: true }
     },
     async prepare(context) {
       return prepareModels(modelsOrFail(), [VAD_MODEL], context, options.pollMs)
@@ -205,6 +238,17 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
       let done = 0
       let model: string | undefined
       const recognitions: CaptionRecognition[] = []
+      // Confirmed (by the desk, or once by preflight for an agent): every region goes as confirmed. Otherwise
+      // dsh-media's setting asks per region through the agent's tool call, as an older dsh-media does.
+      const spending: TranscribeSpending = input.spending.confirmed
+        ? { confirmed: true }
+        : {
+          confirmed: false,
+          ...(input.spending.agent !== undefined ? { agent: input.spending.agent } : {}),
+          ...(input.spending.callId !== undefined ? { callId: input.spending.callId } : {}),
+        }
+      // The same audio twice in one recognition (a take used twice) is transcribed once: it has one key.
+      const answers = new Map<string, Promise<TranscribeServiceResult>>()
       for (const [sourceIndex, source] of input.sources.entries()) {
         const length = source.sourceOut - source.sourceIn
         const segments: CaptionRecognition['segments'] = []
@@ -216,20 +260,24 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
           const to = Math.min(length, Math.max(0, region.end - source.sourceIn))
           if (to > from) {
             let answer: TranscribeServiceResult
+            let reused = false
             try {
-              answer = await media.transcribe({
-                data: region.wav,
-                mimeType: 'audio/wav',
-                name: `region-${sourceIndex}-${regionIndex}.wav`,
-                language: 'zh',
-                idempotencyKey: `dsh-film-asr:${input.taskId}:${sourceIndex}:${regionIndex}`,
-                timestamps: true,
-                background: true,
-              }, { cwd: input.cwd }, input.signal, {
-                confirmed: input.spending.confirmed,
-                ...(input.spending.agent !== undefined ? { agent: input.spending.agent } : {}),
-                ...(input.spending.callId !== undefined ? { callId: input.spending.callId } : {}),
-              })
+              const key = regionKey(region.wav)
+              let pending = answers.get(key)
+              reused = pending !== undefined
+              if (pending === undefined) {
+                pending = media.transcribe({
+                  data: region.wav,
+                  mimeType: 'audio/wav',
+                  name: `region-${sourceIndex}-${regionIndex}.wav`,
+                  language: 'zh',
+                  idempotencyKey: key,
+                  timestamps: true,
+                  background: true,
+                }, { cwd: input.cwd }, input.signal, spending)
+                answers.set(key, pending)
+              }
+              answer = await pending
             } catch (error) {
               if (input.signal.aborted) throw error
               throw mediaFailure(error)
@@ -240,7 +288,8 @@ export function gatewayEngine(options: GatewayEngineOptions): CaptionEngineDrive
             evidence.push({
               start: region.start, end: region.end,
               ...(answer.taskId !== undefined ? { gatewayTaskId: answer.taskId } : {}),
-              ...(answer.chargedCny !== undefined ? { chargedCny: answer.chargedCny } : {}),
+              // A repeat of audio already sent in this recognition was not charged again.
+              ...(reused ? { reused: true } : answer.chargedCny !== undefined ? { chargedCny: answer.chargedCny } : {}),
               timing: lines.some(line => line.warnings?.includes('region-timing') === true) ? 'region' : lines.length > 0 ? 'gateway' : 'empty',
               text: answer.text,
             })

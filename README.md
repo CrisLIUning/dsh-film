@@ -68,7 +68,7 @@ The editing desk downloads its models only after the person agrees, verifies eve
 识别原声对白有两个引擎，设置项 `captionEngine` 选默认的一个（`whisper`），每次识别也可以单独指定；一个引擎跑不了就报错，不会换另一个。
 
 - `whisper`：剪辑台自带的 Whisper small（q8）加 Silero 语音检测，免费、不出本机，要先同意下载这两个模型。宿主没有浏览器，识别在打开的 VibeDev/DSH 窗口里的一个隐藏页面中运行（`apps/editor/caption-runner.html`）；没有窗口开着时会直接说明。
-- `gateway`：VibeDev 网关转写，只支持普通话，约 ¥0.05/分钟，音频会上传到第三方转写服务，需要 dsh-media 0.1.3 以上并登录。网关目前不返回时间，所以先在窗口里按 Silero 检测到的语音分段，每段单独转写、按段的起止给时间（标记 `region-timing`），从不编造时间；网关返回分句时间时改用它的。取消只能停止等待，已提交的段仍会计费。
+- `gateway`：VibeDev 网关转写，只支持普通话，约 ¥0.05/分钟，音频会上传到第三方转写服务，需要 dsh-media 0.1.3 以上并登录。网关目前不返回时间，所以先在窗口里按 Silero 检测到的语音分段，每段单独转写、按段的起止给时间（标记 `region-timing`），从不编造时间；网关返回分句时间时改用它的。取消只能停止等待，已提交的段仍会计费；但每段按音频内容去重，同一段音频再识别（失败、取消或宿主重启之后）由网关的幂等记录直接回答，不会再扣一次。Agent 发起的网关识别，若 dsh-media 开了“付费前先询问”，会在任务开始前按整次预估问一次。剪辑台可以先只要预估（`estimateOnly: true`），不建任务、不复制素材、不扣费。
 
 识别是后台任务（`film/.tasks/`），结果是待审草稿；写入剪辑前要按原声核对，只改识别范围内的字幕。
 
@@ -76,7 +76,7 @@ Captions come from one of two engines with no fallback between them: `whisper` (
 
 ## 后台渲染 · Background render
 
-剪辑台的“渲染到项目”和 Agent 的 `timeline_render` 不开页面、在宿主里把剪辑渲染成 H.264 MP4：用剪辑台同一份上游渲染规划（`vendor/video-editor-bridge.mjs` 里的无头规划器）把剪辑变成 ffmpeg 参数，在本机的 ffmpeg 上跑，文件落在 `film/canvas/renders/`，并放到分镜画布上。接口与 VibeDev Studio 相同：`POST /api/canvas/timelines/:boardId/render`（`check: true` 只检查），进度和取消走影片任务的 `wait`/`cancel`；取消会结束 ffmpeg 进程树，一部片子同时只渲染一个。调色的剪辑很慢（约 20 倍实时）。
+剪辑台的“渲染到项目”和 Agent 的 `timeline_render` 不开页面、在宿主里把剪辑渲染成 H.264 MP4：用剪辑台同一份上游渲染规划（`vendor/video-editor-bridge.mjs` 里的无头规划器）把剪辑变成 ffmpeg 参数，在本机的 ffmpeg 上跑，文件落在 `film/canvas/renders/`，并放到分镜画布上。接口与 VibeDev Studio 相同：`POST /api/canvas/timelines/:boardId/render`（`check: true` 只检查），进度和取消走影片任务的 `wait`/`cancel`；取消会结束 ffmpeg 进程树（落地时才取消的也不留文件和画布节点），一部片子同时只渲染一个；渲染期间若有别的文件占了预定的文件名，成片存成下一个空名字，不会覆盖。调色的剪辑很慢（约 20 倍实时），时间上限按帧数和画面大小放宽，最多 6 小时。
 
 ffmpeg 按这个顺序找：设置项 `ffmpegPath`、环境变量 `DSH_FILM_FFMPEG_PATH`、同意后下载的渲染器、已安装的 VibeDev Studio 自带的、PATH、常见安装位置（winget、choco、scoop 等）。都没有时，Windows x64 上剪辑台会提出下载渲染器：VibeDev Studio 同款的 FFmpeg 9.0（BtbN/FFmpeg-Builds `ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0`，压缩包 86,333,540 字节，SHA-256 固定），弹框说明它是独立程序、GPL 许可、大小和来源，同意后先从 VibeDev 网关下载、再退到 GitHub 原发布，用 Windows 自带的 `tar.exe` 解压，只保留 ffmpeg.exe 和它要的 DLL，逐个核对大小和 SHA-256，旁边放 `LICENSE.txt` 和写明源码出处的 `SOURCE.txt`，存在模型目录下。清单在 `models/renderer.json`。
 

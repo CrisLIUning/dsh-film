@@ -4,11 +4,13 @@
  * returns timings; and its refusals, spending and cancellation.
  */
 
-import { mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { gatewayEngine, gatewayEstimate, readRegions } from '../../src/captions/gateway.js'
+import { gatewayEngine, gatewayEstimate, readRegions, regionKey } from '../../src/captions/gateway.js'
+import { captionCaller } from '../../src/captions/service.js'
 import { CaptionRunnerHub, captionRunnerRoutes } from '../../src/captions/runner.js'
 import type { HostMediaModel } from '../../src/media/catalogue.js'
 import type { MediaServiceLike, TranscribeServiceRequest, TranscribeServiceResult, TranscribeSpending } from '../../src/media/tasks.js'
@@ -16,6 +18,8 @@ import { PROJECT, workspace } from './fixture.js'
 import type { Workspace } from './fixture.js'
 import { captionModels, openWindow, post } from './pages.js'
 import type { RunnerWindow } from './pages.js'
+
+const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
 
 /** A 16 kHz mono 16-bit WAV of `seconds` of silence, base64. */
 function wav(seconds: number): string {
@@ -44,7 +48,12 @@ const MODEL: HostMediaModel = {
 interface Call { request: TranscribeServiceRequest; cwd: string; signal: AbortSignal; spending: TranscribeSpending | undefined }
 
 /** A fake dsh-media: one transcription model, and `answer` deciding each transcription. */
-function fakeMedia(answer: (call: Call) => Promise<TranscribeServiceResult> | TranscribeServiceResult, options: { withTranscribe?: boolean; models?: () => Promise<readonly HostMediaModel[]> } = {}) {
+function fakeMedia(answer: (call: Call) => Promise<TranscribeServiceResult> | TranscribeServiceResult, options: {
+  withTranscribe?: boolean
+  models?: () => Promise<readonly HostMediaModel[]>
+  /** dsh-media's one-time spending question (newer dsh-media); absent like an older one when not given. */
+  confirmSpending?: NonNullable<MediaServiceLike['confirmSpending']>
+} = {}) {
   const calls: Call[] = []
   const media: MediaServiceLike = {
     models: options.models ?? (async () => [{ id: 'gpt-image', name: 'image', kind: 'image', inputModalities: [] }, MODEL]),
@@ -52,6 +61,7 @@ function fakeMedia(answer: (call: Call) => Promise<TranscribeServiceResult> | Tr
     startVideo: async () => { throw new Error('unused') },
     task: async () => undefined,
     onTask: () => () => {},
+    ...(options.confirmSpending !== undefined ? { confirmSpending: options.confirmSpending } : {}),
     ...(options.withTranscribe === false ? {} : {
       transcribe: async (request: TranscribeServiceRequest, target: { cwd: string }, signal: AbortSignal, spending?: TranscribeSpending) => {
         const call = { request, cwd: target.cwd, signal, spending }
@@ -123,12 +133,16 @@ describe('gateway engine', () => {
     const claim = await cutRegions(window, { a: [{ start: 2.75, end: 4.4 }, { start: 9, end: 9.8 }], b: [{ start: 0.5, end: 1.5 }] })
     expect(claim.sources.map((source: any) => [source.clipId, source.sourceIn, source.sourceOut])).toEqual([['a', 2, 10], ['b', 0, 3]])
     await h.service.whenIdle()
+    // Keyed by the audio itself, never by the task: a later recognition of the same audio is not charged again.
     expect(calls.map(call => [call.request.name, call.request.idempotencyKey, call.request.mimeType, call.request.language, call.request.timestamps, call.request.background])).toEqual([
-      ['region-0-0.wav', `dsh-film-asr:${started.taskId}:0:0`, 'audio/wav', 'zh', true, true],
-      ['region-0-1.wav', `dsh-film-asr:${started.taskId}:0:1`, 'audio/wav', 'zh', true, true],
-      ['region-1-0.wav', `dsh-film-asr:${started.taskId}:1:0`, 'audio/wav', 'zh', true, true],
+      ['region-0-0.wav', `dsh-film-asr:${sha256(calls[0]!.request.data!)}`, 'audio/wav', 'zh', true, true],
+      ['region-0-1.wav', `dsh-film-asr:${sha256(calls[1]!.request.data!)}`, 'audio/wav', 'zh', true, true],
+      ['region-1-0.wav', `dsh-film-asr:${sha256(calls[2]!.request.data!)}`, 'audio/wav', 'zh', true, true],
     ])
-    expect(calls.every(call => call.cwd === h.cwd && call.spending?.confirmed === true && call.request.model === undefined)).toBe(true)
+    expect(new Set(calls.map(call => call.request.idempotencyKey)).size).toBe(3)
+    expect(calls.every(call => /^dsh-film-asr:[0-9a-f]{64}$/.test(call.request.idempotencyKey!) && !call.request.idempotencyKey!.includes(started.taskId))).toBe(true)
+    expect(calls.every(call => call.cwd === h.cwd && call.request.model === undefined)).toBe(true)
+    expect(calls.map(call => call.spending)).toEqual([{ confirmed: true }, { confirmed: true }, { confirmed: true }])
     expect(calls[0]!.request.data!.byteLength).toBe(44 + Math.round(1.65 * 16_000) * 2)
     const task = await h.tasks.record(h.cwd, started.taskId)
     expect(task?.status).toBe('done')
@@ -183,7 +197,7 @@ describe('gateway engine', () => {
     expect(await h.tasks.list(h.cwd)).toEqual([])
   })
 
-  it('lets dsh-media\'s setting confirm the cost of an agent\'s recognition', async () => {
+  it('lets an older dsh-media\'s setting confirm the cost of an agent\'s recognition region by region', async () => {
     const { media, calls } = fakeMedia(() => ({ model: 'doubao-asr-vibedev', text: '好', language: 'zh', name: 'x' }))
     const h = await setup(() => media)
     const window = await open()
@@ -192,6 +206,92 @@ describe('gateway engine', () => {
     await cutRegions(window, { b: [{ start: 0, end: 1 }] })
     await h.service.whenIdle()
     expect(calls[0]!.spending).toEqual({ confirmed: false, agent, callId: 'call-7' })
+  })
+
+  it('asks once, while the agent\'s tool call waits, for the whole estimate — then sends every region as confirmed', async () => {
+    const asked: Array<{ request: unknown; spending: unknown; tasks: number }> = []
+    let h!: Workspace
+    const { media, calls } = fakeMedia(() => ({ model: 'doubao-asr-vibedev', text: '好', language: 'zh', name: 'x' }), {
+      confirmSpending: async (request, spending) => { asked.push({ request, spending, tasks: (await h.tasks.list(h.cwd)).length }) },
+    })
+    h = await setup(() => media)
+    const window = await open()
+    const agent = { id: 'agent-1' }
+    const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'agent', engine: 'gateway' }, { agent, callId: 'call-7' })
+    // Asked before the start answered and before any task existed.
+    expect(asked).toEqual([{ request: { seconds: 11, amountCny: 0.01 }, spending: { confirmed: false, agent, callId: 'call-7' }, tasks: 0 }])
+    expect(started.estimate).toMatchObject({ seconds: 11, amountCny: 0.01 })
+    await cutRegions(window, { a: [{ start: 2.75, end: 4.4 }, { start: 9, end: 9.8 }], b: [{ start: 0.5, end: 1.5 }] })
+    await h.service.whenIdle()
+    expect(calls.map(call => call.spending)).toEqual([{ confirmed: true }, { confirmed: true }, { confirmed: true }])
+    expect(asked).toHaveLength(1)
+    // The desk showed the price itself: nobody is asked again.
+    const desk = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'desk', engine: 'gateway', clipIds: ['b'], spendingConfirmed: true })
+    await cutRegions(window, { b: [{ start: 0, end: 1 }] })
+    await h.service.whenIdle()
+    expect(asked).toHaveLength(1)
+    expect((await h.tasks.record(h.cwd, desk.taskId))?.status).toBe('done')
+  })
+
+  it('starts nothing when the person declines the cost, or nobody can be asked', async () => {
+    for (const [code, status] of [['SPENDING_DECLINED', 403], ['SPENDING_CONFIRMATION_UNAVAILABLE', 409]] as const) {
+      const { media, calls } = fakeMedia(() => { throw new Error('unused') }, {
+        confirmSpending: async () => { throw Object.assign(new Error('no'), { code }) },
+      })
+      const h = await setup(() => media)
+      await open()
+      await expect(h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'declined', engine: 'gateway' }, { agent: { id: 'a' }, callId: 'call-1' }))
+        .rejects.toMatchObject({ code, status })
+      expect(await h.tasks.list(h.cwd)).toEqual([])
+      expect(calls).toHaveLength(0)
+    }
+  })
+
+  it('answers the same audio from the gateway\'s store on a retry: the key is the audio, not the task', async () => {
+    const { media, calls } = fakeMedia(({ request }) => ({ model: 'doubao-asr-vibedev', text: '好', language: 'zh', name: request.name! }))
+    const h = await setup(() => media)
+    const window = await open()
+    const first = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'try-1', engine: 'gateway', clipIds: ['b'], spendingConfirmed: true })
+    await cutRegions(window, { b: [{ start: 0, end: 1 }] })
+    await h.service.whenIdle()
+    const again = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'try-2', engine: 'gateway', clipIds: ['b'], spendingConfirmed: true })
+    await cutRegions(window, { b: [{ start: 0, end: 1 }] })
+    await h.service.whenIdle()
+    expect(first.taskId).not.toBe(again.taskId)
+    expect(calls).toHaveLength(2)
+    expect(calls[1]!.request.idempotencyKey).toBe(calls[0]!.request.idempotencyKey)
+    expect(calls[1]!.request.name).toBe(calls[0]!.request.name)
+    expect(calls[0]!.request.idempotencyKey).toBe(regionKey(calls[0]!.request.data!))
+  })
+
+  it('sends the same audio once within a recognition, and both regions get its words', async () => {
+    const { media, calls } = fakeMedia(() => ({ model: 'doubao-asr-vibedev', text: '同一句', language: 'zh', name: 'x', chargedCny: '0.01' }))
+    const h = await setup(() => media)
+    const window = await open()
+    const started = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'twice', engine: 'gateway', clipIds: ['b'], spendingConfirmed: true })
+    // Two regions with byte-identical audio (the stand-in page sends silence of the region's length).
+    await cutRegions(window, { b: [{ start: 0, end: 1 }, { start: 2, end: 3 }] })
+    await h.service.whenIdle()
+    expect(calls).toHaveLength(1)
+    const draft = (await h.tasks.record(h.cwd, started.taskId))?.file?.documentResult as any
+    expect(draft.segments.map((line: any) => [line.text, line.sourceIn, line.sourceOut])).toEqual([['同一句', 0, 1], ['同一句', 2, 3]])
+    expect(draft.diagnostics[0].evidence.regions).toMatchObject([{ chargedCny: '0.01' }, { reused: true }])
+    expect(draft.diagnostics[0].evidence.regions[1].chargedCny).toBeUndefined()
+  })
+
+  it('estimates without a task, a copy, a charge or a question, after the same checks', async () => {
+    const asked: unknown[] = []
+    const { media, calls } = fakeMedia(() => { throw new Error('unused') }, { confirmSpending: async (request) => { asked.push(request) } })
+    const h = await setup(() => media)
+    // The same refusals as a start: no window yet.
+    await expect(h.service.estimate(h.cwd, PROJECT, { baseRevision: 1, requestId: '', engine: 'gateway', estimateOnly: true })).rejects.toMatchObject({ code: 'CAPTION_RUNTIME_UNAVAILABLE' })
+    await open()
+    const estimate = await captionCaller.run({ agent: { id: 'a' }, callId: 'call-3' }, () => h.service.estimate(h.cwd, PROJECT, { baseRevision: 1, requestId: '', engine: 'gateway', estimateOnly: true }))
+    expect(estimate).toEqual({ estimate: { seconds: 11, amountCny: 0.01, basis: expect.stringContaining('catalogue') }, engine: 'gateway' })
+    expect(asked).toEqual([])
+    expect(calls).toEqual([])
+    expect(await h.tasks.list(h.cwd)).toEqual([])
+    await expect(readdir(join(h.cwd, 'film', '.tasks', 'caption-runs'))).rejects.toThrow()
   })
 
   it('records dsh-media failures by their code, and a cancel as a cancel', async () => {

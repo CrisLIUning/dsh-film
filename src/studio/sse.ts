@@ -67,6 +67,11 @@ export function eventStream(request: Request, start: (stream: EventStream) => vo
   queueMicrotask(() => {
     if (closed) return
     cleanup = start(stream)
+    if (closed) {
+      // Closed while starting: nothing to keep alive, and the cleanup it returned is still owed.
+      cleanup?.()
+      return
+    }
     ping = setInterval(() => { stream.send('ping', {}) }, pingMs)
   })
   return new Response(body, {

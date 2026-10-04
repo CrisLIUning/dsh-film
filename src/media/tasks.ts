@@ -22,6 +22,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { HostMediaModel } from './catalogue.js'
@@ -42,6 +43,14 @@ export interface MediaServiceLike {
   onTask(id: string, listener: (task: MediaTaskLike) => void): () => void
   /** Transcribe one recording through the gateway (dsh-media 0.1.3+; feature-detect it). */
   transcribe?(request: TranscribeServiceRequest, target: { cwd: string }, signal: AbortSignal, spending?: TranscribeSpending): Promise<TranscribeServiceResult>
+  /**
+   * Ask once, as dsh-media's spending setting asks before generation, for the
+   * cost of a transcription sent in several parts; then send each part with
+   * `{ confirmed: true }` (newer dsh-media; feature-detect it). A no-op when
+   * the setting is off or `spending.confirmed` is true; throws `SPENDING_DECLINED`,
+   * `SPENDING_CONFIRMATION_UNAVAILABLE` or `ABORTED`.
+   */
+  confirmSpending?(request: { seconds: number; amountCny?: number }, spending?: TranscribeSpending, signal?: AbortSignal): Promise<void>
 }
 
 /** One transcription (dsh-media's `TranscribeRequest`). */
@@ -326,6 +335,16 @@ function canceledError(task: FilmTask): FilmTaskError {
   return task.cancellation ?? { message: '已取消。', code: 'MEDIA_TASK_CANCELED', status: 499 }
 }
 
+/** What a local task the Host stopped reports (a restart, or the plugin unloading): its own interruption, or the generic one. */
+function interruptedError(task: FilmTask): FilmTaskError {
+  return task.interruption ?? { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 }
+}
+
+/** Why the running work of a task store that is being disposed stopped. */
+class TasksDisposedError extends Error {
+  override name = 'TasksDisposedError'
+}
+
 /** The screenplay services a task resolves bound references with, when none are given. */
 function defaultReferences(): { stories: StoryService; assets: StoryAssets } {
   const stories = new StoryService()
@@ -338,6 +357,8 @@ export class FilmMediaTasks {
   private readonly running = new Map<string, AbortController>()
   private readonly following = new Map<string, () => void>()
   private readonly saves = new Map<string, Promise<void>>()
+  /** Each spelling of a workspace that has a real path, and that path. */
+  private readonly workspaces = new Map<string, string>()
 
   /**
    * @param media - dsh-media's service, when the plugin is installed and running.
@@ -383,8 +404,22 @@ export class FilmMediaTasks {
     return media
   }
 
+  /**
+   * A task's key: its workspace by real path, so the desk and the agent, who
+   * may spell the workspace differently, share one live task — a second copy
+   * read from disk would take the running task for one a restart left behind.
+   */
   private key(cwd: string, taskId: string): string {
-    return `${resolve(cwd)}\0${taskId}`
+    let real = this.workspaces.get(cwd)
+    if (real === undefined) {
+      try {
+        real = realpathSync.native(cwd)
+        this.workspaces.set(cwd, real)
+      } catch {
+        real = resolve(cwd)
+      }
+    }
+    return `${real}\0${taskId}`
   }
 
   private file(cwd: string, taskId: string): string {
@@ -419,8 +454,13 @@ export class FilmMediaTasks {
   }
 
   private change(cwd: string, task: FilmTask, patch: Partial<FilmTask>, line?: string): void {
-    // A task ends once: a late answer after a cancel or a restart is not news.
-    if (TERMINAL.has(task.status) && (patch.status !== undefined || patch.file !== undefined || patch.error !== undefined)) return
+    if (TERMINAL.has(task.status)) {
+      // A task ends once: a late answer after a cancel or a restart is not news,
+      if (patch.status !== undefined || patch.file !== undefined || patch.error !== undefined) return
+      // nor is a late progress line: the last line stays the one that ended it.
+      line = undefined
+      if (Object.keys(patch).length === 0) return
+    }
     Object.assign(task, patch)
     if (line !== undefined && task.progress.at(-1) !== line) task.progress.push(line)
     if (TERMINAL.has(task.status) && task.endedAt === null) task.endedAt = Date.now()
@@ -585,10 +625,7 @@ export class FilmMediaTasks {
         if (remote !== undefined) this.follow(cwd, task, media, remote)
       } else if (task.mediaTaskId === undefined) {
         // An image request, a render or a recognition does not survive a restart of the Host.
-        this.change(cwd, task, {
-          status: 'interrupted',
-          error: task.interruption ?? { message: '生成过程中宿主重启，请重新生成。', code: 'MEDIA_TASK_INTERRUPTED', status: 503 },
-        }, '已中断')
+        this.change(cwd, task, { status: 'interrupted', error: interruptedError(task) }, '已中断')
       }
     }
     return task
@@ -681,7 +718,9 @@ export class FilmMediaTasks {
         const file = await run(context)
         this.change(cwd, task, { status: 'done', file }, '完成')
       } catch (error) {
-        if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
+        // Stopped because the plugin is unloading: what a restart leaves it as, not a cancel the person made.
+        if (controller.signal.reason instanceof TasksDisposedError) this.change(cwd, task, { status: 'interrupted', error: interruptedError(task) }, '已中断')
+        else if (controller.signal.aborted) this.change(cwd, task, { status: 'interrupted', error: canceledError(task) }, '已取消')
         else this.change(cwd, task, { status: 'failed', error: localErrorOf(error) }, '失败')
       } finally {
         if (this.running.get(key) === controller) this.running.delete(key)
@@ -718,10 +757,10 @@ export class FilmMediaTasks {
     return tasks.sort((left, right) => right.startedAt - left.startedAt)
   }
 
-  /** Stop following dsh-media tasks (the plugin is unloading). */
+  /** Stop following dsh-media tasks and stop the running work (the plugin is unloading): a local task ends interrupted, as after a restart. */
   dispose(): void {
     for (const stop of this.following.values()) stop()
     this.following.clear()
-    for (const controller of this.running.values()) controller.abort(new Error('disposed'))
+    for (const controller of this.running.values()) controller.abort(new TasksDisposedError('disposed'))
   }
 }

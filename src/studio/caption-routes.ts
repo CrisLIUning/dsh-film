@@ -4,6 +4,9 @@
  *
  * - `POST /api/canvas/timelines/:boardId/transcribe` — 202 with the task;
  *   `{ baseRevision, requestId, clipIds?, range?, language?, engine?, spendingConfirmed? }`.
+ *   With `estimateOnly: true` (requestId optional) it answers 200
+ *   `{ estimate: { seconds, amountCny, basis }, engine }` after the same
+ *   planning and engine checks, and starts, copies and charges nothing.
  * - `POST /api/canvas/timelines/:boardId/captions/apply` — `{ taskId, reviewed, dryRun, excludeSegmentIds? }`
  *   → `{ result }`, the command's result without the two whole cuts.
  * - `GET  /api/canvas/timelines/:boardId/captions/tasks` — the latest 20 recognitions.
@@ -54,8 +57,13 @@ export function addCaptionRoutes(router: StudioRouter, captions: CaptionService)
   router.add('POST', '/api/canvas/timelines/:boardId/transcribe', async (request) => {
     const projectId = projectFor(request)
     const body = await request.json()
-    const started = await answering(request, projectId, async () => captions.start(request.cwd, projectId, parseTranscribeRequest(body)))
-    return new Response(JSON.stringify(started), { status: 202, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } })
+    const answer = await answering(request, projectId, async () => {
+      const parsed = parseTranscribeRequest(body)
+      if (parsed.estimateOnly === true) return { status: 200, body: await captions.estimate(request.cwd, projectId, parsed, request.raw.signal) }
+      // The request's lifetime withdraws a spending question the engine is still asking.
+      return { status: 202, body: await captions.start(request.cwd, projectId, parsed, undefined, request.raw.signal) }
+    })
+    return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } })
   })
 
   router.add('POST', '/api/canvas/timelines/:boardId/captions/apply', async (request) => {

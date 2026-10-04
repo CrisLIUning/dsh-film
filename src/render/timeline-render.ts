@@ -16,15 +16,16 @@
  * partial is a hidden file beside the target (listings skip dot files), a
  * clip's sound is probed in-process with mediabunny rather than ffprobe, a
  * plan can be handed in so the route plans once, cancellation stops the
- * ffmpeg tree, and the time limit grows with the cut's length.
+ * ffmpeg tree, the time limits grow with the cut's frames and pixels, and a
+ * finished file never replaces one that took its name.
  * @module dsh-film/render/timeline-render
  */
 
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { buildNativeTimelineFfmpegPlan, getNativeTimelineFfmpegMediaRequirements, isTimelineArchive } from '../../vendor/video-editor-bridge.mjs'
 import type { UpstreamFfmpegRenderPlan } from '../../vendor/video-editor-bridge.mjs'
 import { probeMedia } from '../media/probe.js'
@@ -396,17 +397,53 @@ export const RENDER_STALL_TIMEOUT_MS = 120_000
 export const RENDER_MAX_DURATION_MS = 30 * 60_000
 const RENDER_TIME_CEILING_MS = 6 * 60 * 60_000
 
+/** 720p at 30 fps, in pixels a second: the frame the allowances below are measured at. */
+const BASE_PIXEL_RATE = 1280 * 720 * 30
 /**
- * The whole-run limit for a plan: at least Studio's 30 minutes, and more for
- * a long cut — a graded cut (per-pixel `geq`) runs about 20× real time, so a
- * three-minute graded film would hit a fixed 30 minutes while still working.
+ * The slowest pace a render is expected to keep, in pixels a second, with
+ * room to spare: a plain cut at a sixth of 720p30 real time, a graded one
+ * (per-pixel `geq`, about 20× slower than real time at 720p) at a fortieth.
+ */
+const PLAIN_PIXEL_RATE = BASE_PIXEL_RATE / 6
+const GRADED_PIXEL_RATE = BASE_PIXEL_RATE / 40
+/**
+ * Frames the encoder holds before its first packet: libx264 `medium`'s
+ * 40-frame rate-control lookahead plus B-frames and frame threads, rounded up.
+ */
+const ENCODER_DELAY_FRAMES = 60
+
+type TimedPlan = Pick<UpstreamFfmpegRenderPlan, 'args' | 'duration' | 'width' | 'height' | 'frameRate'>
+
+/** Milliseconds one output frame of the plan may take at the slowest expected pace. */
+function frameAllowanceMs(plan: TimedPlan): number {
+  const graded = plan.args.some(arg => arg.includes('geq='))
+  return (plan.width * plan.height * 1000) / (graded ? GRADED_PIXEL_RATE : PLAIN_PIXEL_RATE)
+}
+
+/**
+ * The whole-run limit for a plan: its frames × pixels at the slowest
+ * expected pace, at least Studio's 30 minutes and at most six hours. A
+ * three-minute graded film, or a 4K one at 60 fps, would hit a fixed limit
+ * while still working; at 720p30 this is 6× the cut's length, 40× graded.
  * @param plan - the plan.
  * @returns milliseconds.
  */
-export function renderTimeLimitMs(plan: Pick<UpstreamFfmpegRenderPlan, 'args' | 'duration'>): number {
-  const graded = plan.args.some(arg => arg.includes('geq='))
-  const allowance = plan.duration * 1000 * (graded ? 40 : 6)
+export function renderTimeLimitMs(plan: TimedPlan): number {
+  const allowance = plan.duration * plan.frameRate * frameAllowanceMs(plan)
   return Math.min(RENDER_TIME_CEILING_MS, Math.max(RENDER_MAX_DURATION_MS, Math.round(allowance)))
+}
+
+/**
+ * How long ffmpeg may run before its first output time: the encoder's
+ * lookahead filled at the slowest expected pace, at least the stall timeout.
+ * A large graded frame takes seconds, so the first packet can be minutes in
+ * coming while every frame is being worked on.
+ * @param plan - the plan.
+ * @returns milliseconds.
+ */
+export function renderFirstOutputMs(plan: TimedPlan): number {
+  const allowance = ENCODER_DELAY_FRAMES * frameAllowanceMs(plan)
+  return Math.min(RENDER_TIME_CEILING_MS, Math.max(RENDER_STALL_TIMEOUT_MS, Math.round(allowance)))
 }
 
 /** Runs ffmpeg; the default spawns it, tests stand a script in. */
@@ -456,8 +493,8 @@ export function sha256File(file: string): Promise<string> {
 }
 
 /**
- * The hidden file a render writes before it is renamed into place: beside the
- * target, so the rename stays on one volume, and a dot file, so neither the
+ * The hidden file a render writes before it is put in place: beside the
+ * target, so the link stays on one volume, and a dot file, so neither the
  * desk's material list nor the renders list shows a half-written cut.
  * @param target - the final absolute path.
  * @returns the partial's absolute path.
@@ -477,6 +514,53 @@ export async function removeStalePartials(folder: string): Promise<void> {
   await Promise.all(names.filter(name => /^\..+\.partial\.mp4$/i.test(name)).map(name => rm(join(folder, name), { force: true }).catch(() => {})))
 }
 
+/**
+ * Put a finished partial in place under the name reserved for it, or under
+ * the next free one (`<stem>-2.mp4`, `-3`..., as `freeProjectPath` names
+ * them) when another file took that name while the render ran. A hard link
+ * never replaces a file, where a rename would; on a file system without hard
+ * links the name is claimed by creating it exclusively, and the partial is
+ * then renamed over that empty claim.
+ * @param partial - the finished partial.
+ * @param target - the reserved absolute path.
+ * @param fs - the hard link call (tests stand in one that fails).
+ * @returns the absolute path kept.
+ */
+export async function keepRender(partial: string, target: string, fs: { link?: (existing: string, path: string) => Promise<void> } = {}): Promise<string> {
+  const linkFile = fs.link ?? link
+  const folder = dirname(target)
+  const name = basename(target)
+  const match = /^(.*?)(\.[A-Za-z0-9]+)?$/.exec(name)
+  const stem = match?.[1] ?? name
+  const extension = match?.[2] ?? ''
+  let linkless = false
+  for (let index = 1; index < 10_000; index++) {
+    const candidate = join(folder, index === 1 ? name : `${stem}-${index}${extension}`)
+    try {
+      if (linkless) {
+        await (await open(candidate, 'wx')).close()
+        await rename(partial, candidate).catch(async (error: unknown) => {
+          await rm(candidate, { force: true }).catch(() => {})
+          throw error
+        })
+        return candidate
+      }
+      await linkFile(partial, candidate)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EEXIST') continue
+      if (linkless || code === 'ENOENT') throw error
+      // No hard links here (FAT, exFAT, some shares): claim this same name the other way.
+      linkless = true
+      index--
+      continue
+    }
+    await rm(partial, { force: true })
+    return candidate
+  }
+  throw new TimelineRenderError(409, 'RENDER_NAME_TAKEN', `渲染完成了，但 ${name} 和它的编号名都被占用，没能保存。`)
+}
+
 export interface TimelineRenderInput extends TimelinePlanInput {
   /** Project-relative output path, `canvas/renders/….mp4`. */
   outputPath: string
@@ -486,6 +570,8 @@ export interface TimelineRenderInput extends TimelinePlanInput {
   onProgress?: ((progress: { percent: number; seconds: number; duration: number }) => void) | undefined
   signal?: AbortSignal | undefined
   stallTimeoutMs?: number | undefined
+  /** The allowance before ffmpeg's first output time; {@link renderFirstOutputMs} when absent. */
+  firstOutputTimeoutMs?: number | undefined
   maxDurationMs?: number | undefined
   runner?: FfmpegRunner | undefined
 }
@@ -511,8 +597,9 @@ const canceled = (): TimelineRenderError => new TimelineRenderError(499, 'RENDER
 /**
  * Run the plan. ffmpeg runs in a scratch folder holding the sidecars (the
  * planner names `captions.ass` and the font files relative to the working
- * folder) and writes the hidden partial, renamed into place only when ffmpeg
- * exits clean: a failed or cancelled render leaves no file that looks finished.
+ * folder) and writes the hidden partial, put in place ({@link keepRender}) only
+ * when ffmpeg exits clean: a failed or cancelled render leaves no file that
+ * looks finished, and a finished one never replaces a file that took its name.
  * @param input - the cut, the output path, ffmpeg and the controls.
  * @returns the file.
  * @throws {@link TimelineRenderError} — a refusal, `FFMPEG_STALLED`, `FFMPEG_TIMEOUT`, `FFMPEG_FAILED` or `RENDER_CANCELED`.
@@ -528,7 +615,7 @@ export async function renderTimeline(input: TimelineRenderInput): Promise<Timeli
   await mkdir(dirname(target), { recursive: true })
   const partial = partialPathFor(target)
   const workDir = await mkdtemp(join(tmpdir(), 'dsh-film-render-'))
-  let renamed = false
+  let kept: string | undefined
   try {
     for (const sidecar of plan.sidecars ?? []) {
       const file = join(workDir, sidecar.filename)
@@ -539,6 +626,7 @@ export async function renderTimeline(input: TimelineRenderInput): Promise<Timeli
     // line per second on stdout, against the plan's duration.
     const argv = ['-hide_banner', '-y', '-nostats', '-progress', 'pipe:1', ...plan.args.slice(2), partial]
     const stallTimeoutMs = input.stallTimeoutMs ?? RENDER_STALL_TIMEOUT_MS
+    const firstOutputTimeoutMs = Math.max(stallTimeoutMs, input.firstOutputTimeoutMs ?? renderFirstOutputMs(plan))
     const maxDurationMs = input.maxDurationMs ?? renderTimeLimitMs(plan)
     let result: FfmpegRunResult
     try {
@@ -548,6 +636,7 @@ export async function renderTimeline(input: TimelineRenderInput): Promise<Timeli
         cwd: workDir,
         ...(input.signal !== undefined ? { signal: input.signal } : {}),
         stallTimeoutMs,
+        firstOutputTimeoutMs,
         maxDurationMs,
         onOutTime: (seconds) => {
           const duration = plan.duration
@@ -565,21 +654,25 @@ export async function renderTimeline(input: TimelineRenderInput): Promise<Timeli
       return lines !== '' ? `: ${lines}` : ''
     }
     const seconds = (ms: number): string => `${ms >= 10_000 ? Math.round(ms / 1000) : (ms / 1000).toFixed(1)}s`
-    if (result.stalled) throw new TimelineRenderError(500, 'FFMPEG_STALLED', `ffmpeg 连续 ${seconds(stallTimeoutMs)} 没有产出新画面，已停止——通常是它解不开某个素材${tail()}`)
+    if (result.stalled) {
+      // Which clock ran out: the first frame's allowance, or the one between frames.
+      const before = result.produced === false
+      throw new TimelineRenderError(500, 'FFMPEG_STALLED', `ffmpeg ${before ? `开始后 ${seconds(firstOutputTimeoutMs)} 仍没有产出第一帧` : `连续 ${seconds(stallTimeoutMs)} 没有产出新画面`}，已停止——通常是它解不开某个素材${tail()}`)
+    }
     if (result.timedOut) throw new TimelineRenderError(500, 'FFMPEG_TIMEOUT', `ffmpeg 运行超过 ${seconds(maxDurationMs)} 仍未结束，已停止${tail()}`)
     if (result.code !== 0) throw new TimelineRenderError(500, 'FFMPEG_FAILED', `ffmpeg 渲染失败（退出码 ${result.code}）${tail()}`)
     if (aborted()) throw canceled()
-    await rename(partial, target)
-    renamed = true
-    const info = await stat(target)
-    const durationSeconds = (await probeMedia(target)).durationSeconds ?? plan.duration
-    const loudnessLufs = plan.hasAudio ? await measureLoudnessLufs(runner, input.ffmpegBinary, target, workDir, input.signal) : undefined
-    const sha256 = await sha256File(target)
+    kept = await keepRender(partial, target)
+    const info = await stat(kept)
+    const durationSeconds = (await probeMedia(kept)).durationSeconds ?? plan.duration
+    const loudnessLufs = plan.hasAudio ? await measureLoudnessLufs(runner, input.ffmpegBinary, kept, workDir, input.signal) : undefined
+    const sha256 = await sha256File(kept)
     // Cancelled while the file was being measured: it was never announced, so it goes.
     if (aborted()) throw canceled()
     return {
-      path: input.outputPath,
-      absolutePath: target,
+      // The name actually kept: another file may have taken the reserved one meanwhile.
+      path: `${input.outputPath.slice(0, input.outputPath.lastIndexOf('/') + 1)}${basename(kept)}`,
+      absolutePath: kept,
       size: info.size,
       mtime: info.mtimeMs,
       sha256,
@@ -592,7 +685,7 @@ export async function renderTimeline(input: TimelineRenderInput): Promise<Timeli
       targetLoudnessLufs: planned.targetLoudnessLufs,
     }
   } catch (error) {
-    if (renamed) await rm(target, { force: true }).catch(() => {})
+    if (kept !== undefined) await rm(kept, { force: true }).catch(() => {})
     throw error
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {})

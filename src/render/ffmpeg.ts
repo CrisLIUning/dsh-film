@@ -209,6 +209,12 @@ export interface FfmpegRun {
   signal?: AbortSignal
   /** No new output time for this long stops the run (a source ffmpeg cannot decode). */
   stallTimeoutMs: number
+  /**
+   * The allowance before the first output time instead, when longer: an
+   * encoder holds its lookahead's worth of frames before it writes a packet,
+   * which at a large graded frame takes minutes. Defaults to `stallTimeoutMs`.
+   */
+  firstOutputTimeoutMs?: number
   /** The whole run may take this long. */
   maxDurationMs: number
   /** Output time in seconds, from `-progress pipe:1`. */
@@ -221,6 +227,8 @@ export interface FfmpegRunResult {
   stderr: string
   stalled: boolean
   timedOut: boolean
+  /** Whether any output time arrived (a stall before it ran on the first-output allowance). */
+  produced?: boolean
 }
 
 /**
@@ -249,15 +257,16 @@ export function runFfmpeg(run: FfmpegRun): Promise<FfmpegRunResult> {
       cancelled = true
       stop()
     }
-    const arm = (): NodeJS.Timeout => {
+    const arm = (ms: number): NodeJS.Timeout => {
       const timer = setTimeout(() => {
         stalled = true
         stop()
-      }, run.stallTimeoutMs)
+      }, ms)
       timer.unref()
       return timer
     }
-    let stallTimer = arm()
+    // Until the first output time the encoder may still be filling its lookahead.
+    let stallTimer = arm(Math.max(run.stallTimeoutMs, run.firstOutputTimeoutMs ?? 0))
     const maxTimer = setTimeout(() => {
       timedOut = true
       stop()
@@ -270,6 +279,8 @@ export function runFfmpeg(run: FfmpegRun): Promise<FfmpegRunResult> {
     }
     run.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout?.on('data', (chunk: Buffer) => {
+      // Once a clock has stopped it, what the dying process still says is not progress.
+      if (stalled || timedOut || cancelled) return
       pending += chunk.toString('utf8')
       const lines = pending.split('\n')
       pending = lines.pop() ?? ''
@@ -281,7 +292,7 @@ export function runFfmpeg(run: FfmpegRun): Promise<FfmpegRunResult> {
         if (seconds > lastOutTime) {
           lastOutTime = seconds
           clearTimeout(stallTimer)
-          stallTimer = arm()
+          stallTimer = arm(run.stallTimeoutMs)
         }
         run.onOutTime?.(seconds)
       }
@@ -301,7 +312,7 @@ export function runFfmpeg(run: FfmpegRun): Promise<FfmpegRunResult> {
         reject(new FfmpegCanceledError('ffmpeg was cancelled'))
         return
       }
-      resolve({ code: code ?? 1, stderr, stalled, timedOut })
+      resolve({ code: code ?? 1, stderr, stalled, timedOut, produced: lastOutTime >= 0 })
     })
   })
 }

@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 class FakeEventSource {
   static last: FakeEventSource | undefined
+  static opened = 0
   readonly listeners = new Map<string, Array<(event: { data: string }) => void>>()
   closed = false
+  /** OPEN; the browser sets CONNECTING (0) while it reconnects, CLOSED (2) once it gives up. */
+  readyState = 1
   constructor(readonly url: URL, readonly init: unknown) {
     FakeEventSource.last = this
+    FakeEventSource.opened += 1
   }
   addEventListener(name: string, listener: (event: { data: string }) => void): void {
     this.listeners.set(name, [...this.listeners.get(name) ?? [], listener])
@@ -38,6 +42,7 @@ let messageListeners: Array<(event: unknown) => void>
 beforeEach(() => {
   frames = []
   messageListeners = []
+  FakeEventSource.opened = 0
   vi.useFakeTimers()
   vi.stubGlobal('EventSource', FakeEventSource)
   vi.stubGlobal('location', { origin: 'http://host' })
@@ -116,5 +121,56 @@ describe('caption runner (client)', () => {
     expect(frames[2]!.removed).toBe(true)
     stop()
     expect(messageListeners).toHaveLength(0)
+  })
+
+  it('takes the runner page\'s finish message, in each of its states', async () => {
+    const stop = (await runner()).startCaptionRunner()
+    const source = FakeEventSource.last!
+    source.emit('hello', { runnerId: 'r1' })
+    const states = ['done', 'failed', 'cancelled', 'refused']
+    for (const [index, state] of states.entries()) {
+      source.emit('job', { jobId: `j${index}` })
+      for (const listener of messageListeners) listener({ origin: 'http://host', source: frames[index]!.contentWindow, data: { type: 'caption-runner', jobId: `j${index}`, state } })
+      expect(frames[index]!.removed).toBe(true)
+    }
+    // Not a finish: an unknown state, or another frame's message.
+    source.emit('job', { jobId: 'j9' })
+    const frame = frames.at(-1)!
+    for (const listener of messageListeners) listener({ origin: 'http://host', source: frame.contentWindow, data: { type: 'caption-runner', jobId: 'j9', state: 'working' } })
+    for (const listener of messageListeners) listener({ origin: 'http://host', source: frames[0]!.contentWindow, data: { type: 'caption-runner', jobId: 'j9', state: 'done' } })
+    expect(frame.removed).toBe(false)
+    stop()
+  })
+
+  it('opens a new stream after a pause when the browser gives up reconnecting (the plugin restarted)', async () => {
+    const stop = (await runner()).startCaptionRunner()
+    const first = FakeEventSource.last!
+    first.emit('hello', { runnerId: 'r1' })
+    // The Host ended the stream: the browser reconnects on its own while CONNECTING.
+    first.readyState = 0
+    first.emit('error', {})
+    vi.advanceTimersByTime(60_000)
+    expect(FakeEventSource.opened).toBe(1)
+    // The route was briefly gone and answered with an error: the browser stops for good.
+    first.readyState = 2
+    first.emit('error', {})
+    expect(first.closed).toBe(true)
+    vi.advanceTimersByTime(1_999)
+    expect(FakeEventSource.opened).toBe(1)
+    vi.advanceTimersByTime(1)
+    expect(FakeEventSource.opened).toBe(2)
+    const second = FakeEventSource.last!
+    expect(String(second.url)).toBe('http://host/base/api/dsh-film/caption-runner/events')
+    // The new hub's jobs reach this window again.
+    second.emit('hello', { runnerId: 'r2' })
+    second.emit('job', { jobId: 'next' })
+    expect(Object.fromEntries(new URL(frames.at(-1)!.src).searchParams)).toEqual({ job: 'next', runner: 'r2' })
+    // A failure again waits longer; stopping cancels the pending reconnect.
+    second.readyState = 2
+    second.emit('error', {})
+    stop()
+    vi.advanceTimersByTime(60_000)
+    expect(FakeEventSource.opened).toBe(2)
+    expect(second.closed).toBe(true)
   })
 })

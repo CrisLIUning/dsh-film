@@ -15,6 +15,7 @@ export const CAPTION_ENGINES: readonly CaptionEngine[] = ['whisper', 'gateway']
 /** `POST /api/canvas/timelines/:boardId/transcribe`. */
 export interface TimelineTranscribeRequest {
   baseRevision: number
+  /** Empty only for an estimate, which needs none. */
   requestId: string
   clipIds?: string[]
   /** Timeline seconds. */
@@ -24,6 +25,15 @@ export interface TimelineTranscribeRequest {
   engine?: CaptionEngine
   /** The desk showed the gateway price and the person went ahead (not part of the identity). */
   spendingConfirmed?: boolean
+  /** Only answer what the recognition would send and cost: no task, nothing copied, nothing charged. */
+  estimateOnly?: boolean
+}
+
+/** What an estimate answers (200). */
+export interface TimelineTranscribeEstimate {
+  /** Source seconds the engine would be sent, and their price (0 for Whisper). */
+  estimate: Required<CaptionEstimate>
+  engine: CaptionEngine
 }
 
 /** One recognised source: a clip's audible stretch inside the requested range. */

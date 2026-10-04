@@ -60,6 +60,8 @@ export interface RunnerClaim {
 /** A connected window's event stream. */
 export interface RunnerChannel {
   send(event: string, data: unknown): boolean
+  /** End the stream: the window reconnects, to whichever hub then serves the route. */
+  close?(): void
 }
 
 /** A runner route's refusal. */
@@ -105,6 +107,7 @@ export class CaptionRunnerHub {
   private readonly deadlineMs: number
   private readonly pageAvailable: () => boolean
   private readonly randomUUID: () => string
+  private disposed = false
 
   constructor(options: CaptionRunnerHubOptions = {}) {
     this.claimTimeoutMs = options.claimTimeoutMs ?? CLAIM_TIMEOUT_MS
@@ -136,6 +139,11 @@ export class CaptionRunnerHub {
    */
   connect(channel: RunnerChannel): string {
     const runnerId = this.randomUUID()
+    if (this.disposed) {
+      // A window reconnecting before this hub's route is gone: send it on to the next hub.
+      channel.close?.()
+      return runnerId
+    }
     this.runners.set(runnerId, channel)
     channel.send('hello', { runnerId })
     for (const job of this.jobs.values()) {
@@ -275,11 +283,25 @@ export class CaptionRunnerHub {
     return source.file
   }
 
-  /** Stop every job (the plugin is unloading). */
+  /**
+   * Stop every job and end every window's stream (the plugin is unloading,
+   * or restarting with new settings): a window left on this hub would never
+   * be offered the next hub's jobs, so its stream ends and it reconnects.
+   */
   dispose(): void {
+    this.disposed = true
     for (const job of [...this.jobs.values()]) {
       this.broadcast('cancel', { jobId: job.id })
       this.settle(job, () => job.reject(new TimelineCaptionError('CAPTION_RUNTIME_UNAVAILABLE', '影视工作台正在关闭。', 503)))
+    }
+    const channels = [...this.runners.values()]
+    this.runners.clear()
+    for (const channel of channels) {
+      try {
+        channel.close?.()
+      } catch {
+        // Already gone.
+      }
     }
   }
 }

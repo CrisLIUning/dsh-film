@@ -53,7 +53,12 @@ function positive(value: unknown, key: string): number {
  */
 export function parseTranscribeRequest(value: unknown): TimelineTranscribeRequest {
   const r = obj(value)
-  if (!Number.isSafeInteger(r.baseRevision) || Number(r.baseRevision) < 0 || typeof r.requestId !== 'string' || r.requestId.trim() === '' || r.requestId.length > 160) {
+  if (r.estimateOnly !== undefined && typeof r.estimateOnly !== 'boolean') fail('CAPTION_REQUEST_INVALID', 'estimateOnly must be true or false')
+  // An estimate starts nothing, so it needs no requestId (one that is given is still checked).
+  const estimateOnly = r.estimateOnly === true
+  const requestMissing = !(estimateOnly && r.requestId === undefined)
+    && (typeof r.requestId !== 'string' || r.requestId.trim() === '' || r.requestId.length > 160)
+  if (!Number.isSafeInteger(r.baseRevision) || Number(r.baseRevision) < 0 || requestMissing) {
     fail('CAPTION_REQUEST_INVALID', 'baseRevision and requestId are required')
   }
   if (r.clipIds !== undefined && (
@@ -74,12 +79,13 @@ export function parseTranscribeRequest(value: unknown): TimelineTranscribeReques
   if (r.spendingConfirmed !== undefined && typeof r.spendingConfirmed !== 'boolean') fail('CAPTION_REQUEST_INVALID', 'spendingConfirmed must be true or false')
   return {
     baseRevision: Number(r.baseRevision),
-    requestId: String(r.requestId),
+    requestId: typeof r.requestId === 'string' ? r.requestId : '',
     ...(r.clipIds !== undefined ? { clipIds: [...r.clipIds as string[]] } : {}),
     ...(range !== undefined ? { range } : {}),
     ...(r.language !== undefined ? { language: String(r.language) } : {}),
     ...(r.engine !== undefined ? { engine: r.engine as CaptionEngine } : {}),
     ...(r.spendingConfirmed === true ? { spendingConfirmed: true } : {}),
+    ...(estimateOnly ? { estimateOnly: true } : {}),
   }
 }
 

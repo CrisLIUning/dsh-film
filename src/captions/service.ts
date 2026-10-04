@@ -14,15 +14,18 @@
  * keeps its full evidence in a file (`film/.tasks/caption-evidence/<taskId>.json`).
  *
  * What differs: missing model consent and a missing runner are refused before
- * a task exists (Studio failed the task afterwards), and there are two
- * engines (`engines.ts`, `gateway.ts`) with no fallback between them.
+ * a task exists (Studio failed the task afterwards); there are two engines
+ * (`engines.ts`, `gateway.ts`) with no fallback between them; a request may
+ * ask for the estimate only (`estimateOnly`), which starts nothing; and the
+ * snapshots a stopped Host left are swept when a workspace's recognitions are
+ * first listed and before each new run.
  * @module dsh-film/captions/service
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FilmMediaTasks, FilmTask } from '../media/tasks.js'
 import { EditorModelError } from '../models/service.js'
@@ -37,6 +40,7 @@ import type {
   TimelineCaptionApplyRequest,
   TimelineCaptionDraft,
   TimelineCaptionTaskSummary,
+  TimelineTranscribeEstimate,
   TimelineTranscribeRequest,
 } from './contracts.js'
 import type { CaptionEngineDriver } from './engines.js'
@@ -123,6 +127,8 @@ export interface CaptionServiceOptions {
 export class CaptionService {
   private readonly active = new Set<Promise<void>>()
   private readonly starting = new Map<string, Promise<unknown>>()
+  /** Workspaces whose left-over snapshot folders were swept since the service started. */
+  private readonly swept = new Set<string>()
 
   constructor(private readonly options: CaptionServiceOptions) {}
 
@@ -161,7 +167,7 @@ export class CaptionService {
    * @param caller - the agent tool call asking, for the gateway's spending confirmation.
    * @returns the task.
    */
-  start(cwd: string, projectId: string, request: TimelineTranscribeRequest, caller: CaptionCaller = captionCaller.getStore() ?? {}): Promise<CaptionStartResult> {
+  start(cwd: string, projectId: string, request: TimelineTranscribeRequest, caller: CaptionCaller = captionCaller.getStore() ?? {}, signal?: AbortSignal): Promise<CaptionStartResult> {
     return this.serial(cwd, async () => {
       const driver = this.engineOf(request)
       const identity = JSON.stringify({
@@ -181,9 +187,12 @@ export class CaptionService {
       const state = await store.read()
       if (state.revision !== request.baseRevision) throw new TimelineConflictError(state.revision, request.baseRevision)
       const plan = planTimelineTranscription(state.document, request, projectId)
-      const { model, estimate } = await driver.preflight({ cwd, request, plan })
-      const spending = { confirmed: request.spendingConfirmed === true, ...caller }
+      // A paid engine may ask an agent's person to confirm the cost here, once, while the tool call waits.
+      const { model, estimate, spendingConfirmed } = await driver.preflight({ cwd, request, plan, caller, ...(signal !== undefined ? { signal } : {}) })
+      const spending = { confirmed: request.spendingConfirmed === true || spendingConfirmed === true, ...caller }
       const language = request.language ?? 'zh'
+      // Snapshots a stopped Host left behind are cleared before this run makes its own.
+      await this.sweepRuns(cwd)
       let finished!: () => void
       const work = new Promise<void>((done) => { finished = done })
       this.active.add(work)
@@ -265,6 +274,49 @@ export class CaptionService {
     })
   }
 
+  /**
+   * What a recognition would send and cost — after planning and the engine's
+   * own checks, so it refuses what a start would — with no task, nothing
+   * copied and nothing charged.
+   * @param cwd - the workspace.
+   * @param projectId - the film's project id.
+   * @param request - the checked request (`estimateOnly`; its requestId, if any, is ignored).
+   * @param signal - the request's lifetime.
+   * @returns the source seconds the engine would be sent, their price and the engine.
+   */
+  async estimate(cwd: string, projectId: string, request: TimelineTranscribeRequest, signal?: AbortSignal): Promise<TimelineTranscribeEstimate> {
+    const driver = this.engineOf(request)
+    const state = await this.options.timelines(cwd, projectId).read()
+    if (state.revision !== request.baseRevision) throw new TimelineConflictError(state.revision, request.baseRevision)
+    const plan = planTimelineTranscription(state.document, request, projectId)
+    // Never with a caller: an estimate asks nobody to confirm anything.
+    const { estimate } = await driver.preflight({ cwd, request: { ...request, estimateOnly: true }, plan, ...(signal !== undefined ? { signal } : {}) })
+    const seconds = Math.round(plan.sources.reduce((total, source) => total + source.sourceOut - source.sourceIn, 0) * 10) / 10
+    return {
+      estimate: estimate?.amountCny !== undefined
+        ? { seconds: estimate.seconds, amountCny: estimate.amountCny, basis: estimate.basis }
+        : { seconds, amountCny: 0, basis: 'recognised on this machine (Whisper): free' },
+      engine: driver.id,
+    }
+  }
+
+  /**
+   * Remove the snapshot folders of recognitions that are not running
+   * (`film/.tasks/caption-runs/<taskId>/`). A run removes its own when it
+   * ends, but a Host that crashed or quit mid-run left its copies — up to 64
+   * sources of 1 GiB — behind for good.
+   * @param cwd - the workspace.
+   */
+  private async sweepRuns(cwd: string): Promise<void> {
+    this.swept.add(resolve(cwd))
+    const folder = join(cwd, PROJECT_DIR, ...RUNS_DIR.split('/'))
+    for (const name of await readdir(folder).catch(() => [] as string[])) {
+      // A running task saved itself before it made its folder, so its folder is never taken for a stale one.
+      const task = /^[A-Za-z0-9_-]{1,80}$/.test(name) ? await this.options.tasks.record(cwd, name).catch(() => undefined) : undefined
+      if (task?.status !== 'running') await rm(join(folder, name), { recursive: true, force: true }).catch(() => {})
+    }
+  }
+
   /** The recognition task of this project, or Studio's 404. */
   private async recognition(cwd: string, projectId: string, taskId: string): Promise<FilmTask> {
     const task = /^[A-Za-z0-9_-]{1,80}$/.test(taskId) ? await this.options.tasks.record(cwd, taskId) : undefined
@@ -309,6 +361,8 @@ export class CaptionService {
    * @returns the rows.
    */
   async list(cwd: string, projectId: string): Promise<{ tasks: TimelineCaptionTaskSummary[] }> {
+    // The first look at a workspace's recognitions since the service started clears what a stopped Host left.
+    if (!this.swept.has(resolve(cwd))) await this.sweepRuns(cwd)
     const applied = appliedIds((await this.options.timelines(cwd, projectId).read()).document)
     const tasks = (await this.options.tasks.list(cwd)).filter(task => isRecognition(task, projectId)).slice(0, 20)
     return {

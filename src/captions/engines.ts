@@ -11,7 +11,7 @@
 
 import type { EditorModels } from '../models/service.js'
 import { modelFileRoute } from '../studio/model-routes.js'
-import type { CaptionEngine, CaptionEstimate, CaptionRecognition, CaptionRecognizerInput, TimelineTranscribeRequest } from './contracts.js'
+import type { CaptionCaller, CaptionEngine, CaptionEstimate, CaptionRecognition, CaptionRecognizerInput, TimelineTranscribeRequest } from './contracts.js'
 import { TimelineCaptionError } from './plan.js'
 import type { TranscriptionPlan } from './plan.js'
 import type { CaptionRunnerHub } from './runner.js'
@@ -26,10 +26,13 @@ export interface CaptionEngineDriver {
   readonly id: CaptionEngine
   /**
    * Refuse, before a task exists, what cannot run now (missing consent, no
-   * window, no service, a language the engine does not take).
-   * @returns the model the draft will name, and an estimate when the engine costs money.
+   * window, no service, a language the engine does not take). A paid engine
+   * asked by an agent's tool call may confirm the cost here, once, while the
+   * call still waits — never for an estimate (`request.estimateOnly`).
+   * @returns the model the draft will name, an estimate when the engine costs
+   *   money, and whether the cost is now confirmed for the whole recognition.
    */
-  preflight(input: { cwd: string; request: TimelineTranscribeRequest; plan: TranscriptionPlan; signal?: AbortSignal }): Promise<{ model: string; estimate?: CaptionEstimate }>
+  preflight(input: { cwd: string; request: TimelineTranscribeRequest; plan: TranscriptionPlan; caller?: CaptionCaller; signal?: AbortSignal }): Promise<{ model: string; estimate?: CaptionEstimate; spendingConfirmed?: boolean }>
   /**
    * Get the model files ready (verified, downloaded if needed).
    * @returns their URLs by artifact id.

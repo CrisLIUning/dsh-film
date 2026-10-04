@@ -8,10 +8,11 @@
  * and a missing ffmpeg says whether the renderer can be downloaded.
  */
 
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CanvasDocumentStore } from '../../src/canvas/documents.js'
 import { FilmMediaTasks } from '../../src/media/tasks.js'
 import { EditorModels } from '../../src/models/service.js'
 import type { EditorModelManifest } from '../../src/models/service.js'
@@ -100,9 +101,14 @@ function makeRouter(options: { ffmpeg?: string | undefined; filterNames?: (binar
 }
 
 async function call(router: ReturnType<typeof createStudioRouter>, studioPath: string, json?: unknown) {
+  return callAt(router, cwd, studioPath, json)
+}
+
+/** A call naming the workspace as `at` spells it. */
+async function callAt(router: ReturnType<typeof createStudioRouter>, at: string, studioPath: string, json?: unknown) {
   const method = json === undefined ? 'GET' : 'POST'
   const url = new URL(`http://host/api/dsh-film/${method === 'GET' ? 'studio' : 'studio-write'}`)
-  url.searchParams.set('cwd', cwd)
+  url.searchParams.set('cwd', at)
   url.searchParams.set('path', studioPath)
   const response = await router.dispatch(new Request(url, method === 'GET' ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(json) }))
   return { status: response.status, body: await response.json() as any }
@@ -119,6 +125,15 @@ async function settled(taskId: string) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   throw new Error(`task ${taskId} never settled`)
+}
+
+/** Wait until a file is gone (a cancelled render's body clears up after the task already reads cancelled). */
+async function gone(file: string) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (await stat(file).then(() => false, () => true)) return
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  throw new Error(`${file} is still there`)
 }
 
 /** Writes an MP4-looking file where ffmpeg's output goes, after a few progress lines. */
@@ -440,6 +455,104 @@ setInterval(() => { us += 10000; process.stdout.write('out_time_us=' + us + '\\n
     const third = await call(router, RENDER, {})
     expect(third.status).toBe(202)
     await settled(third.body.taskId)
+  })
+
+  it('lets only one of two renders asked for at once start, even while the first is still being planned', async () => {
+    let release!: () => void
+    const planning = new Promise<void>((resolve) => { release = resolve })
+    let finish!: () => void
+    const gate = new Promise<void>((resolve) => { finish = resolve })
+    let asked = 0
+    const router = makeRouter({
+      renderer: {
+        // The first to plan is slow to find ffmpeg: the other request arrives meanwhile.
+        resolveFfmpeg: async () => {
+          asked += 1
+          if (asked === 1) await planning
+          return { binary: 'C:\\tools\\ffmpeg.exe', source: 'setting' as const }
+        },
+        render: async (input) => { await gate; return stubRender(input) },
+      },
+    })
+    const both = Promise.all([call(router, RENDER, {}), call(router, RENDER, {})])
+    await new Promise(resolve => setTimeout(resolve, 50))
+    release()
+    const answers = await both
+    expect(answers.map(answer => answer.status).sort()).toEqual([202, 409])
+    const started = answers.find(answer => answer.status === 202)!
+    expect(answers.find(answer => answer.status === 409)!.body).toMatchObject({ code: 'RENDER_BUSY', taskId: started.body.taskId, detail: { taskId: started.body.taskId } })
+    expect(await tasks.list(cwd)).toHaveLength(1)
+    finish()
+    await settled(started.body.taskId)
+  })
+
+  it('counts the desk\'s and the agent\'s spellings of a workspace as one film', async () => {
+    const alias = `${cwd}-alias`
+    await symlink(cwd, alias, 'junction')
+    try {
+      let finish!: () => void
+      const gate = new Promise<void>((resolve) => { finish = resolve })
+      const router = makeRouter({ renderer: { render: async (input) => { await gate; return stubRender(input) } } })
+      const first = await call(router, RENDER, {})
+      expect(first.status).toBe(202)
+      const second = await callAt(router, alias, RENDER, {})
+      expect(second).toMatchObject({ status: 409, body: { code: 'RENDER_BUSY', taskId: first.body.taskId } })
+      finish()
+      await settled(first.body.taskId)
+    } finally {
+      await rm(alias, { recursive: true, force: true })
+    }
+  })
+
+  it('gives the film back to the next render when a render is refused before it starts', async () => {
+    let asked = 0
+    const router = makeRouter({ renderer: { resolveFfmpeg: async () => (asked++ === 0 ? undefined : { binary: 'ffmpeg', source: 'path' as const }) } })
+    expect((await call(router, RENDER, {})).body.code).toBe('FFMPEG_UNAVAILABLE')
+    const next = await call(router, RENDER, {})
+    expect(next.status).toBe(202)
+    await settled(next.body.taskId)
+  })
+
+  it('keeps neither the file nor a board node when the render is cancelled as its file comes in', async () => {
+    await writeFile(join(cwd, 'film', 'canvas', 'document.json'), JSON.stringify({ id: 'film-1', title: '雨夜', nodes: [], connections: [] }))
+    // The cancel arrives just as the renderer hands its file back.
+    let cancelled!: () => void
+    const handedBack = new Promise<void>((resolve) => { cancelled = resolve })
+    const render = vi.fn(async (input: TimelineRenderInput) => {
+      const output = await stubRender(input)
+      const [running] = await tasks.list(cwd)
+      await tasks.cancel(cwd, running!.taskId)
+      cancelled()
+      return output
+    })
+    const router = makeRouter({ renderer: { render } })
+    const { body } = await call(router, RENDER, { fileName: 'late' })
+    await handedBack
+    await gone(join(cwd, 'film', 'canvas', 'renders', 'late.mp4'))
+    expect(await tasks.record(cwd, body.taskId)).toMatchObject({ status: 'interrupted', error: { code: 'RENDER_CANCELED' } })
+    expect(JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8')).nodes).toEqual([])
+    expect(seen.some(event => event.type === 'file-changed')).toBe(false)
+  })
+
+  it('takes the node back off the board when the cancel comes while the file is being placed', async () => {
+    await writeFile(join(cwd, 'film', 'canvas', 'document.json'), JSON.stringify({ id: 'film-1', title: '雨夜', nodes: [], connections: [] }))
+    // Someone else is saving the board: the render's landing waits for its lock.
+    let unlock!: () => void
+    const locked = new Promise<void>((resolve) => { unlock = resolve })
+    const saving = new CanvasDocumentStore(cwd, 'film-1').update(async (current) => { await locked; return current! })
+    let rendered!: () => void
+    const handedBack = new Promise<void>((resolve) => { rendered = resolve })
+    const router = makeRouter({ renderer: { render: async (input) => { const output = await stubRender(input); rendered(); return output } } })
+    const { body } = await call(router, RENDER, { fileName: 'placing' })
+    await handedBack
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect((await call(router, `/api/media/tasks/${body.taskId}/cancel`, {})).status).toBe(200)
+    unlock()
+    await saving
+    // The node is taken off before the file goes.
+    await gone(join(cwd, 'film', 'canvas', 'renders', 'placing.mp4'))
+    expect(JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8')).nodes).toEqual([])
+    expect(await tasks.record(cwd, body.taskId)).toMatchObject({ status: 'interrupted', error: { code: 'RENDER_CANCELED' } })
   })
 
   it('leaves a render running when the Host stopped interrupted, saying to render again', async () => {

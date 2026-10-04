@@ -78,9 +78,10 @@ export function renderTools(services: FilmToolServices, options: { waitMs?: numb
         + 'check:true answers with the same refusals as a render and starts nothing: output size, length, frame rate, whether it has sound, the loudness '
         + 'target and the file name. Otherwise it renders and waits up to 4 minutes; a longer render returns its taskId — call again with taskId to keep '
         + 'waiting, or taskId with cancel:true to stop it. Quote baseRevision from timeline_query so a cut that moved on is refused. A colour-graded cut is '
-        + 'slow, about 20× real time. Report only a finished file. Refusals: CANVAS_TIMELINE_CONFLICT (read again), EMPTY_TIMELINE, MISSING_MEDIA, '
-        + 'UNSUPPORTED_RENDER_FEATURE, MISSING_RENDER_RESOURCE (a caption font the person has not downloaded), FFMPEG_UNAVAILABLE, FFMPEG_MISSING_FILTER, '
-        + 'RENDER_BUSY (one render at a time) — a refusal repeats identically, so do not retry it unchanged.',
+        + 'slow, about 20× real time. Report only a finished file. One render of a film runs at a time: when one is already running (the editing desk\'s or '
+        + 'an earlier call\'s) this call follows it instead (alreadyRunning: true) — its settings may differ from yours. Refusals: CANVAS_TIMELINE_CONFLICT '
+        + '(read again), EMPTY_TIMELINE, MISSING_MEDIA, UNSUPPORTED_RENDER_FEATURE, MISSING_RENDER_RESOURCE (a caption font the person has not downloaded), '
+        + 'FFMPEG_UNAVAILABLE, FFMPEG_MISSING_FILTER — a refusal repeats identically, so do not retry it unchanged.',
       parameters: {
         baseRevision: { type: 'integer', description: 'The cut revision you read with timeline_query.' },
         check: { type: 'boolean', description: 'Only check whether and how the cut would render.' },
@@ -115,6 +116,12 @@ export function renderTools(services: FilmToolServices, options: { waitMs?: numb
           // Downloading the renderer is a separate GPL program the person agrees to; the agent cannot agree for them.
           if (error instanceof FilmToolError && error.code === 'FFMPEG_UNAVAILABLE') {
             throw new FilmToolError(error.code, `${error.message} Ask the person to download the renderer in the 剪辑 tab (导出 → 渲染到项目), which asks for their consent, or to set the plugin's ffmpegPath; then render again.`)
+          }
+          // A render of this film is already running (the desk's, or an earlier call's): follow it rather than fail.
+          const running = error instanceof FilmToolError && error.code === 'RENDER_BUSY' ? error.body?.taskId : undefined
+          if (typeof running === 'string' && running !== '') {
+            const followed = await follow(services, film, running, exec, waitMs)
+            return plain({ ...followed, alreadyRunning: true, note: `${String(followed.note ?? '')} — this film was already rendering, so this call followed that render (task ${running}) instead of starting another; its settings may differ from the ones asked for, so check the file, and render again once it has ended if they must.` })
           }
           throw error
         }

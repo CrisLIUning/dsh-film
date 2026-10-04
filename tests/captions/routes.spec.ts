@@ -113,6 +113,20 @@ describe('caption routes', () => {
     }
   })
 
+  it('answers an estimate with 200 and starts, copies and charges nothing', async () => {
+    const free = await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: true, range: { start: 1, end: 6 } })
+    expect(free).toEqual({ status: 200, body: { estimate: { seconds: 8, amountCny: 0, basis: expect.any(String) }, engine: 'whisper' } })
+    const paid = await call('POST', `${base}/transcribe?project=${PROJECT}`, { baseRevision: 1, requestId: 'ignored', engine: 'gateway', estimateOnly: true })
+    expect(paid).toEqual({ status: 200, body: { estimate: { seconds: 11, amountCny: 0.01, basis: 'retail' }, engine: 'gateway' } })
+    // The same refusals as a start.
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 0, estimateOnly: true })).toMatchObject({ status: 409, body: { code: 'CANVAS_TIMELINE_CONFLICT', current: { revision: 1 } } })
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: true, engine: 'gateway', language: 'en' })).toMatchObject({ status: 400, body: { code: 'CAPTION_ENGINE_LANGUAGE_UNSUPPORTED' } })
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1, estimateOnly: 'yes' })).toMatchObject({ status: 400, body: { code: 'CAPTION_REQUEST_INVALID' } })
+    // Without estimateOnly a requestId is still required.
+    expect(await call('POST', `${base}/transcribe`, { baseRevision: 1 })).toMatchObject({ status: 400, body: { code: 'CAPTION_REQUEST_INVALID' } })
+    expect(await h.tasks.list(h.cwd)).toEqual([])
+  })
+
   it('lists the engines with the default', async () => {
     expect((await call('GET', `${base}/captions/engines`)).body).toEqual({ default: 'whisper', engines: [{ id: 'whisper', available: true }, { id: 'gateway', available: true }] })
   })

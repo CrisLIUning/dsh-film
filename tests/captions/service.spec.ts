@@ -4,7 +4,7 @@
  * `tests/captions/service.test.ts`, with a fake engine).
  */
 
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -184,6 +184,62 @@ it('a running recognition does not survive a restart of the Host', async () => {
   expect(await after.record(h.cwd, started.taskId)).toMatchObject({ status: 'interrupted', error: { code: 'MEDIA_TASK_INTERRUPTED', message: expect.stringContaining('重新识别') } })
   await after.settled()
   await h.tasks.cancel(h.cwd, started.taskId)
+})
+
+it('sweeps the snapshots a stopped Host left, and never those of a recognition still running', async () => {
+  let entered!: () => void
+  const ready = new Promise<void>((resolve) => { entered = resolve })
+  let blocking = true
+  const h = await setup({
+    whisper: fakeEngine(async (input) => {
+      if (!blocking) return input.sources.map(source => ({ sourceClipId: source.clipId, segments: [{ text: 'x', start: 0, end: 0.5 }] }))
+      entered()
+      return new Promise((_resolve, reject) => { input.signal.addEventListener('abort', () => { reject(input.signal.reason) }) })
+    }),
+  })
+  const runs = join(h.cwd, 'film', '.tasks', 'caption-runs')
+  // A crashed Host's run: its task file says running, but nothing runs it any more; and a folder with no task at all.
+  const crashed = '0b7c2a4e-dead-4bee-9a11-000000000001'
+  await mkdir(join(h.cwd, 'film', '.tasks'), { recursive: true })
+  await writeFile(join(h.cwd, 'film', '.tasks', `${crashed}.json`), JSON.stringify({ taskId: crashed, projectId: PROJECT, surface: 'video-editor', model: 'whisper-small-q8', status: 'running', startedAt: 1, endedAt: null, progress: ['20% · 识别中'], kind: 'local', request: { capability: 'transcribe', parameters: { nativeTimeline: true } } }))
+  for (const name of [crashed, 'orphan']) {
+    await mkdir(join(runs, name), { recursive: true })
+    await writeFile(join(runs, name, '0.mp4'), 'a gigabyte, once')
+  }
+  const running = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'running' })
+  try {
+    await ready
+    // Starting a run swept the leftovers; the running one's own snapshots are there.
+    expect((await readdir(runs)).sort()).toEqual([running.taskId])
+    await mkdir(join(runs, 'orphan'), { recursive: true })
+    blocking = false
+    const next = await h.service.start(h.cwd, PROJECT, { baseRevision: 1, requestId: 'next', clipIds: ['b'] })
+    for (let attempt = 0; attempt < 200 && (await h.tasks.record(h.cwd, next.taskId))?.status === 'running'; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10))
+    expect(await readdir(runs)).toContain(running.taskId)
+    expect(await readdir(runs)).not.toContain('orphan')
+    expect((await h.tasks.record(h.cwd, next.taskId))?.status).toBe('done')
+  } finally {
+    await h.tasks.cancel(h.cwd, running.taskId)
+  }
+})
+
+it('sweeps leftovers the first time a fresh service lists a workspace\'s recognitions', async () => {
+  const h = await setup()
+  const runs = join(h.cwd, 'film', '.tasks', 'caption-runs')
+  await mkdir(join(runs, 'left-by-a-crash'), { recursive: true })
+  await writeFile(join(runs, 'left-by-a-crash', '0.mp4'), 'stale')
+  const { CaptionService } = await import('../../src/captions/service.js')
+  const fresh = new CaptionService({ tasks: h.tasks, engines: { whisper: fakeEngine() }, timelines: dir => new TimelineStore(dir) })
+  await fresh.list(h.cwd, PROJECT)
+  expect(await readdir(runs)).toEqual([])
+})
+
+it('estimates a recognition without a task or a copy: Whisper is free', async () => {
+  const h = await setup()
+  expect(await h.service.estimate(h.cwd, PROJECT, { baseRevision: 1, requestId: '', estimateOnly: true, range: { start: 1, end: 6 } }))
+    .toEqual({ estimate: { seconds: 8, amountCny: 0, basis: expect.stringContaining('free') }, engine: 'whisper' })
+  await expect(h.service.estimate(h.cwd, PROJECT, { baseRevision: 0, requestId: '', estimateOnly: true })).rejects.toThrow(/timeline has moved on/)
+  expect(await h.tasks.list(h.cwd)).toEqual([])
 })
 
 it('reports progress lines as Studio does: models 0–20 %, recognition 20–99 %', async () => {

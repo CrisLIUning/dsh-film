@@ -12,29 +12,33 @@
  *
  * The task is waited on and cancelled with the film task routes
  * (`/api/media/tasks/:taskId/wait|cancel`). Unlike Studio, a cancel stops the
- * ffmpeg tree and the task stays cancelled (`RENDER_CANCELED`), one render
- * runs per film at a time (409 `RENDER_BUSY`), the cut is planned once, a
- * finished file lands on the board in the board's document whether or not
- * the 分镜 page is open, and a missing ffmpeg says whether the renderer can
- * be downloaded (it needs the person's consent, given in the editing desk).
+ * ffmpeg tree and the task stays cancelled (`RENDER_CANCELED`) — one that
+ * comes as the file lands keeps neither the file nor a board node — one
+ * render runs per film at a time (409 `RENDER_BUSY` with the running task's
+ * id, however the workspace is spelled), the cut is planned once, a finished
+ * file lands on the board in the board's document whether or not the 分镜
+ * page is open, and a missing ffmpeg says whether the renderer can be
+ * downloaded (it needs the person's consent, given in the editing desk).
  * Errors answer `{ error, code, detail? }`.
  * @module dsh-film/studio/render-routes
  */
 
 import { existsSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { readdir, realpath, rm, stat } from 'node:fs/promises'
+import { basename, join, resolve } from 'node:path'
 import { landFileOnBoard } from '../canvas/board-media.js'
 import { CanvasDocumentStore } from '../canvas/documents.js'
 import type { FilmMediaTasks, FilmTaskFile } from '../media/tasks.js'
 import { probeHasAudio as probeFileHasAudio } from '../media/probe.js'
 import type { EditorModels } from '../models/service.js'
 import { readProject } from '../project.js'
+import type { FilmProject } from '../project.js'
 import { ffmpegFilterNames, resolveFfmpeg, studioFfmpegCandidates } from '../render/ffmpeg.js'
 import type { ResolvedFfmpeg } from '../render/ffmpeg.js'
 import { RENDER_DIR, TimelineRenderError, buildTimelinePlan, normalizeRenderRequest, removeStalePartials, renderOutputPath, renderTimeline } from '../render/timeline-render.js'
-import type { FfmpegRunner, ProbeHasAudio, TimelineRenderInput, TimelineRenderOutput } from '../render/timeline-render.js'
+import type { FfmpegRunner, ProbeHasAudio, RenderSettings, TimelineRenderInput, TimelineRenderOutput } from '../render/timeline-render.js'
 import { TimelineStore } from '../timeline/store.js'
+import type { TimelineState } from '../timeline/store.js'
 import { projectOf } from './canvas-routes.js'
 import type { ProjectEvents } from './events.js'
 import { PROJECT_DIR, freeProjectPath } from './project-routes.js'
@@ -69,6 +73,25 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
   headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
 })
 
+/** One film's render slot: its task id once the task exists. */
+interface RenderSlot {
+  taskId: string
+  settled: Promise<void>
+  settle: () => void
+}
+
+/** The workspace as one key whatever its spelling: its real path, or the resolved one when it has none. */
+const workspaceKey = async (cwd: string): Promise<string> => realpath(cwd).catch(() => resolve(cwd))
+
+/** Take a node a cancelled render had just placed back off the board. */
+async function takeOffBoard(store: CanvasDocumentStore, boardId: string, nodeId: string): Promise<void> {
+  await store.update((current) => {
+    if (current === null || current.id !== boardId) throw new Error('the board is gone')
+    const nodes = current.nodes.filter(node => (node as { id?: unknown } | null)?.id !== nodeId)
+    return nodes.length === current.nodes.length ? current : { ...current, nodes, updatedAt: new Date().toISOString() }
+  })
+}
+
 /**
  * Add the render routes to a router.
  * @param router - the Studio-compatible router.
@@ -94,8 +117,36 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
     if (models === undefined) return null
     return (await models.artifactFile(`caption-font-${fontId}`, 'font').catch(() => undefined))?.path ?? null
   }
-  /** The film whose render is running, by workspace: one at a time, since ffmpeg takes every core. */
-  const running = new Map<string, { taskId: string }>()
+  /**
+   * The film whose render is running, by the workspace's real path (the desk
+   * and the agent may spell it differently): one at a time, since ffmpeg takes
+   * every core. A slot is taken before the render is planned, while its task
+   * id is still empty; `settled` resolves once it has a task or was given back.
+   */
+  const running = new Map<string, RenderSlot>()
+  const busy = (taskId: string): StudioReply =>
+    // The running task's id at the top, as the contract names it, and in detail like the other refusals.
+    new StudioReply(409, { error: '这部片子正在渲染，等它完成或取消后再渲染。', code: 'RENDER_BUSY', taskId, detail: { taskId } })
+  /** Take the film's slot, or refuse with the render already running; a render still being planned is waited for. */
+  const takeSlot = async (key: string): Promise<RenderSlot> => {
+    for (;;) {
+      const current = running.get(key)
+      if (current === undefined) {
+        // Taken in the same turn as the check: no await between them, so two requests cannot both pass.
+        let settle!: () => void
+        const slot: RenderSlot = { taskId: '', settled: new Promise<void>((resolve) => { settle = resolve }), settle: () => { settle() } }
+        running.set(key, slot)
+        return slot
+      }
+      if (current.taskId !== '') throw busy(current.taskId)
+      // Its task id, or its refusal, is a moment away.
+      await current.settled
+    }
+  }
+  const releaseSlot = (key: string, slot: RenderSlot): void => {
+    if (running.get(key) === slot) running.delete(key)
+    slot.settle()
+  }
 
   router.translate(error => error instanceof TimelineRenderError
     ? json(error.status, { error: error.message, code: error.code, ...(error.detail !== undefined ? { detail: error.detail } : {}) })
@@ -140,11 +191,29 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
     if (settings.baseRevision !== undefined && settings.baseRevision !== state.revision) {
       throw new StudioReply(409, { error: `the cut moved on: you reviewed revision ${settings.baseRevision}, current is ${state.revision}`, code: 'CANVAS_TIMELINE_CONFLICT', current: state })
     }
-    const busy = running.get(request.cwd)
-    if (settings.check !== true && busy !== undefined) {
-      // The running task's id at the top, as the contract names it, and in detail like the other refusals.
-      throw new StudioReply(409, { error: '这部片子正在渲染，等它完成或取消后再渲染。', code: 'RENDER_BUSY', taskId: busy.taskId, detail: { taskId: busy.taskId } })
+    // A check takes no slot: it is answered while a render runs.
+    const key = await workspaceKey(request.cwd)
+    const slot = settings.check === true ? undefined : await takeSlot(key)
+    try {
+      return await startRender(request, { boardId, projectId, settings, film, state, key, slot })
+    } catch (error) {
+      // Every refusal before the task exists gives the slot back.
+      if (slot !== undefined) releaseSlot(key, slot)
+      throw error
     }
+  }))
+
+  /** Plan the render and answer the check, or start the task (which gives the slot back when it ends). */
+  const startRender = async (request: StudioRequest, input: {
+    boardId: string
+    projectId: string
+    settings: RenderSettings
+    film: FilmProject
+    state: TimelineState
+    key: string
+    slot: RenderSlot | undefined
+  }): Promise<unknown> => {
+    const { boardId, projectId, settings, film, state, key, slot } = input
     const ffmpeg = await findFfmpeg()
     if (ffmpeg === undefined) {
       const model = renderer()
@@ -160,7 +229,7 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
     const binary = planned.plan.sidecars?.some(sidecar => sidecar.filename === 'captions.ass') === true ? await captionCapable(ffmpeg.binary) : ffmpeg.binary
     const outputPath = await freeProjectPath(request.cwd, renderOutputPath({ boardId, revision: state.revision, fileName: settings.fileName, title: film.title, now: now() }))
     const revision = state.revision
-    if (settings.check === true) {
+    if (slot === undefined) {
       return {
         ok: true,
         width: planned.width,
@@ -186,93 +255,96 @@ export function addRenderRoutes(router: StudioRouter, events: ProjectEvents, opt
       }
     }
 
-    const slot = { taskId: '' }
-    running.set(request.cwd, slot)
-    const release = (): void => { if (running.get(request.cwd) === slot) running.delete(request.cwd) }
     const renders = join(projectDir, ...RENDER_DIR.split('/'))
-    try {
-      const { taskId } = await tasks.startLocal(request.cwd, projectId, {
-        surface: 'video',
-        model: TIMELINE_RENDER_MODEL,
-        capability: TIMELINE_RENDER_MODEL,
-        parameters: {
-          boardId, project: projectId, revision, frameRate: settings.frameRate, resolution: settings.resolution,
-          output: outputPath, width: planned.width, height: planned.height, durationSeconds: planned.plan.duration,
-        },
-        // Studio's progress list is empty until ffmpeg's first tick; a desk shows this meanwhile.
-        started: '准备渲染',
-        interruption: { code: 'RENDER_INTERRUPTED', message: '渲染过程中宿主重启，请重新渲染。', status: 503 },
-        cancellation: { code: 'RENDER_CANCELED', message: '渲染已取消。', status: 499 },
-      }, async (context) => {
-        try {
-          // Only this render of the film runs, so any partial left in the folder is a stopped one's.
-          await removeStalePartials(renders)
-          let lastPercent = -1
-          let lastAt = 0
-          const output = await render({
-            ...planInput,
-            planned,
-            outputPath,
-            ffmpegBinary: binary,
-            signal: context.signal,
-            ...(options.runner !== undefined ? { runner: options.runner } : {}),
-            onProgress: ({ percent, seconds, duration }) => {
-              // A line per few percent, not per ffmpeg tick: the task file is saved on every line.
-              const at = Date.now()
-              if (percent === lastPercent || (percent - lastPercent < 5 && at - lastAt < 2000)) return
-              lastPercent = percent
-              lastAt = at
-              context.progress(`render ${percent}% · ${seconds.toFixed(1)}s / ${duration.toFixed(1)}s`)
-            },
-          })
-          events.emit(request.cwd, { type: 'file-changed', projectId, path: output.path })
-          const nodeId = await landFileOnBoard(new CanvasDocumentStore(request.cwd, projectId), boardId, projectId, {
-            path: output.path,
-            kind: 'video',
-            mimeType: 'video/mp4',
-            title: basename(output.path),
-            width: output.width,
-            height: output.height,
-            durationSeconds: output.durationSeconds,
-            size: output.size,
-            metadata: { timelineRevision: revision },
-          }).catch(() => null)
-          if (nodeId !== null) events.emit(request.cwd, { type: 'story-canvas-changed', projectId, boardId })
-          const loudness = output.loudnessLufs !== undefined ? ` · ${output.loudnessLufs.toFixed(1)} LUFS (target ${output.targetLoudnessLufs})` : ''
-          const file: FilmTaskFile = {
-            name: output.path,
-            path: output.path,
-            size: output.size,
-            mtime: output.mtime,
-            kind: 'video',
-            mime: 'video/mp4',
-            width: output.width,
-            height: output.height,
-            frameRate: output.frameRate,
-            durationSeconds: output.durationSeconds,
-            hasAudio: output.hasAudio,
-            ...(output.loudnessLufs !== undefined ? { loudnessLufs: output.loudnessLufs } : {}),
-            targetLoudnessLufs: output.targetLoudnessLufs,
-            sha256: output.sha256,
-            revision,
-            boardId,
-            model: TIMELINE_RENDER_MODEL,
-            surface: 'video',
-            providerNote: `timeline-render · r${revision} · ${output.width}×${output.height} · ${output.frameRate}fps · ${output.durationSeconds.toFixed(1)}s${output.hasAudio ? loudness : ' · silent'}`,
-            ...(nodeId !== null ? { landedNodeId: nodeId, nodeId } : {}),
-          }
-          return file
-        } finally {
-          release()
+    const { taskId } = await tasks.startLocal(request.cwd, projectId, {
+      surface: 'video',
+      model: TIMELINE_RENDER_MODEL,
+      capability: TIMELINE_RENDER_MODEL,
+      parameters: {
+        boardId, project: projectId, revision, frameRate: settings.frameRate, resolution: settings.resolution,
+        output: outputPath, width: planned.width, height: planned.height, durationSeconds: planned.plan.duration,
+      },
+      // Studio's progress list is empty until ffmpeg's first tick; a desk shows this meanwhile.
+      started: '准备渲染',
+      interruption: { code: 'RENDER_INTERRUPTED', message: '渲染过程中宿主重启，请重新渲染。', status: 503 },
+      cancellation: { code: 'RENDER_CANCELED', message: '渲染已取消。', status: 499 },
+    }, async (context) => {
+      try {
+        // Only this render of the film runs, so any partial left in the folder is a stopped one's.
+        await removeStalePartials(renders)
+        let lastPercent = -1
+        let lastAt = 0
+        const output = await render({
+          ...planInput,
+          planned,
+          outputPath,
+          ffmpegBinary: binary,
+          signal: context.signal,
+          ...(options.runner !== undefined ? { runner: options.runner } : {}),
+          onProgress: ({ percent, seconds, duration }) => {
+            // A line per few percent, not per ffmpeg tick: the task file is saved on every line.
+            const at = Date.now()
+            if (percent === lastPercent || (percent - lastPercent < 5 && at - lastAt < 2000)) return
+            lastPercent = percent
+            lastAt = at
+            context.progress(`render ${percent}% · ${seconds.toFixed(1)}s / ${duration.toFixed(1)}s`)
+          },
+        })
+        const board = new CanvasDocumentStore(request.cwd, projectId)
+        // A render cancelled as it lands keeps neither the file nor a node: it was never announced.
+        const discard = async (nodeId: string | null): Promise<never> => {
+          if (nodeId !== null) await takeOffBoard(board, boardId, nodeId).catch(() => {})
+          await rm(output.absolutePath, { force: true }).catch(() => {})
+          throw new TimelineRenderError(499, 'RENDER_CANCELED', '渲染已取消。')
         }
-      })
-      slot.taskId = taskId
-      return json(202, { taskId, revision, status: 'running', output: { path: outputPath } })
-    } catch (error) {
-      release()
-      throw error
-    }
-  }))
+        if (context.signal.aborted) await discard(null)
+        const nodeId = await landFileOnBoard(board, boardId, projectId, {
+          path: output.path,
+          kind: 'video',
+          mimeType: 'video/mp4',
+          title: basename(output.path),
+          width: output.width,
+          height: output.height,
+          durationSeconds: output.durationSeconds,
+          size: output.size,
+          metadata: { timelineRevision: revision },
+        }).catch(() => null)
+        if (context.signal.aborted) await discard(nodeId)
+        events.emit(request.cwd, { type: 'file-changed', projectId, path: output.path })
+        if (nodeId !== null) events.emit(request.cwd, { type: 'story-canvas-changed', projectId, boardId })
+        const loudness = output.loudnessLufs !== undefined ? ` · ${output.loudnessLufs.toFixed(1)} LUFS (target ${output.targetLoudnessLufs})` : ''
+        const file: FilmTaskFile = {
+          name: output.path,
+          path: output.path,
+          size: output.size,
+          mtime: output.mtime,
+          kind: 'video',
+          mime: 'video/mp4',
+          width: output.width,
+          height: output.height,
+          frameRate: output.frameRate,
+          durationSeconds: output.durationSeconds,
+          hasAudio: output.hasAudio,
+          ...(output.loudnessLufs !== undefined ? { loudnessLufs: output.loudnessLufs } : {}),
+          targetLoudnessLufs: output.targetLoudnessLufs,
+          sha256: output.sha256,
+          revision,
+          boardId,
+          model: TIMELINE_RENDER_MODEL,
+          surface: 'video',
+          providerNote: `timeline-render · r${revision} · ${output.width}×${output.height} · ${output.frameRate}fps · ${output.durationSeconds.toFixed(1)}s${output.hasAudio ? loudness : ' · silent'}`,
+          ...(nodeId !== null ? { landedNodeId: nodeId, nodeId } : {}),
+        }
+        return file
+      } finally {
+        releaseSlot(key, slot)
+      }
+    })
+    // Waiting requests now refuse with this task, which they can follow.
+    slot.taskId = taskId
+    slot.settle()
+    return json(202, { taskId, revision, status: 'running', output: { path: outputPath } })
+  }
 
   router.add('GET', '/api/canvas/timelines/:boardId/renders', async (request: StudioRequest) => answering(async () => {
     const folder = join(request.cwd, PROJECT_DIR, ...RENDER_DIR.split('/'))

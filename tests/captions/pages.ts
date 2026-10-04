@@ -15,6 +15,8 @@ export interface RunnerWindow {
   events: Array<{ event: string; data: any }>
   /** Wait for the next event of a kind (one not yet taken). */
   next(event: string, timeoutMs?: number): Promise<any>
+  /** Settles when the Host ends the stream (or the window closes it). */
+  ended: Promise<void>
   close(): void
 }
 
@@ -37,7 +39,7 @@ export async function openWindow(routes: readonly ConnectionFetchRoute[]): Promi
   const taken = new Set<number>()
   const waiters: Array<() => void> = []
   let buffer = ''
-  void (async () => {
+  const ended = (async () => {
     const decoder = new TextDecoder()
     for (;;) {
       const { done, value } = await reader.read().catch(() => ({ done: true, value: undefined }))
@@ -70,7 +72,7 @@ export async function openWindow(routes: readonly ConnectionFetchRoute[]): Promi
     }
   }
   const hello = await next('hello')
-  return { runnerId: hello.runnerId, events, next, close: () => { controller.abort() } }
+  return { runnerId: hello.runnerId, events, next, ended, close: () => { controller.abort() } }
 }
 
 /**
