@@ -9,7 +9,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { FilmToolError, callStudio } from './studio-client.js'
-import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
+import { filmPathFor, filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices } from './context.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -76,11 +76,32 @@ export function summariseCut(state: Record<string, unknown>): Record<string, unk
   }
 }
 
-/** A placement's source from the tool's shape: a board node, or a film file. */
-function sourceOf(input: unknown): Record<string, unknown> {
-  const value = isRecord(input) ? input : {}
-  if (typeof value.nodeId === 'string' && value.nodeId !== '') return { nodeId: value.nodeId }
-  return { path: value.path }
+/** How many film files and workspace files `timeline_query` kind=material lists. */
+const MATERIAL_ITEMS = 200
+
+/**
+ * The film's media and the workspace's media not in the film yet, from the
+ * editing desk's material listing, each list cut to {@link MATERIAL_ITEMS}.
+ * @param material - the material route's answer.
+ * @returns the summary.
+ */
+export function summariseMaterial(material: Record<string, unknown>): Record<string, unknown> {
+  const list = (value: unknown): Array<Record<string, unknown>> => Array.isArray(value) ? value.filter(isRecord) : []
+  const film = list(material.assets).map(asset => ({
+    path: typeof asset.assetId === 'string' ? asset.assetId.replace(/^canvas-file:/u, '') : asset.name,
+    kind: asset.kind,
+    ...(typeof asset.sizeBytes === 'number' ? { sizeBytes: asset.sizeBytes } : {}),
+  }))
+  const workspace = list(material.projectFiles).map(file => ({
+    path: file.path,
+    kind: file.kind,
+    ...(typeof file.sizeBytes === 'number' ? { sizeBytes: file.sizeBytes } : {}),
+  }))
+  return {
+    film: film.slice(0, MATERIAL_ITEMS),
+    workspace: workspace.slice(0, MATERIAL_ITEMS),
+    truncated: material.truncated === true || film.length > MATERIAL_ITEMS || workspace.length > MATERIAL_ITEMS,
+  }
 }
 
 /** An edit's answer without the two whole cuts (`before`, `after`) it carries; `changes` is the diff. */
@@ -105,10 +126,12 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
       description: 'Read the film\'s cut — what the editing desk (剪辑 tab) is editing it into. kind=cut (default): the revision every write must quote, the frame, '
         + 'the loudness target, and each track\'s clips with their id, name, start, seconds and the file each plays. kind=board: what the board offers the cut '
         + 'but has not given it yet — its media nodes and the scripts (the 剧本 tab\'s screenplays with dialogue, and text nodes that read as scripts). Read '
-        + 'before writing: clip ids are real ids, never names invented from a file. kind=caption-tasks: the cut\'s latest original-audio recognitions '
-        + '(timeline_transcribe) with status, engine and whether each draft is applied; read a draft with media_get_task.',
+        + 'before writing: clip ids are real ids, never names invented from a file. kind=material: the film\'s media files (path relative to film/) and '
+        + 'the workspace\'s own media not in the film yet (path relative to the workspace, outside film/), newest first, at most 200 of each — either path '
+        + 'goes into place/version as is. kind=caption-tasks: the cut\'s latest original-audio recognitions (timeline_transcribe) with status, engine and '
+        + 'whether each draft is applied; read a draft with media_get_task.',
       parameters: {
-        kind: { type: 'string', enum: ['cut', 'board', 'caption-tasks'] },
+        kind: { type: 'string', enum: ['cut', 'board', 'material', 'caption-tasks'] },
       },
       output: jsonOutput,
       isConcurrencySafe: () => true,
@@ -117,6 +140,7 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
         const base = `/api/canvas/timelines/${segment(film.boardId)}`
         const query = `?project=${segment(film.projectId)}`
         if (args.kind === 'caption-tasks') return plain(await callStudio(services.studio, film.cwd, { method: 'GET', path: `${base}/captions/tasks${query}` }, exec.signal))
+        if (args.kind === 'material') return plain(summariseMaterial(await callStudio(services.studio, film.cwd, { method: 'GET', path: `${base}/material${query}` }, exec.signal)))
         if (args.kind === 'board') {
           const [media, scripts] = await Promise.all([
             callStudio(services.studio, film.cwd, { method: 'GET', path: `${base}/media${query}` }, exec.signal).catch((error: unknown) => {
@@ -135,7 +159,8 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
       name: 'timeline_edit',
       description: 'Change the film\'s cut. Every write quotes baseRevision from timeline_query and is refused if the cut moved on; dryRun:true reports the same '
         + 'diff and writes nothing. Give exactly one of: place {nodeId|path, track?: visuals|audio|music, at?: seconds (audio lanes only — the visual track plays '
-        + 'its clips one after another), durationSeconds?, name?} puts one piece of the board\'s material (or a film file) on the cut; sound {script?: '
+        + 'its clips one after another), durationSeconds?, name?} puts one piece of the board\'s material on the cut — or a file: relative to film/, or any '
+        + 'media file of the workspace relative to it (brought into the film first, once, also on a dryRun; the apply reuses it); sound {script?: '
         + '{storyDocumentId|nodeId|text}, items?: [{kind: speech|sfx|music, text?, speaker?, file?, shotId?, at?, volume?}], loudness?} puts lines, effects and '
         + 'one music bed on the shots — a screenplay or script becomes one caption per line, a line with a file lands on the voice track under its caption; '
         + 'version {clipId, nodeId|path, name?} gives one slot a different take, keeping its id, place, length and grade; operations is the raw command plan '
@@ -166,12 +191,19 @@ export function timelineTools(services: FilmToolServices): ToolDefinition[] {
           const current = await callStudio(services.studio, film.cwd, { method: 'GET', path: `/api/canvas/timelines/${segment(film.boardId)}?project=${segment(film.projectId)}` }, exec.signal)
           planBase = typeof current.revision === 'number' ? current.revision : 0
         }
+        /** A placement's source from the tool's shape: a board node, or a file (a workspace file is brought into the film first). */
+        const sourceOf = async (input: unknown): Promise<Record<string, unknown>> => {
+          const value = isRecord(input) ? input : {}
+          if (typeof value.nodeId === 'string' && value.nodeId !== '') return { nodeId: value.nodeId }
+          if (typeof value.path !== 'string') return { path: value.path }
+          return { path: await filmPathFor(film, value.path, { studio: services.studio, signal: exec.signal, failureCode: 'TIMELINE_MEDIA_IMPORT_FAILED' }) }
+        }
         const body = kind === 'operations'
           ? { schemaVersion: 1, operationId, dryRun, plan: { schemaVersion: 1, baseRevision: planBase, operations: args.operations } }
           : kind === 'place'
-            ? { ...common, ...args.place, source: sourceOf(args.place) }
+            ? { ...common, ...args.place, source: await sourceOf(args.place) }
             : kind === 'version'
-              ? { ...common, ...args.version, source: sourceOf(args.version) }
+              ? { ...common, ...args.version, source: await sourceOf(args.version) }
               : { ...common, ...args.sound }
         const path = `/api/canvas/timelines/${segment(film.boardId)}/${kind === 'operations' ? 'commands' : kind}?project=${segment(film.projectId)}`
         return plain(withoutFullDocuments(await callStudio(services.studio, film.cwd, { method: 'POST', path, body }, exec.signal)))

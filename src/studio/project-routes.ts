@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { link, lstat, mkdir, open, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { appFileType } from '../apps.js'
-import { CanvasAssetStore } from '../canvas/assets.js'
+import { CanvasAssetStore, workspaceAssetFiles } from '../canvas/assets.js'
 import type { CanvasAsset } from '../canvas/assets.js'
 import { serveFile } from '../files.js'
 import type { ProjectEvents } from './events.js'
@@ -179,9 +179,15 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
     }
   })
 
-  // The asset library: the project's media, wearing the overlay the canvas saves.
-  router.add('GET', '/api/canvas/assets/:boardId', async request =>
-    new CanvasAssetStore(request.cwd).read(request.params.boardId!, projectOf(request)))
+  // The asset library: the project's media, wearing the overlay the canvas
+  // saves, and beside it the workspace's own media the board may import.
+  router.add('GET', '/api/canvas/assets/:boardId', async (request) => {
+    const [library, workspaceFiles] = await Promise.all([
+      new CanvasAssetStore(request.cwd).read(request.params.boardId!, projectOf(request)),
+      workspaceAssetFiles(request.cwd),
+    ])
+    return { ...library, workspaceFiles }
+  })
   router.add('PUT', '/api/canvas/assets/:boardId', async (request) => {
     const body = await request.json()
     if (!Array.isArray(body.assets)) throw new StudioApiError(400, 'BAD_REQUEST', 'assets must be an array.')

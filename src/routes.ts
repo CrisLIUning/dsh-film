@@ -5,8 +5,9 @@
  * - `GET  /api/dsh-film/project?cwd=` — the workspace's project, or `null`.
  * - `POST /api/dsh-film/project` — `{ cwd, title, aspectRatio? }` starts one;
  *   an existing project is answered with 409 and left as it is.
- * - `GET  /api/dsh-film/assets?cwd=` — media files under `media/` and `film/`.
- * - `GET|HEAD /api/dsh-film/media?path=` — one media file, with byte ranges.
+ * - `GET  /api/dsh-film/assets?cwd=` — the workspace's media files, the film's and its own.
+ * - `GET|HEAD /api/dsh-film/media?cwd=&path=` — one media file of the workspace
+ *   (`path` relative to it), with byte ranges.
  * - `/api/dsh-film/caption-runner/*` — the caption runner's windows (see captions/runner).
  * @module dsh-film/routes
  */

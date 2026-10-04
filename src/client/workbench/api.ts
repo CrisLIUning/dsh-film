@@ -22,7 +22,7 @@ export interface FilmProject {
 export type MediaKind = 'image' | 'video' | 'audio'
 
 export interface MediaAsset {
-  /** Relative to the workspace, with `/` separators. */
+  /** Relative to the workspace, with `/` separators (the film's own files start with `film/`). */
   path: string
   kind: MediaKind
   bytes: number
@@ -102,34 +102,24 @@ export async function createProject(cwd: string, title: string, aspectRatio: Asp
 }
 
 /**
- * List the workspace's media files, newest first.
+ * List the workspace's media files — the film's (`film/…`) and the
+ * workspace's own — newest first.
  * @param cwd - the workspace directory.
  * @param signal - cancels the request.
- * @returns the files and whether the list was cut short.
+ * @returns the files and whether the list is incomplete.
  */
 export async function fetchAssets(cwd: string, signal?: AbortSignal): Promise<{ assets: MediaAsset[]; truncated: boolean }> {
   return await call(endpoint('assets', { cwd }), signal === undefined ? {} : { signal })
 }
 
 /**
- * Join a workspace-relative path onto the workspace with the workspace's own
- * separator, so Windows paths stay Windows paths.
- * @param cwd - the absolute workspace directory.
- * @param path - a path relative to it, with `/` separators.
- * @returns the absolute path.
- */
-export function absolutePath(cwd: string, path: string): string {
-  const separator = cwd.includes('\\') && !cwd.includes('/') ? '\\' : '/'
-  const base = cwd.replace(/[\\/]+$/, '')
-  return `${base}${separator}${path.split('/').join(separator)}`
-}
-
-/**
- * The URL a media element plays a workspace file from (byte ranges supported).
+ * The URL a media element plays a workspace file from (byte ranges
+ * supported). The Host serves only media inside the workspace, so the file
+ * travels as a path relative to it.
  * @param cwd - the workspace directory.
- * @param path - the file, relative to the workspace.
+ * @param path - the file, relative to the workspace, with `/` separators.
  * @returns the URL.
  */
 export function mediaUrl(cwd: string, path: string): string {
-  return endpoint('media', { path: absolutePath(cwd, path) }).href
+  return endpoint('media', { cwd, path }).href
 }

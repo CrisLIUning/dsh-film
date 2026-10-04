@@ -12,8 +12,6 @@
  * @module dsh-film/agent/canvas-tools
  */
 
-import { stat } from 'node:fs/promises'
-import { isAbsolute, join, relative, sep } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { BoardAgentError } from '../canvas/board-agent.js'
@@ -26,9 +24,8 @@ import {
 import type { CanvasWriteTool } from '../canvas/board-tools.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
 import type { CanvasDocument } from '../canvas/documents.js'
-import { FILM_DIR } from '../project.js'
 import { FilmToolError, callStudio } from './studio-client.js'
-import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
+import { filmPathFor, filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices, FilmWorkspace } from './context.js'
 
 const WRITE_REPLY = ' Write replies use resultView:changes: nodes/connections hold only what changed, with removedNodeIds/removedConnectionIds and the board totals; '
@@ -96,21 +93,6 @@ function emptyBoard(film: FilmWorkspace): CanvasDocument {
   const now = new Date().toISOString()
   return { id: film.boardId, title: film.project.title, createdAt: now, updatedAt: now, nodes: [], connections: [], chatSessions: [], activeChatId: null, viewport: { x: 0, y: 0, k: 1 } }
 }
-
-/** A project file path the board can hold: relative to `film/`, or a workspace path. */
-function cleanPath(film: FilmWorkspace, path: string): string {
-  let clean = path.trim()
-  if (isAbsolute(clean)) {
-    const inside = relative(film.cwd, clean)
-    if (inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
-      throw new FilmToolError('CANVAS_MEDIA_PATH_INVALID', `${path} is outside this workspace.`)
-    }
-    clean = inside
-  }
-  return clean.replaceAll('\\', '/').replace(/^\.\//u, '')
-}
-
-const isFile = (path: string): Promise<boolean> => stat(path).then(info => info.isFile(), () => false)
 
 /**
  * Build the canvas tools.
@@ -362,9 +344,10 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'canvas_attach_media',
       description: 'Put an already generated file into an existing image/video/audio node — the node a staged flow or a screenplay handoff made — keeping its '
-        + 'place, links and source. No generation is submitted. path is the file in the film (relative to film/) or in the workspace (media/…, where the media '
-        + 'tools save; it is copied into the film). expectedContent is the node\'s current content as just read (empty for an empty node); a node that changed '
-        + 'or is generating is refused. Attaching the same file again changes nothing. Works whether or not the storyboard is open.',
+        + 'place, links and source. No generation is submitted. path is the file in the film (relative to film/) or any media file of the workspace, relative '
+        + 'to it (media/… where the media tools save, or elsewhere outside film/; it is brought into the film first, once). expectedContent is the node\'s '
+        + 'current content as just read (empty for an empty node); a node that changed or is generating is refused. Attaching the same file again changes '
+        + 'nothing. Works whether or not the storyboard is open.',
       parameters: {
         targetNodeId: { type: 'string', required: true },
         path: { type: 'string', required: true },
@@ -373,16 +356,8 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
       output: jsonOutput,
       execute: (args, exec) => guarded(async () => {
         const film = await filmWorkspace(exec)
-        let path = cleanPath(film, args.path)
-        if (path.startsWith(`${FILM_DIR}/`)) {
-          path = path.slice(FILM_DIR.length + 1)
-        } else if (!await isFile(join(film.cwd, FILM_DIR, ...path.split('/'))) && path.startsWith('media/') && await isFile(join(film.cwd, ...path.split('/')))) {
-          // A workspace file the media tools saved: the film keeps its own copy, as the editing desk's import does.
-          const imported = await callStudio(services.studio, film.cwd, { method: 'POST', path: `/api/canvas/timelines/${segment(film.boardId)}/import?project=${segment(film.projectId)}`, body: { path } }, exec.signal)
-          const file = isRecord(imported.file) ? imported.file : {}
-          if (typeof file.name !== 'string') throw new FilmToolError('CANVAS_MEDIA_IMPORT_FAILED', `Could not copy ${path} into the film.`)
-          path = file.name
-        }
+        // A workspace file: the film keeps its own copy, as the editing desk's import does.
+        const path = await filmPathFor(film, args.path, { studio: services.studio, signal: exec.signal, failureCode: 'CANVAS_MEDIA_IMPORT_FAILED' })
         return plain(await callStudio(services.studio, film.cwd, {
           method: 'POST',
           path: `/api/canvas/timelines/${segment(film.boardId)}/media?project=${segment(film.projectId)}`,

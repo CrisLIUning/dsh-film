@@ -1,10 +1,13 @@
 /**
  * Project events the hosted apps listen for on `/api/projects/:id/events`
  * (`file-changed`, `story-changed`, `story-canvas-changed`), per workspace.
+ * Every event also drops the workspace's cached media listing: whatever the
+ * plugin just wrote is listed by the next read.
  * @module dsh-film/studio/events
  */
 
 import { resolve } from 'node:path'
+import { invalidateWorkspaceMedia } from '../media.js'
 
 export interface ProjectEvent {
   type: 'file-changed' | 'story-changed' | 'story-canvas-changed'
@@ -34,6 +37,7 @@ export class ProjectEvents {
   }
 
   emit(cwd: string, event: ProjectEvent): void {
+    invalidateWorkspaceMedia(cwd)
     for (const listener of this.listeners.get(resolve(cwd)) ?? []) {
       try {
         listener(event)
