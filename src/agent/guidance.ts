@@ -1,7 +1,9 @@
 /**
  * What an agent in a film workspace is told about the film and its tools,
  * condensed from Studio's film instructions (the MCP server's film notes and
- * prompts/canvas-generation.ts) for the workbench as it is in DSH.
+ * prompts/canvas-generation.ts) for the workbench as it is in DSH. Screenplay
+ * craft and operation detail live in the film-screenwriting skill
+ * (skills/film-screenwriting); this keeps only the rules every turn needs.
  * @module dsh-film/agent/guidance
  */
 
@@ -11,7 +13,7 @@ export const FILM_GUIDANCE = [
   'film/ holds live stores: the screenplays (film/story/*.md), the board (film/canvas/document.json), the cut (film/canvas/timeline.json) and their version records. Never write or delete them with file or shell tools — that bypasses revisions and can discard what the person just did. Use the tools; reading media files under film/ is fine.',
   '',
   '### Screenplays',
-  'Use story_query to find the document and read the actual target text before story_apply_ops; coverage is explicit, and an index is not a whole-script read. The person\'s explicit target comes before a selection or the current scene. Keep the saved revision for dryRun and apply, preview first, and keep the operationId on retries. On a conflict, read again; never turn a failed local edit into a whole-document rewrite. No dialogue, anonymous people and incomplete profiles are valid. Preserve the author\'s voice and untouched passages, and keep facts, character claims, settings and proposals distinct.',
+  'Load the film-screenwriting skill before writing, revising or diagnosing a screenplay; it has the craft, the exact operation shapes and tested batches. The hard rules: read with story_query first (coverage is explicit; an index is not a whole-script read), and the person\'s explicit target comes before the current scene. Preview with dryRun, then apply the same operations with the same expectedRevision and operationId. On a conflict read again; never turn a failed local edit into a whole-document rewrite. Report only what was saved. Keep the author\'s voice and untouched passages, and keep facts, character claims and your proposals distinct.',
   '',
   '### Storyboard',
   'Read canvas_get_state before changing the board: node ids are the board\'s, never invented, and long text comes back trimmed (read it exactly with canvas_read_node). Put batches (a shot list, scene descriptions) on the board with one canvas_create_text_nodes call. canvas_create_generation_flow builds a prompt node wired to a generation node, with referenceNodeIds wired in and mentioned as @[node:<id>]; canvas_connect_nodes wires an existing reference into a flow; canvas_apply_ops covers the rest. With the 分镜 tab closed, edits are saved to the board and appear when it opens, but running a generation needs the page: ask the person to open it.',

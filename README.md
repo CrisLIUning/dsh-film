@@ -43,6 +43,12 @@ In VibeDev, install `dsh-film` from the plugin page in settings. In DeepSeek Har
 
 Every conversation has `film_project` (read or start the workspace's film). Conversations in a film workspace also get 22 screenplay, storyboard and cut tools plus guidance; they go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
 
+### 编剧技能 · Screenwriting skill
+
+插件随包带一个技能 `film-screenwriting`（编剧，`skills/film-screenwriting/`），通过 DSH 的技能服务登记，每个会话的技能目录里都有它，也可以用 `/film-screenwriting` 直接调用。它写给上面的 `story_*` 工具：怎样找到和保存剧本（先预览再保存、冲突时重读）、场景/动作/对白的写法和自检、竖屏短剧与单集、剧本诊断（证据、严重程度、哪些不算套路），以及交给分镜和剪辑。操作示例都经过测试，能直接用。没有技能服务的配置照常加载插件。
+
+The plugin ships the `film-screenwriting` skill (`skills/film-screenwriting/`), registered with DSH's skill registry: listed in every conversation's skill catalog and invocable as `/film-screenwriting`. It covers finding and saving screenplays with the `story_*` tools, scene, action and dialogue craft with self-checks, short-form and episodes, evidence-based diagnosis, and handoff to the storyboard and the cut; its example batches are tested against the screenplay contracts.
+
 ## 剪辑台的 AI 模型 · Editor models
 
 配音、人声分离、抠像、景深、擦除、超分、数字人和字幕字体要用到本地模型。模型不打进插件包：剪辑台第一次要用某个模型时，先弹框说明用途、大小、许可和来源，同意后才由插件从 VibeDev 模型镜像下载，逐个文件核对大小和 SHA-256，存在 `$DSH_HOME/cache/dsh-film/video-editor-models/`（设置项 `modelsDir` 可改），以后直接用。同意记录在同一目录的 `consents.json`；字幕字体同属 OFL-1.1，可以一次同意全部。
