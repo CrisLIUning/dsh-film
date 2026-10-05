@@ -16,6 +16,7 @@ import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
 import type { BoardOp, BoardSnapshot } from '../src/canvas/board-ops.js'
+import { FilmMediaTasks } from '../src/media/tasks.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
 import type { ProjectEvent } from '../src/studio/events.js'
@@ -24,6 +25,7 @@ import type { EventStream } from '../src/studio/sse.js'
 let cwd: string
 let events: ProjectEvents
 let boardAgent: CanvasBoardAgent
+let tasks: FilmMediaTasks
 let services: FilmToolServices
 let created: string[]
 let tools: Map<string, ToolDefinition>
@@ -35,13 +37,18 @@ beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-agent-'))
   events = new ProjectEvents()
   boardAgent = new CanvasBoardAgent()
+  tasks = new FilmMediaTasks(() => undefined)
   created = []
-  services = { studio: createStudioRouter({ events, boardAgent }), boardAgent, events, projectCreated: (dir) => { created.push(dir) }, catalogRoot }
+  services = { studio: createStudioRouter({ events, boardAgent, tasks }), boardAgent, events, projectCreated: (dir) => { created.push(dir) }, catalogRoot }
   tools = new Map([filmProjectTool(services), ...filmAgentTools(services)].map(tool => [tool.name, tool]))
 })
 
 afterEach(async () => {
-  await rm(cwd, { recursive: true, force: true })
+  // Task records are saved in the background (reading an old running task saves it as interrupted): let them land
+  // before the folder goes, and give Windows a moment when something still holds a file in film/.tasks (EBUSY).
+  tasks.dispose()
+  await tasks.settled()
+  await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 function exec(folder: string | undefined = cwd): ToolRunContext {
@@ -885,10 +892,14 @@ describe('storyboard tools with a page open', () => {
     let lease!: BoardLease
     let sequence = 1
     let closed = false
+    let reached!: () => void
+    /** Settles when the first tool call reaches the page. */
+    const called = new Promise<void>((resolve) => { reached = resolve })
     const stream: EventStream = {
       send(event, data) {
         if (closed) return false
         sent.push({ event, data })
+        if (event === 'tool_call') reached()
         if (event === 'tool_call' && behaviour.silent !== true) {
           const call = data as { requestId: string; input: { ops: BoardOp[] } }
           queueMicrotask(() => {
@@ -911,7 +922,7 @@ describe('storyboard tools with a page open', () => {
     const hello = sent[0]!.data as { generation: string; writeToken: string }
     lease = { target, generation: hello.generation, writeToken: hello.writeToken }
     boardAgent.setSnapshot(lease, board, sequence)
-    return { sent, runs, target, lease, release, board: () => board, calls: () => sent.filter(item => item.event === 'tool_call').map(item => item.data) }
+    return { sent, runs, target, lease, release, called, board: () => board, calls: () => sent.filter(item => item.event === 'tool_call').map(item => item.data) }
   }
 
   it('sends writes to the page and reads the board it reports', async () => {
@@ -937,7 +948,11 @@ describe('storyboard tools with a page open', () => {
     refusing.release()
     const silent = openPage(film.id, { silent: true })
     const pending = run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })
-    await new Promise(resolve => setTimeout(resolve, 10))
+    // The page closes once the call has reached it. (A fixed 10 ms wait raced the tool's reads of the film under load:
+    // closed too early, the call found the page gone, CANVAS_BOARD_NOT_OPEN, or the tool saved the board instead.)
+    // A call that ends without reaching the page fails here.
+    await Promise.race([silent.called, pending.catch(() => undefined)])
+    expect(silent.calls()).toHaveLength(1)
     silent.release()
     await expect(pending).rejects.toThrow(/CANVAS_BOARD_GONE/)
   })
