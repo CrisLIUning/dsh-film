@@ -94,6 +94,20 @@ Then open the right sidebar of a session that has a workspace and pick a part on
 
 Media anywhere in the workspace outside `film/` is material: the storyboard's library shows it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is copied into `film/canvas/media/` when used (as a copy-on-write clone where the file system supports it; never a hard link, so editing the original elsewhere later leaves the film's copy as it was), the same bytes only once; an imported file that has not changed since is no longer offered for import by the storyboard. A workspace inside a hidden folder (a name starting with `.`) or a credential folder such as `.ssh` gets no film, and its media is neither played nor imported.
 
+## 运镜与相机 · Camera moves and camera settings
+
+分镜画布的视频节点（和视频模式的生成配置节点）可以选**运镜**：推、拉、摇、移、跟、升降、环绕、手持、变焦、航拍等 42 种，最多 3 个，第一个是主运镜，按先后或同时进行，能调速度的可以选快慢。图片、视频和生成配置节点可以设**相机**：质感、镜头、焦距、光圈，可选景别和机位（全景图没有）。它们是节点上的设置，不写进你的提示词：生成时画布在提示词末尾各加一行（先运镜，后相机；提示词里已经有同样的一行就不再加），结果节点记下加了哪些行，“查看最终提示词”能看到实际发出的全文。“帮我写”会被告知这两行已经另外定好，不再自己描述镜头运动和摄影器材。
+
+这只是写进提示词的引导：效果取决于模型，不保证每次都拍成那样，标为“尽力而为”的运镜（如滑动变焦、FPV 俯冲、子弹时间）对现在的模型更难。加上这两行后提示词超过 4000 字时不会生成，要精简提示词或去掉部分设置（你自己写的长提示词照常发送）。
+
+Agent 也能用：`canvas_generation_options` 列出可选的运镜和相机参数，`canvas_set_generation_options` 给节点设置或清除（清除存为 `null`），`canvas_create_generation_flow` 建流程时也能直接带上；分镜标签开着、关着都行。Agent 发起的生成若会因为这两行超过 4000 字，工具直接报错（`CANVAS_PROMPT_OVER_LIMIT`），不会让页面悄悄不生成。可选项读自分镜画布自带的目录（`apps/canvas/catalog/`），和页面里的一致。
+
+Video nodes on the storyboard (and generation nodes in video mode) take a **camera move**: 42 moves — push, pull, pan, truck, follow, crane, orbit, handheld, zoom, aerial and more — up to three, the first being the main move, one after another or together, with a speed where a move has one. Image, video and generation nodes take **camera settings**: look, lens, focal length, aperture, and optionally shot size and angle (not panoramas). Both are node settings, never written into your prompt: when the node generates, the storyboard appends one line for each (the move, then the camera; a line already in the prompt is not added again), the result records which lines were added, and "view final prompt" shows the whole text sent. The prompt writer is told both lines are chosen separately, so it describes neither the camera's movement nor its equipment.
+
+They only guide the model through the prompt: the effect depends on the model and is not guaranteed, and moves marked best-effort (dolly zoom, FPV dive, bullet time and the like) are harder for current models. A prompt that the two lines push past 4000 characters is not generated; shorten it or drop a setting (a prompt you wrote longer than that yourself is sent as it is).
+
+The agent can do the same: `canvas_generation_options` lists the moves and camera choices, `canvas_set_generation_options` sets or clears them on nodes (a cleared setting is stored as `null`), and `canvas_create_generation_flow` takes them when it builds a flow, with the storyboard tab open or closed. An agent-started generation that the lines would push past 4000 characters is refused by the tool (`CANVAS_PROMPT_OVER_LIMIT`) instead of the page silently not generating. The choices come from the storyboard build's own catalogues (`apps/canvas/catalog/`), so they match the page.
+
 ## 剪切、拼接与分离音频 · Cut, join and extract audio
 
 分镜画布上的视频可以剪切（定入点、出点）、拼接（把几段接成一段）和分离音频（把声音单独存成音频）。结果都是画布上的新节点，在来源右边，并有连线指回来源；原节点和原文件不动。结果文件放在 `film/canvas/media/`：剪切是 `clip-<id>.mp4`（音频文件剪切后保持原格式），拼接是 `join-<id>.mp4`，分离音频是 `extract-<id>.m4a`。撤销或删掉节点后，已经生成的文件留在磁盘上，和片里其他文件一样。
@@ -114,12 +128,12 @@ The agent can do the same with the cutting group (see below): `video_clip` sets 
 
 ## Agent 的影视工具 · Agent tools
 
-每个会话都有 `film_project`：查看工作区的影片项目，在用户要做片时新建一个（用户打开影视标签时也会自动建好），或改片名和画幅（`update`）。工作区有影片项目的会话还会常驻 30 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台、建模和剪切三组工具按需加载：画板上有导演台节点时自动带上导演组，有带文件的视频节点时自动带上剪切组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
+每个会话都有 `film_project`：查看工作区的影片项目，在用户要做片时新建一个（用户打开影视标签时也会自动建好），或改片名和画幅（`update`）。工作区有影片项目的会话还会常驻 32 个工具、`film_tools` 和一段说明（没有影片的会话不带它们；新建项目后从下一步起就有）。导演台、建模和剪切三组工具按需加载：画板上有导演台节点时自动带上导演组，有带文件的视频节点时自动带上剪切组，其余由 Agent 用 `film_tools` 开启，不用时不占 token。
 
 - **剧本** `story_query` `story_asset_bindings` `story_create` `story_apply_ops` `story_history` `story_checkpoint` `story_restore` `story_revert`：和剧本标签用同一套接口，按保存的版本号写入（先 dryRun 预览），每次写入都有版本和操作记录，可以单独撤回某次操作。`story_asset_bindings` 给人物、地点、道具和镜头绑定参考图（只认选中的那份字节，五种解析结果分开报告），工作区里 `film/` 以外的图片先放进影片再绑定。
 - **导入导出** `story_import` `story_export`：先预览再导入为新副本（从不覆盖）；导出完整 Markdown、仅正文，或连同参考图打成素材包存到 `film/story-exports/`。
 - **剧本到分镜** `story_source` `story_handoff` `story_adopt` `story_impact` `story_director_links`：把保存的人物、场景、道具、场次或镜头读成制作素材，送到画布成为独立的剧本来源卡（可同时准备一个连好线、只待确认提示词的图片节点，不会自动生成）；按节点保存的字段显式采用描述或参考图（参考图另存一份字节快照）；剧本改动后查看影响了哪些采用、产物和导演镜头；给导演台已保存的机位记下剧本来源。分镜标签不开也能用。
-- **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片，或工作区里别处的图片、视频、音频）放进指定节点，不重复生成。
+- **分镜画布** `canvas_list_clients` `canvas_get_state` `canvas_get_selection` `canvas_read_node` `canvas_get_generation_status` `canvas_get_document` `canvas_create_text_nodes` `canvas_create_generation_flow` `canvas_generation_options` `canvas_set_generation_options` `canvas_run_generation` `canvas_connect_nodes` `canvas_delete_nodes` `canvas_apply_ops` `canvas_attach_media`：分镜标签开着时，改动交给页面执行，用户看着它出现，也能撤销；没开时，改动写进保存的画布，下次打开就在。运行生成要分镜页开着。`canvas_attach_media` 把已经生成好的文件（如 dsh-media 存在 `media/` 的图片，或工作区里别处的图片、视频、音频）放进指定节点，不重复生成。`canvas_generation_options` 和 `canvas_set_generation_options` 列出、设置或清除节点的运镜和相机（见上文“运镜与相机”），只改节点设置，不发起生成。
 - **影片任务** `media_get_task` `media_cancel_task`：读取或取消分镜画布的生成任务（`canvas_get_generation_status` 在 `outputs[].task` 里给出的任务号），以及剪切组发起的出片、拼接和分离音频（完成后 `file.landedNodeId` 是落到画板上的新节点；取消的剪切不留半个文件）。
 - **导演组（按需）** `director_query` `director_models` `director_stage` `director_render` `director_render_status` `director_render_cancel` `director_inspect_model` `director_review` `director_compile_motion` `director_modeling_brief`：读导演台场景（结构、采样、事件、诊断、动作），列出能用的模型文件和尺寸，按指纹分步调度（先 dryRun；`place_model` 按真实尺寸放入模型，见下文“导演台里的模型”），编译动作，管理审阅版本（审阅版只能交给画布生成）。查询和调度在导演标签关着时作用于保存的节点，开着时作用于桌面上的实时场景；渲染、检视模型和审阅版本要导演标签开着。后台无头渲染暂未接入。
 - **建模组（按需）** `space_plan_compile` `model_brief` `model_review` `model_adopt` `model_status` `model_report` `model_cancel`：按毫米写平面，编译成 `film/spaces/` 下导演台能打开的 GLB（先 dryRun 看尺寸、警告和楼梯可达性）；为程序化模型准备建模任务，读 `film/models/<id>/model.json` 里的记录、写审阅、记录用户采用的版本。运行模型、拍检查图、导出和回读 GLB 需要无头浏览器，暂未接入。
@@ -127,7 +141,7 @@ The agent can do the same with the cutting group (see below): `video_clip` sets 
 
 工具名和参数沿用 VibeDev Studio 的影视工具；工作区就是项目，所以不再需要 `project` 参数。
 
-Every conversation has `film_project` (read or start the workspace's film — opening a film tab also starts it — or rename it and change its frame with `update`). Conversations in a film workspace also carry 30 screenplay, storyboard and film-task tools, `film_tools` and guidance; the director desk's, the modeling and the cutting tools (`video_clip`, `video_split`, `video_render_clip`, `video_join`, `video_extract_audio`) are groups taken on when needed (the director group starts enabled when the board has a director node, the cutting group when it has a video with a file). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
+Every conversation has `film_project` (read or start the workspace's film — opening a film tab also starts it — or rename it and change its frame with `update`). Conversations in a film workspace also carry 32 screenplay, storyboard and film-task tools (among them `canvas_generation_options` and `canvas_set_generation_options` for the camera moves and camera settings of storyboard nodes), `film_tools` and guidance; the director desk's, the modeling and the cutting tools (`video_clip`, `video_split`, `video_render_clip`, `video_join`, `video_extract_audio`) are groups taken on when needed (the director group starts enabled when the board has a director node, the cutting group when it has a video with a file). All of them go through the same API as the workbench's pages. With the storyboard open, board edits run in the page (live and undoable); with it closed they are saved to the board, and running a generation needs the page.
 
 ### 编剧技能 · Screenwriting skill
 
