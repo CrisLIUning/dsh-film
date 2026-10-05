@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_MAX_CHARS_PER_ENTRY, MIN_SEGMENT_DURATION_MS, resegmentEntries, splitLongEntry } from '../src/canvas/subtitle-resegment.js'
+import { CUE_LENGTH_RANGE, SHORTEST_PIECE_MS, STANDARD_CUE_LENGTH, resegmentEntries, splitCue } from '../src/canvas/subtitle-resegment.js'
 import { formatSrtTimestamp, looksLikeTimedSubtitles, parseSubtitleText, parseTimestamp, serializeSrt } from '../src/canvas/subtitle-srt.js'
 import {
   DEFAULT_SUBTITLE_STYLE, MAX_SUBTITLE_ENTRIES, MAX_SUBTITLE_TEXT, cuesFromClipTime, cuesInClipTime, derivedSubtitleFields, joinedSubtitleFields, newSubtitleId,
@@ -199,24 +199,25 @@ describe('自动断句', () => {
   const PARK = '今天天气很好，我们去公园散步吧'
 
   it('cuts at punctuation and shares the time by length; the first piece keeps the id and a highlight follows its piece', () => {
-    expect(splitLongEntry({ id: 'a', startMs: 1000, endMs: 4000, text: PARK }, 10, ids())).toEqual([
+    expect(splitCue({ id: 'a', startMs: 1000, endMs: 4000, text: PARK }, { maxLength: 10, newId: ids() })).toEqual([
       { id: 'a', startMs: 1000, endMs: 2400, text: '今天天气很好，' },
       { id: 'new-1', startMs: 2400, endMs: 4000, text: '我们去公园散步吧' },
     ])
-    const [, back] = splitLongEntry({ id: 'e', startMs: 0, endMs: 3000, text: PARK, highlight: { start: 10, end: 12 } }, 10, ids())
+    const [, back] = splitCue({ id: 'e', startMs: 0, endMs: 3000, text: PARK, highlight: { start: 10, end: 12 } }, { maxLength: 10, newId: ids() })
     expect(back!.highlight).toEqual({ start: 3, end: 5 })
   })
 
   it('gives every piece at least 300 ms when it can, and leaves a cue too short to share whole', () => {
-    const pieces = splitLongEntry({ id: 'b', startMs: 0, endMs: 1000, text: '一二三四五六七八九十' }, 4, ids())
+    const pieces = splitCue({ id: 'b', startMs: 0, endMs: 1000, text: '一二三四五六七八九十' }, { maxLength: 4, newId: ids() })
     expect(pieces.map(piece => [piece.text, piece.startMs, piece.endMs])).toEqual([['一二三四', 0, 400], ['五六七八', 400, 700], ['九十', 700, 1000]])
-    expect(Math.min(...pieces.map(piece => piece.endMs - piece.startMs))).toBe(MIN_SEGMENT_DURATION_MS)
+    expect(Math.min(...pieces.map(piece => piece.endMs - piece.startMs))).toBe(SHORTEST_PIECE_MS)
     const tiny = { id: 'd', startMs: 0, endMs: 2, text: '一二三四五六七八九十' }
-    expect(splitLongEntry(tiny, 4, ids())).toEqual([tiny])
+    expect(splitCue(tiny, { maxLength: 4, newId: ids() })).toEqual([tiny])
   })
 
   it('splits only the cues over the limit (default 35, clamped to 20–60), in order', () => {
-    expect(DEFAULT_MAX_CHARS_PER_ENTRY).toBe(35)
+    // The design values of the subtitle contract (C1): 20–60 units, 35 when the style names none, pieces of at least 300 ms.
+    expect([CUE_LENGTH_RANGE.min, STANDARD_CUE_LENGTH, CUE_LENGTH_RANGE.max, SHORTEST_PIECE_MS]).toEqual([20, 35, 60, 300])
     const long = { id: 'k', startMs: 0, endMs: 6000, text: '一'.repeat(50) }
     const short = { id: 'l', startMs: 6000, endMs: 7000, text: '二' }
     const out = resegmentEntries([long, short], 5, ids())

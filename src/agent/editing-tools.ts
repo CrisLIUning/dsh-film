@@ -46,7 +46,7 @@ import { CanvasToolError, mutationReceipt, snapshotOfDocument } from '../canvas/
 import { MIN_CLIP_MS, readClip, siblingMetadata, splitClip, storedClip } from '../canvas/clip-marks.js'
 import type { ClipMark } from '../canvas/clip-marks.js'
 import { CanvasDocumentStore } from '../canvas/documents.js'
-import { MAX_CHARS_PER_ENTRY_LIMIT, MIN_CHARS_PER_ENTRY, resegmentEntries } from '../canvas/subtitle-resegment.js'
+import { CUE_LENGTH_RANGE, STANDARD_CUE_LENGTH, resegmentEntries } from '../canvas/subtitle-resegment.js'
 import { MAX_SUBTITLE_FILE_BYTES, looksLikeTimedSubtitles, parseSubtitleText, serializeSrt } from '../canvas/subtitle-srt.js'
 import {
   MAX_SUBTITLE_ENTRIES, MAX_SUBTITLE_TEXT, SUBTITLE_BACKDROPS, SUBTITLE_FONT_SCALE_RANGE, SUBTITLE_ID_PATTERN, SUBTITLE_POSITIONS, cuesFromClipTime, cuesInClipTime,
@@ -222,8 +222,8 @@ function checkStyle(style: StyleInput | undefined): Record<string, unknown> {
   if (style.position !== undefined) changes.position = style.position
   if (style.backdrop !== undefined) changes.backdrop = style.backdrop
   if (style.maxCharsPerEntry !== undefined) {
-    if (style.maxCharsPerEntry < MIN_CHARS_PER_ENTRY || style.maxCharsPerEntry > MAX_CHARS_PER_ENTRY_LIMIT) {
-      throw subtitleInvalid(`style.maxCharsPerEntry is ${MIN_CHARS_PER_ENTRY}–${MAX_CHARS_PER_ENTRY_LIMIT} characters; ${style.maxCharsPerEntry} is not.`)
+    if (style.maxCharsPerEntry < CUE_LENGTH_RANGE.min || style.maxCharsPerEntry > CUE_LENGTH_RANGE.max) {
+      throw subtitleInvalid(`style.maxCharsPerEntry is ${CUE_LENGTH_RANGE.min}–${CUE_LENGTH_RANGE.max} characters; ${style.maxCharsPerEntry} is not.`)
     }
     changes.maxCharsPerEntry = style.maxCharsPerEntry
   }
@@ -753,7 +753,7 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
             color: { type: 'string', description: '\'#RRGGBB\' (default #FFFFFF).' },
             position: { type: 'string', enum: SUBTITLE_POSITIONS, description: 'Default bottom.' },
             backdrop: { type: 'string', enum: SUBTITLE_BACKDROPS, description: 'Behind the text: none, shadow (default) or box.' },
-            maxCharsPerEntry: { type: 'integer', description: `The longest cue 自动断句 leaves whole, ${MIN_CHARS_PER_ENTRY}–${MAX_CHARS_PER_ENTRY_LIMIT} characters (default 35).` },
+            maxCharsPerEntry: { type: 'integer', description: `The longest cue 自动断句 leaves whole, ${CUE_LENGTH_RANGE.min}–${CUE_LENGTH_RANGE.max} characters (default ${STANDARD_CUE_LENGTH}).` },
             autoResegment: { type: 'boolean', description: 'Whether text the page imports is split by default (default true).' },
           },
         },

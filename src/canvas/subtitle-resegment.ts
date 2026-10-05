@@ -13,7 +13,7 @@
  * Lengths are counted in UTF-16 units, like the 2000-character text limit.
  *
  * How long each piece shows: a share of the cue's time by its length, at least
- * {@link MIN_SEGMENT_DURATION_MS} per piece when the cue is long enough for
+ * {@link SHORTEST_PIECE_MS} per piece when the cue is long enough for
  * that, else as even as whole milliseconds allow; a cue too short to give
  * every piece a millisecond stays whole. The first piece keeps the cue's id,
  * later pieces get new ones, and a highlight moves to the piece it lies in (it
@@ -23,10 +23,12 @@
 
 import type { SubtitleEntry } from './subtitles.js'
 
-export const DEFAULT_MAX_CHARS_PER_ENTRY = 35
-export const MIN_CHARS_PER_ENTRY = 20
-export const MAX_CHARS_PER_ENTRY_LIMIT = 60
-export const MIN_SEGMENT_DURATION_MS = 300
+/** How long (UTF-16 units) a cue may grow before 自动断句 splits it, as the style's `maxCharsPerEntry` may set it (C1). */
+export const CUE_LENGTH_RANGE = { min: 20, max: 60 } as const
+/** The cue length 自动断句 keeps whole when the style names none. */
+export const STANDARD_CUE_LENGTH = 35
+/** The least time (ms) a piece of a split cue shows, when the cue is long enough to give every piece that much. */
+export const SHORTEST_PIECE_MS = 300
 
 /** Full-width marks a piece may end on: clause and sentence marks, dashes, ellipses, closing brackets and quotes. */
 const CJK_BREAK_AFTER = new Set([...'，。、；：！？…—～）］｝】」』》〉〕”’'])
@@ -135,7 +137,7 @@ function sharedTimes(startMs: number, endMs: number, weights: readonly number[])
   const span = endMs - startMs
   if (!(span >= count)) return null
   const times: number[] = []
-  if (span < count * MIN_SEGMENT_DURATION_MS) {
+  if (span < count * SHORTEST_PIECE_MS) {
     // Too short for the minimum everywhere: equal shares, the leftover milliseconds going to the first pieces.
     const share = Math.floor(span / count)
     const leftover = span - share * count
@@ -153,8 +155,8 @@ function sharedTimes(startMs: number, endMs: number, weights: readonly number[])
     before += weights[index]!
     const byLength = Math.round(startMs + (span * before) / total)
     // Room for this piece's minimum, and for the minimum of every piece still to come.
-    const earliest = previous + MIN_SEGMENT_DURATION_MS
-    const latest = endMs - (count - 1 - index) * MIN_SEGMENT_DURATION_MS
+    const earliest = previous + SHORTEST_PIECE_MS
+    const latest = endMs - (count - 1 - index) * SHORTEST_PIECE_MS
     previous = Math.min(latest, Math.max(earliest, byLength))
     times.push(previous)
   }
@@ -175,25 +177,32 @@ function entriesFromPieces(entry: SubtitleEntry, pieces: readonly Piece[], newId
   })
 }
 
-/**
- * A cue cut into pieces of at most `maxChars` units (the limit as given, not
- * clamped); a cue that fits, or is too short to share, comes back alone.
- * @param entry - the cue.
- * @param maxChars - the most UTF-16 units a piece holds.
- * @param newId - makes the id of each piece after the first.
- * @returns the pieces, in order.
- */
-export function splitLongEntry(entry: SubtitleEntry, maxChars: number, newId: () => string): SubtitleEntry[] {
-  if (!Number.isFinite(maxChars) || maxChars < 1) return [entry]
-  const limit = Math.floor(maxChars)
-  if (entry.text.length <= limit) return [entry]
-  return entriesFromPieces(entry, piecesOf(entry.text, limit), newId)
+/** How {@link splitCue} cuts. */
+export interface CueSplit {
+  /** The most UTF-16 units a piece holds (as given, not clamped). */
+  maxLength: number
+  /** Makes the id of each piece after the first. */
+  newId: () => string
 }
 
-/** The per-cue limit 自动断句 uses: rounded into 20–60, the default 35 when it is no number. */
+/**
+ * A cue cut into pieces of at most `split.maxLength` units; a cue that fits,
+ * or is too short to share, comes back alone.
+ * @param cue - the cue.
+ * @param split - the longest piece and where new ids come from.
+ * @returns the pieces, in order.
+ */
+export function splitCue(cue: SubtitleEntry, split: CueSplit): SubtitleEntry[] {
+  if (!Number.isFinite(split.maxLength) || split.maxLength < 1) return [cue]
+  const limit = Math.floor(split.maxLength)
+  if (cue.text.length <= limit) return [cue]
+  return entriesFromPieces(cue, piecesOf(cue.text, limit), split.newId)
+}
+
+/** The per-cue limit 自动断句 uses: rounded into the cue length range, the standard length when it is no number. */
 const perCueLimit = (maxChars: number): number => Number.isFinite(maxChars)
-  ? Math.min(MAX_CHARS_PER_ENTRY_LIMIT, Math.max(MIN_CHARS_PER_ENTRY, Math.round(maxChars)))
-  : DEFAULT_MAX_CHARS_PER_ENTRY
+  ? Math.min(CUE_LENGTH_RANGE.max, Math.max(CUE_LENGTH_RANGE.min, Math.round(maxChars)))
+  : STANDARD_CUE_LENGTH
 
 /**
  * 自动断句: every cue longer than the per-cue limit split at its best cuts, in
@@ -205,5 +214,5 @@ const perCueLimit = (maxChars: number): number => Number.isFinite(maxChars)
  */
 export function resegmentEntries(entries: readonly SubtitleEntry[], maxChars: number, newId: () => string): SubtitleEntry[] {
   const limit = perCueLimit(maxChars)
-  return entries.flatMap(entry => entry.text.length > limit ? splitLongEntry(entry, limit, newId) : [entry])
+  return entries.flatMap(entry => entry.text.length > limit ? splitCue(entry, { maxLength: limit, newId }) : [entry])
 }

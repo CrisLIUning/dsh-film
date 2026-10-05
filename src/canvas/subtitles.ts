@@ -22,7 +22,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { cutCues, joinCues, siblingCues } from './media-time.js'
 import type { TimeRange } from './media-time.js'
-import { DEFAULT_MAX_CHARS_PER_ENTRY, MAX_CHARS_PER_ENTRY_LIMIT, MIN_CHARS_PER_ENTRY } from './subtitle-resegment.js'
+import { CUE_LENGTH_RANGE, STANDARD_CUE_LENGTH } from './subtitle-resegment.js'
 
 export const MAX_SUBTITLE_ENTRIES = 5000
 export const MAX_SUBTITLE_TEXT = 2000
@@ -65,7 +65,7 @@ export const DEFAULT_SUBTITLE_STYLE: Readonly<SubtitleStyle> = Object.freeze({
   color: '#FFFFFF',
   position: 'bottom',
   backdrop: 'shadow',
-  maxCharsPerEntry: DEFAULT_MAX_CHARS_PER_ENTRY,
+  maxCharsPerEntry: STANDARD_CUE_LENGTH,
   autoResegment: true,
 })
 
@@ -252,7 +252,7 @@ export function sanitizeSubtitleStyle(raw: unknown): SubtitleStyle {
     color: normalizeSubtitleColor(raw.color) ?? DEFAULT_SUBTITLE_STYLE.color,
     position: SUBTITLE_POSITIONS.includes(raw.position as SubtitlePosition) ? raw.position as SubtitlePosition : DEFAULT_SUBTITLE_STYLE.position,
     backdrop: SUBTITLE_BACKDROPS.includes(raw.backdrop as SubtitleBackdrop) ? raw.backdrop as SubtitleBackdrop : DEFAULT_SUBTITLE_STYLE.backdrop,
-    maxCharsPerEntry: maxChars === undefined ? DEFAULT_SUBTITLE_STYLE.maxCharsPerEntry : clamp(maxChars, MIN_CHARS_PER_ENTRY, MAX_CHARS_PER_ENTRY_LIMIT),
+    maxCharsPerEntry: maxChars === undefined ? DEFAULT_SUBTITLE_STYLE.maxCharsPerEntry : clamp(maxChars, CUE_LENGTH_RANGE.min, CUE_LENGTH_RANGE.max),
     autoResegment: typeof raw.autoResegment === 'boolean' ? raw.autoResegment : DEFAULT_SUBTITLE_STYLE.autoResegment,
   }
 }
