@@ -12,8 +12,10 @@ import { resolve } from 'node:path'
 /**
  * Write a file only if nothing is at its path yet. The content goes to a
  * temporary file first and is linked into place, so the final name never
- * holds a partial file; file systems without hard links fall back to an
- * exclusive create.
+ * holds a partial file; file systems without hard links — each answers in its
+ * own way (FAT32/exFAT on Windows: EISDIR; others EPERM, ENOTSUP, EXDEV,
+ * ENOSYS, EINVAL) — fall back to an exclusive create, which a real problem
+ * with the path fails too.
  * @param path - the final path.
  * @param data - the content.
  * @returns whether the file was created (`false`: something was already there).
@@ -25,9 +27,7 @@ export async function createExclusive(path: string, data: string): Promise<boole
     await link(temporary, path)
     return true
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EEXIST') return false
-    if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'ENOSYS') throw error
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
   } finally {
     await rm(temporary, { force: true })
   }

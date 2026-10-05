@@ -63,6 +63,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const { importWorkspaceFile } = await import('../src/canvas/workspace-import.js')
 const { invalidateWorkspaceMedia, scanWorkspaceMedia } = await import('../src/media.js')
 const { CanvasAssetStore } = await import('../src/canvas/assets.js')
+const { CanvasDocumentStore, emptyFilmBoard } = await import('../src/canvas/documents.js')
+const { createExclusive } = await import('../src/file-writes.js')
 const { cutFile } = await import('../src/media/edit.js')
 const { createStudioRouter } = await import('../src/routes.js')
 const { writeFixture } = await import('./media-edit-fixtures.js')
@@ -156,6 +158,23 @@ describe('a media edit that fails while it writes', () => {
     }
     expect(removals).toEqual([true])
     expect(await readdir(media)).toEqual(['src.mp4'])
+  })
+})
+
+describe('starting a film and its board on a drive without hard links', () => {
+  it('falls back to an exclusive create, which still never replaces what is there', async () => {
+    fs.linkFailure = 'EISDIR'
+    const path = join(cwd, 'film.json')
+    expect(await createExclusive(path, 'one')).toBe(true)
+    expect(await createExclusive(path, 'two')).toBe(false)
+    expect(await readFile(path, 'utf8')).toBe('one')
+    expect(await readdir(cwd)).toEqual(['film.json'])
+    // The board is created the same way.
+    const store = new CanvasDocumentStore(cwd, 'film')
+    expect(await store.create(emptyFilmBoard('film-1', 'A'))).toBe('created')
+    expect(await store.create(emptyFilmBoard('film-1', 'B'))).toBe('exists')
+    expect((await store.read('film-1'))?.title).toBe('A')
+    expect(fs.linkCalls).toBeGreaterThanOrEqual(3)
   })
 })
 
