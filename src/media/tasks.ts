@@ -11,7 +11,9 @@
  * Local tasks are work the Host runs itself: since 0.3 the canvas's lossless
  * media edits (cut, join, extract audio — `startLocal`, media/edit.ts), as
  * 0.1 ran its own cut. They carry `kind: 'local'` and their `request`
- * (capability, idempotency key, parameters); a cancel aborts the work and
+ * (capability, idempotency key, parameters, and a fingerprint of what was
+ * asked: the same key for another file, range or boundary is a conflict, not
+ * a repeat); a cancel aborts the work and
  * leaves the task interrupted with its `cancellation` (one that comes after
  * the result is named is too late, and the task ends done), and a restart
  * leaves an unfinished one interrupted, so an old 0.1 record reads as
@@ -118,8 +120,8 @@ export interface FilmTask {
   mediaTaskId?: string
   /** Work the Host ran itself: a media edit since 0.3 (cut, join, extract audio), or a 0.1 cut. */
   kind?: 'local'
-  /** What a local task was asked to do: its capability, idempotency key and parameters. */
-  request?: { capability: string; requestId?: string; parameters?: Record<string, unknown> }
+  /** What a local task was asked to do: its capability, idempotency key, parameters, and the fingerprint a repeat must match. */
+  request?: { capability: string; requestId?: string; parameters?: Record<string, unknown>; fingerprint?: string }
   /** What a restart of the Host leaves a running local task as. */
   interruption?: FilmTaskError
   /** What a cancel left a local task as. */
@@ -305,6 +307,22 @@ export interface LocalTaskRequest {
   requestId: string
   parameters: Record<string, unknown>
   surface: 'video' | 'audio'
+  /**
+   * What makes the edit this edit, as the caller asked for it (the routes hash its files, ranges and boundary): the same
+   * key with another fingerprint is another edit, a conflict rather than a repeat. Without one, only the capability is compared.
+   */
+  fingerprint?: string
+}
+
+/** Why a request id cannot start this edit: it started a different kind of edit, or the same kind of another file or range. */
+function requestConflict(task: FilmTask, requestId: string, capability: LocalCapability, fingerprint: string | undefined): FilmMediaError | undefined {
+  if (task.request?.capability !== capability) return new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${requestId} already started a different edit.`)
+  const started = task.request.fingerprint
+  if (fingerprint !== undefined && started !== undefined && started !== fingerprint) {
+    return new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${requestId} already started this kind of edit with another file, range or boundary; `
+      + 'use a new requestId for a new edit.')
+  }
+  return undefined
 }
 
 /** The work of a media edit: produce the file, reporting progress lines; stop when the signal aborts. */
@@ -445,19 +463,22 @@ export class FilmMediaTasks {
    * @param cwd - the workspace.
    * @param requestId - the idempotency key.
    * @param capability - the edit asked for; a different one is a conflict.
+   * @param fingerprint - what makes the edit this edit ({@link LocalTaskRequest.fingerprint}); a different one is a conflict too.
    * @returns the task id and status, or `undefined`.
    */
-  async findLocal(cwd: string, requestId: string, capability: LocalCapability): Promise<{ taskId: string; status: FilmTaskStatus } | undefined> {
+  async findLocal(cwd: string, requestId: string, capability: LocalCapability, fingerprint?: string): Promise<{ taskId: string; status: FilmTaskStatus } | undefined> {
     const task = await this.byRequest(cwd, requestId)
     if (task === undefined) return undefined
-    if (task.request?.capability !== capability) throw new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${requestId} already started a different edit.`)
+    const conflict = requestConflict(task, requestId, capability, fingerprint)
+    if (conflict !== undefined) throw conflict
     return { taskId: task.taskId, status: task.status }
   }
 
   /**
    * Start a media edit the Host runs itself (a cut, a join, a sound copy) as
    * a task the canvas waits for and can cancel like a generation. The same
-   * request id again answers with the task it started, running or ended.
+   * request id again answers with the task it started, running or ended — for
+   * the same edit: another capability or fingerprint is a 409 conflict.
    * At most {@link LOCAL_TASK_LIMIT} run at once per workspace.
    * @param cwd - the workspace.
    * @param projectId - the project id the canvas uses (echoed in snapshots).
@@ -472,9 +493,8 @@ export class FilmMediaTasks {
     const startedMeanwhile = this.requests.get(this.key(cwd, request.requestId))
     const existing = found ?? (startedMeanwhile === undefined ? undefined : this.tasks.get(this.key(cwd, startedMeanwhile)))
     if (existing !== undefined) {
-      if (existing.request?.capability !== request.capability) {
-        throw new FilmMediaError(409, 'MEDIA_EDIT_REQUEST_CONFLICT', `requestId ${request.requestId} already started a different edit.`)
-      }
+      const conflict = requestConflict(existing, request.requestId, request.capability, request.fingerprint)
+      if (conflict !== undefined) throw conflict
       return { taskId: existing.taskId, status: existing.status, existing: true }
     }
     // From here to the task's creation nothing awaits: two requests cannot both pass these checks.
@@ -486,7 +506,8 @@ export class FilmMediaTasks {
     const key = this.key(cwd, taskId)
     const task: FilmTask = {
       taskId, projectId, surface: request.surface, model: 'host-copy', status: 'queued', startedAt: Date.now(), endedAt: null, progress: ['已提交'], error: null,
-      kind: 'local', request: { capability: request.capability, requestId: request.requestId, parameters: request.parameters },
+      kind: 'local',
+      request: { capability: request.capability, requestId: request.requestId, parameters: request.parameters, ...(request.fingerprint !== undefined ? { fingerprint: request.fingerprint } : {}) },
     }
     this.tasks.set(key, task)
     this.requests.set(this.key(cwd, request.requestId), taskId)

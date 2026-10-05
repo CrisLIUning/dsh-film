@@ -379,6 +379,33 @@ describe('FilmMediaTasks.startLocal', () => {
     await tasks.settled()
   })
 
+  it('answers a request id that started another edit of the same kind (another fingerprint) with a conflict, also when both arrive together and after a restart', async () => {
+    const tasks = new FilmMediaTasks(() => undefined)
+    let runs = 0
+    const run = async (): Promise<FilmTaskFile> => {
+      runs++
+      return file
+    }
+    const [one, two] = await Promise.allSettled([
+      tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-1000' }, run),
+      tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-2000' }, run),
+    ])
+    expect(one).toMatchObject({ status: 'fulfilled', value: { existing: false } })
+    expect(two).toMatchObject({ status: 'rejected', reason: { status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
+    const first = (one as PromiseFulfilledResult<{ taskId: string }>).value
+    await settle(tasks, first.taskId)
+    // The same fingerprint again is a repeat; without one (an older caller), only the capability is compared.
+    expect(await tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-1000' }, run)).toMatchObject({ taskId: first.taskId, existing: true })
+    expect(await tasks.findLocal(cwd, '44444444-dddd', 'video.cut')).toEqual({ taskId: first.taskId, status: 'done' })
+    expect(runs).toBe(1)
+    await tasks.settled()
+    // A Host restarted since reads the fingerprint from the record.
+    const later = new FilmMediaTasks(() => undefined)
+    expect(await tasks.record(cwd, first.taskId)).toMatchObject({ request: { fingerprint: 'range-0-1000' } })
+    await expect(later.findLocal(cwd, '44444444-dddd', 'video.cut', 'range-0-2000')).rejects.toMatchObject({ status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' })
+    expect(await later.findLocal(cwd, '44444444-dddd', 'video.cut', 'range-0-1000')).toEqual({ taskId: first.taskId, status: 'done' })
+  })
+
   it('cancels a running edit: the work is aborted and the task ends interrupted with its cancellation', async () => {
     const tasks = new FilmMediaTasks(() => undefined)
     let aborted = false

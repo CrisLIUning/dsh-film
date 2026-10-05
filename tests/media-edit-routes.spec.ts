@@ -101,8 +101,16 @@ describe('POST /api/canvas/video/:boardId/cut', () => {
     expect(done.file.name).toMatch(/^canvas\/media\/clip-[0-9a-f]{10}\.mp4$/)
     expect(done.file.landedNodeId).toBeUndefined()
     expect(done.progress).toContain('完成')
-    // Done, the same request id still answers with that task (even with another body) and makes nothing new.
-    expect(await call('/api/canvas/video/film-1/cut', { ...body, inMs: 0 })).toMatchObject({ status: 202, body: { taskId: first.body.taskId, status: 'done' } })
+    // Done, the same request asked again answers with that task and makes nothing new: also with the file named by its raw URL,
+    // the default boundary spelled out, or another node (the page reuses one render of a mark for every node showing it).
+    for (const again of [
+      { ...body, source: { nodeId: 'other', path: '/api/projects/film/raw/canvas/media/src.mp4' } },
+      { ...body, boundary: 'expand' },
+    ]) expect(await call('/api/canvas/video/film-1/cut', again)).toMatchObject({ status: 202, body: { taskId: first.body.taskId, status: 'done' } })
+    // The same id for another range, boundary or file is another edit: a conflict, never that task's file.
+    for (const other of [{ ...body, inMs: 0 }, { ...body, outMs: 1900 }, { ...body, boundary: 'shrink' }, { ...body, source: { nodeId: 'src', path: 'canvas/media/b.mp4' } }]) {
+      expect(await call('/api/canvas/video/film-1/cut', other), JSON.stringify(other)).toMatchObject({ status: 409, body: { code: 'MEDIA_EDIT_REQUEST_CONFLICT', error: expect.stringContaining('another file, range or boundary') } })
+    }
     expect((await readdir(join(cwd, 'film', 'canvas', 'media'))).sort()).toEqual([done.file.name.split('/').pop(), 'src.mp4'].sort())
     expect(seen).toContainEqual({ type: 'file-changed', projectId: 'film', path: done.file.name })
     // The same id for another edit is a conflict.
@@ -221,6 +229,14 @@ describe('POST /api/canvas/video/:boardId/join', () => {
       { id: `derived:${node.id}:src`, fromNodeId: 'src', toNodeId: node.id },
       { id: `derived:${node.id}:second`, fromNodeId: 'second', toNodeId: node.id },
     ])
+    // The same id for the clips in another order, or another range of one, is another join.
+    const requestId = 'd0000000-0000-4000-8000-000000000001'
+    expect(await call('/api/canvas/video/film-1/join', { requestId, clips: [{ nodeId: 'second', path: 'canvas/media/b.mp4', inMs: 1000 }, { nodeId: 'src', path: 'canvas/media/src.mp4' }] }))
+      .toMatchObject({ status: 409, body: { code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
+    expect(await call('/api/canvas/video/film-1/join', { requestId, clips: [{ path: 'canvas/media/src.mp4' }, { path: 'canvas/media/b.mp4', inMs: 500 }] }))
+      .toMatchObject({ status: 409, body: { code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
+    expect(await call('/api/canvas/video/film-1/join', { requestId, clips: [{ path: 'canvas/media/src.mp4' }, { path: 'canvas/media/b.mp4', inMs: 1000 }] }))
+      .toMatchObject({ status: 202, body: { taskId: started.body.taskId } })
   })
 
   it('answers 422 VIDEO_JOIN_NEEDS_TRANSCODE with the reasons, so the page re-encodes', async () => {
@@ -334,6 +350,9 @@ describe('POST /api/canvas/video/:boardId/extract-audio', () => {
     expect(done.file.name).toMatch(/^canvas\/media\/extract-[0-9a-f]{10}\.m4a$/)
     const node = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === done.file.landedNodeId) as any
     expect(node).toMatchObject({ type: 'audio', position: { x: 516, y: 50 }, metadata: { mimeType: 'audio/mp4' } })
+    // The same id for the sound of a part of the video is another edit.
+    expect(await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0001', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 500, outMs: 1500 }))
+      .toMatchObject({ status: 409, body: { code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
   })
 
   it('answers 422 VIDEO_NO_AUDIO_TRACK for a video without sound', async () => {

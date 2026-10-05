@@ -17,7 +17,9 @@
  *
  * Edits answer 202 `{ taskId, status }`; the page waits and cancels through
  * the media task routes. A repeated `requestId` answers with the task it
- * started. With `land: { nearNodeId, connectFrom, title? }` the Host puts the
+ * started; the same id for another edit — another kind, or the same kind of
+ * another file, range or boundary — answers 409 MEDIA_EDIT_REQUEST_CONFLICT.
+ * With `land: { nearNodeId, connectFrom, title? }` the Host puts the
  * result on the board right of `nearNodeId` with an edge from each of
  * `connectFrom` and `metadata.derivedFrom` (C1), and — like the page's own
  * landing — what it carries over from its sources as the board holds them: a
@@ -37,7 +39,7 @@
  * @module dsh-film/studio/media-edit-routes
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { landFileOnBoard, mediaKindOfPath } from '../canvas/board-media.js'
@@ -144,6 +146,40 @@ function landingOf(value: unknown): Landing | undefined {
   }
   const title = isObject(value) ? text(value.title) : undefined
   return { nearNodeId, connectFrom: connectFrom as string[], ...(title !== undefined ? { title: title.slice(0, 120) } : {}) }
+}
+
+/** A path as a fingerprint compares it: film-relative with `/` separators when it names one, else as sent. */
+function comparablePath(value: unknown): unknown {
+  try {
+    return filmPathOf(value)
+  } catch {
+    return typeof value === 'string' ? value : null
+  }
+}
+
+/**
+ * What makes an edit this edit, as the caller asked for it: its files (however
+ * named), their ranges and the boundary — not the node ids (the page reuses one
+ * render of a mark for every node showing that mark of that file) nor where the
+ * result lands. The same request id with another fingerprint is a conflict, not
+ * a repeat. Read from the request as sent, before anything is checked, so a
+ * repeat still finds its task when its file has gone since.
+ * @param capability - the edit.
+ * @param body - the request.
+ * @returns the fingerprint.
+ */
+function editFingerprint(capability: LocalCapability, body: Body): string {
+  const given = (value: unknown): unknown => value === undefined ? null : value
+  const sourcePath = isObject(body.source) ? body.source.path : body.source
+  const shape = capability === 'video.join'
+    ? { clips: Array.isArray(body.clips) ? body.clips.map(clip => isObject(clip) ? { path: comparablePath(clip.path), inMs: given(clip.inMs), outMs: given(clip.outMs) } : clip) : given(body.clips) }
+    : {
+        path: comparablePath(sourcePath),
+        inMs: given(body.inMs),
+        outMs: given(body.outMs),
+        ...(capability === 'video.cut' ? { boundary: body.boundary === undefined || body.boundary === null ? 'expand' : body.boundary } : {}),
+      }
+  return createHash('sha256').update(JSON.stringify({ capability, ...shape })).digest('hex').slice(0, 32)
 }
 
 function wholeMs(value: unknown, name: string): number | undefined {
@@ -257,12 +293,13 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   })
 
-  /** The request id of an edit, and the task it already started, if any. */
-  const requestOf = async (request: StudioRequest, body: Body, capability: LocalCapability): Promise<{ requestId: string; existing?: { taskId: string; status: string } }> => {
+  /** The request id of an edit, its fingerprint, and the task it already started, if any (a different edit under that id is a 409). */
+  const requestOf = async (request: StudioRequest, body: Body, capability: LocalCapability): Promise<{ requestId: string; fingerprint: string; existing?: { taskId: string; status: string } }> => {
     const requestId = text(body.requestId)
     if (requestId === undefined || !/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) return reply(400, 'MEDIA_EDIT_INVALID', 'requestId (a UUID) is required.')
-    const existing = await tasks.findLocal(request.cwd, requestId, capability)
-    return { requestId, ...(existing !== undefined ? { existing } : {}) }
+    const fingerprint = editFingerprint(capability, body)
+    const existing = await tasks.findLocal(request.cwd, requestId, capability, fingerprint)
+    return { requestId, fingerprint, ...(existing !== undefined ? { existing } : {}) }
   }
 
   /**
@@ -274,6 +311,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     edit: {
       capability: LocalCapability
       requestId: string
+      fingerprint: string
       parameters: Body
       surface: 'video' | 'audio'
       op: 'cut' | 'join' | 'extract-audio'
@@ -296,7 +334,9 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       swept.add(cwd)
       await sweepEditTemporaries(folder)
     }
-    const started = await tasks.startLocal(cwd, projectId, { capability: edit.capability, requestId: edit.requestId, parameters: edit.parameters, surface: edit.surface }, async (signal, progress) => {
+    const started = await tasks.startLocal(cwd, projectId, {
+      capability: edit.capability, requestId: edit.requestId, fingerprint: edit.fingerprint, parameters: edit.parameters, surface: edit.surface,
+    }, async (signal, progress) => {
       await mkdir(folder, { recursive: true })
       const result = await edit.run(absoluteTarget, { signal, onProgress: writingProgress(progress) })
       const name = relative(join(cwd, PROJECT_DIR), result.path).split(sep).join('/')
@@ -369,7 +409,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
 
   router.add('POST', MEDIA_CUT_PATH, handle(async (request) => {
     const body = await request.json()
-    const { requestId, existing } = await requestOf(request, body, 'video.cut')
+    const { requestId, fingerprint, existing } = await requestOf(request, body, 'video.cut')
     if (existing !== undefined) return accepted(existing)
     const sourceValue = isObject(body.source) ? body.source : { path: body.source }
     const source = await probedSource(request.cwd, sourceValue.path)
@@ -387,6 +427,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     return start(request, {
       capability: 'video.cut',
       requestId,
+      fingerprint,
       parameters: { source: { nodeId, path: source.path }, inMs: range.inMs, outMs: range.outMs, boundary, ...(land !== undefined ? { land } : {}) },
       surface: source.probe.video === undefined ? 'audio' : 'video',
       op: 'cut',
@@ -400,7 +441,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
 
   router.add('POST', MEDIA_JOIN_PATH, handle(async (request) => {
     const body = await request.json()
-    const { requestId, existing } = await requestOf(request, body, 'video.join')
+    const { requestId, fingerprint, existing } = await requestOf(request, body, 'video.join')
     if (existing !== undefined) return accepted(existing)
     if (!Array.isArray(body.clips) || body.clips.length < 2 || body.clips.length > MAX_JOIN_CLIPS) return reply(400, 'MEDIA_EDIT_INVALID', `clips must list 2 to ${MAX_JOIN_CLIPS} clips in play order.`)
     const clips: Array<SourceFile & { probe: EditProbe; inMs: number; outMs: number; nodeId: string }> = []
@@ -418,6 +459,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     return start(request, {
       capability: 'video.join',
       requestId,
+      fingerprint,
       parameters: { clips: requested, ...(land !== undefined ? { land } : {}) },
       surface: 'video',
       op: 'join',
@@ -440,7 +482,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
 
   router.add('POST', MEDIA_EXTRACT_AUDIO_PATH, handle(async (request) => {
     const body = await request.json()
-    const { requestId, existing } = await requestOf(request, body, 'video.extract-audio')
+    const { requestId, fingerprint, existing } = await requestOf(request, body, 'video.extract-audio')
     if (existing !== undefined) return accepted(existing)
     const sourceValue = isObject(body.source) ? body.source : { path: body.source }
     const source = await probedSource(request.cwd, sourceValue.path)
@@ -457,6 +499,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     return start(request, {
       capability: 'video.extract-audio',
       requestId,
+      fingerprint,
       parameters: { source: { nodeId, path: source.path }, ...(range ?? {}), ...(land !== undefined ? { land } : {}) },
       surface: 'audio',
       op: 'extract-audio',
