@@ -609,6 +609,43 @@ describe('storyboard tools with no page open', () => {
     pages.push(await run('canvas_read_node', { nodeId: 'note', field: 'content', offset: pages[0].nextOffset, contentDigest: pages[0].contentDigest }))
     expect(pages.map(page => page.content).join('')).toBe(long)
   })
+
+  it('reports the reason the page recorded on a node whose run stopped or failed, and the saved board\'s summary does too', async () => {
+    await startFilm()
+    // What the page leaves when a batch or an agent's run is refused before its request: status error and the reason
+    // on the source node that has no content yet — a generation node, or a video waiting for its first output.
+    const overLimit = '加上运镜等设置后提示词超过 4000 字，请精简提示词或去掉部分设置'
+    const reference = '参考视频 1 长 20 秒，超过这个模型单段 15 秒的上限'
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'gen', nodeType: 'config', metadata: { generationMode: 'video', status: 'error', errorDetails: overLimit } },
+      { type: 'add_node', id: 'batch', nodeType: 'config', metadata: { generationMode: 'image', status: 'error', errorDetails: '全部图片生成失败' } },
+      // Its last attempt failed earlier; the refusal of the new run came after it.
+      { type: 'add_node', id: 'shot', nodeType: 'video', metadata: { status: 'error', errorDetails: reference, videoAttempt: { attemptId: 'a1', status: 'failed', errorDetails: '上游超时' } } },
+      { type: 'add_node', id: 'still', nodeType: 'image', metadata: { status: 'error', errorDetails: reference } },
+      { type: 'add_node', id: 'idle', nodeType: 'config', metadata: { generationMode: 'image', status: 'idle' } },
+      { type: 'add_node', id: 'long', nodeType: 'config', metadata: { generationMode: 'video', status: 'error', errorDetails: '长'.repeat(400) } },
+    ] })
+    const status = await run('canvas_get_generation_status', { nodeIds: ['gen', 'batch', 'shot', 'still', 'idle', 'long'] })
+    expect(status).toMatchObject({ source: 'persisted', missingNodeIds: [], allSucceeded: false })
+    const [gen, batch, shot, still, idle, long] = status.nodes
+    expect(gen).toEqual({
+      id: 'gen', type: 'config', title: '生成配置', status: 'unknown', nodeStatus: 'error', error: overLimit,
+      outputs: [], outputCount: 0, outputsTruncated: false, outputNodeIds: [], outputNodeIdsTruncated: false,
+    })
+    expect(batch).toMatchObject({ nodeStatus: 'error', error: '全部图片生成失败' })
+    // The video's attempt still says the older failure; the node's own reason is the newer one.
+    expect(shot).toMatchObject({ status: 'failed', nodeStatus: 'error', error: reference, outputs: [{ status: 'failed', error: '上游超时' }] })
+    // An output that already says it is not repeated; a node that is not in error has none.
+    expect(still).toMatchObject({ status: 'failed', outputs: [{ status: 'failed', error: reference }] })
+    expect(still).not.toHaveProperty('error')
+    expect(idle).toMatchObject({ nodeStatus: 'idle' })
+    expect(idle).not.toHaveProperty('error')
+    expect(long.error).toBe('长'.repeat(320))
+    // canvas_get_document's summary of a node carries the same status.
+    expect((await run('canvas_get_document', { nodeId: 'gen' })).node.generation).toMatchObject({ nodeStatus: 'error', error: overLimit })
+    expect((await run('canvas_get_document', {})).nodes.find((node: any) => node.id === 'batch').generation).toMatchObject({ error: '全部图片生成失败' })
+    expect(tools.get('canvas_get_generation_status')!.description).toContain('A node\'s error is the reason the page recorded on it')
+  })
 })
 
 describe('generation options (C11)', () => {
@@ -939,6 +976,22 @@ describe('storyboard tools with a page open', () => {
     const flow = await run('canvas_create_generation_flow', { prompt: '雨'.repeat(3985), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] }, autoRun: true })
     expect(flow.warnings).toEqual([expect.objectContaining({ code: 'CANVAS_PROMPT_OVER_LIMIT', limit: 4000, note: expect.stringContaining('canvas_get_generation_status') })])
     expect(page.runs).toHaveLength(1)
+  })
+
+  it('reads the reason the open page recorded on a generation node it did not start', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    const flow = await run('canvas_create_generation_flow', { prompt: '雨夜，客栈门口', mode: 'video', autoRun: true })
+    const config = flow.nodes.find((node: any) => node.type === 'config').id as string
+    expect(page.runs).toHaveLength(1)
+    // The page refused the run before its request and wrote why on the generation node (the board it reports next).
+    const reason = '参考视频 1 长 20 秒，超过这个模型单段 15 秒的上限'
+    await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: config, metadata: { status: 'error', errorDetails: reason } }] })
+    expect(await run('canvas_get_generation_status', { nodeIds: [config] })).toMatchObject({
+      source: 'live', nodes: [{ id: config, type: 'config', nodeStatus: 'error', error: reason, outputNodeIds: [] }],
+    })
+    // Nothing was saved behind the page.
+    expect((await savedBoard()).nodes).toEqual([])
   })
 })
 

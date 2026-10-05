@@ -211,7 +211,8 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
       warnings: possible.map(check => ({
         code: 'CANVAS_PROMPT_OVER_LIMIT', nodeId: check.nodeId, length: check.length, limit: check.limit,
         note: 'With its camera lines this prompt may run past the limit, depending on the page\'s language and on whether a saved screenplay compilation still '
-          + 'matches; the page then does not start the generation. If canvas_get_generation_status shows it never started, shorten the prompt or clear a setting.',
+          + 'matches; the page then does not start the generation. If canvas_get_generation_status shows it never started (the node\'s error says why), shorten '
+          + 'the prompt or clear a setting.',
       })),
     }
   }
@@ -341,9 +342,10 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'canvas_get_generation_status',
       description: 'Read compact generation progress for 1–50 node ids: nodes, missingNodeIds, nextNodeIds (query them next when nonempty) and allSucceeded; no '
-        + 'prompts or image bodies. A generation (config) node lists outputNodeIds: query those, its own acknowledgement is not an output. Status comes from '
-        + 'the board, not a fresh provider poll; outputs[].task names a media task when one was recorded. An interrupted or missing result is not authorization '
-        + 'to pay for the generation again.',
+        + 'prompts or image bodies. A generation (config) node lists outputNodeIds: query those, its own acknowledgement is not an output. A node\'s error is '
+        + 'the reason the page recorded on it (nodeStatus error): a run it stopped before anything was sent (a reference the model refuses, a prompt over the '
+        + 'limit) or a generation node whose outputs failed. Status comes from the board, not a fresh provider poll; outputs[].task names a media task when '
+        + 'one was recorded. An interrupted or missing result is not authorization to pay for the generation again.',
       parameters: {
         target,
         nodeIds: { type: 'array', required: true, items: { type: 'string' }, description: 'Stable output node ids, not titles, positions or task ids.' },

@@ -339,6 +339,14 @@ function outputStatus(id: string, raw: unknown, projectId: string): Record<strin
 
 /**
  * One node's generation progress: whitelisted fields only, never prompts or image bytes.
+ *
+ * `error` is the reason the page recorded on the node itself (status error
+ * with errorDetails): why a batch or an agent's run stopped before anything
+ * was sent — a reference the model refuses, a prompt over the limit, which the
+ * page writes on a source node that has no content yet — or why a generation
+ * node's outputs failed. A generation (config) node has no outputs to carry
+ * it, and a node's outputs can still show an older outcome (a video's last
+ * attempt), so it is reported unless an output already says the same.
  * @param node - the node.
  * @param projectId - the film's project id, for task receipts.
  * @returns its status and outputs.
@@ -364,10 +372,12 @@ export function generationNodeStatus(node: BoardNode, projectId: string): Record
     bytes += size
   }
   const nodeStatus = shortText(metadata.status)
+  const nodeError = metadata.status === 'error' ? shortText(metadata.errorDetails, 320) : undefined
   const configuredModel = shortText(metadata.model)
   return {
     id: node.id, type: node.type, title: shortText(node.title) ?? '', status,
     ...(nodeStatus !== undefined ? { nodeStatus } : {}),
+    ...(nodeError !== undefined && !outputs.some(item => item.error === nodeError) ? { error: nodeError } : {}),
     ...(configuredModel !== undefined ? { configuredModel } : {}),
     outputs: visible, outputCount: outputs.length, outputsTruncated: visible.length < outputs.length,
   }
