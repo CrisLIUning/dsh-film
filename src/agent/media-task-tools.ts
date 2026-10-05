@@ -84,8 +84,8 @@ export function mediaTaskTools(services: FilmToolServices): ToolDefinition[] {
       description: 'Read one film task by its taskId — a storyboard generation of this workbench (the id canvas_get_generation_status reports as '
         + 'outputs[].task), or a cut, join or sound copy a video_* tool started: status, the last progress line, the error (with reasons when the Host could '
         + 'not copy a file), and its file. A finished edit\'s file.landedNodeId is the node it put on the board (file.landError says why it could not), and '
-        + 'file.derivedFrom lists its sources with the range of each it holds (atMs: where that range starts in the result). Film tasks only — dsh-media\'s '
-        + 'media_tasks lists a different kind of task.',
+        + 'file.derivedFrom lists its sources with the range of each it holds (atMs: where that range starts in the result). Film tasks only — the VibeDev plugin\'s '
+        + '(dsh-vibedev, formerly dsh-media) media_tasks lists a different kind of task.',
       parameters: {
         taskId: { type: 'string', required: true },
       },
@@ -100,7 +100,7 @@ export function mediaTaskTools(services: FilmToolServices): ToolDefinition[] {
       name: 'media_cancel_task',
       description: 'Cancel one film task by its taskId (a storyboard generation of this workbench, as canvas_get_generation_status reports it in '
         + 'outputs[].task, or an edit a video_* tool started); a finished task is left as it is. A cancelled edit leaves no partial file; one whose result '
-        + 'file is already written finishes as done. Film tasks only, not dsh-media\'s media_tasks.',
+        + 'file is already written finishes as done. Film tasks only, not the VibeDev plugin\'s media_tasks.',
       parameters: {
         taskId: { type: 'string', required: true },
       },

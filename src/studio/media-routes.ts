@@ -26,13 +26,13 @@ export function addMediaRoutes(router: StudioRouter, tasks: FilmMediaTasks, medi
   router.add('GET', '/api/media/models', async (request) => {
     const service = media()
     if (service === undefined) {
-      return { ...canvasCatalogue([]), providers: [{ id: GATEWAY_PROVIDER, label: 'VibeDev', integrated: false, configured: false, hint: '生成需要 dsh-media 插件（VibeDev 媒体生成）。' }] }
+      return { ...canvasCatalogue([]), providers: [{ id: GATEWAY_PROVIDER, label: 'VibeDev', integrated: false, configured: false, hint: '生成需要「VibeDev 账号与模型」插件（@vibedev-si/dsh-vibedev，原 dsh-media）。' }] }
     }
     try {
       return canvasCatalogue(await service.models(request.raw.signal))
     } catch (error) {
       const code = (error as { code?: unknown } | undefined)?.code
-      const hint = code === 'NOT_SIGNED_IN' ? '请先登录 VibeDev 账号（插件页的 dsh-media 设置）。' : `暂时读不到模型目录：${error instanceof Error ? error.message : String(error)}`
+      const hint = code === 'NOT_SIGNED_IN' ? '请先登录 VibeDev 账号（侧边栏底部「登录 VibeDev」或「设置 → VibeDev 账号」）。' : `暂时读不到模型目录：${error instanceof Error ? error.message : String(error)}`
       return { ...canvasCatalogue([]), providers: [{ id: GATEWAY_PROVIDER, label: 'VibeDev', integrated: true, configured: false, hint }] }
     }
   })

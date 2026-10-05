@@ -270,7 +270,7 @@ function sizeFor(aspect: string | undefined): string | undefined {
  * dsh-media's own messages are written for the agent.
  */
 const USER_MESSAGES: Readonly<Record<string, string>> = {
-  NOT_SIGNED_IN: '生成需要登录 VibeDev 账号：在插件页打开 dsh-media 的设置登录。在 VibeDev 应用里会直接使用应用登录的账号。',
+  NOT_SIGNED_IN: '生成需要登录 VibeDev 账号：在侧边栏底部「登录 VibeDev」或「设置 → VibeDev 账号」中登录。在 VibeDev 应用里会直接使用应用登录的账号。',
   INSUFFICIENT_BALANCE: 'VibeDev 余额不足，充值后再试。',
   SPENDING_DECLINED: '已取消，没有扣费。',
   ABORTED: '已取消。',
@@ -414,7 +414,7 @@ export class FilmMediaTasks {
 
   private service(): MediaServiceLike {
     const media = this.media()
-    if (media === undefined) throw new FilmMediaError(503, 'MEDIA_SERVICE_UNAVAILABLE', '生成需要 dsh-media 插件（VibeDev 媒体生成）。请在插件页安装并启用它。')
+    if (media === undefined) throw new FilmMediaError(503, 'MEDIA_SERVICE_UNAVAILABLE', '生成需要「VibeDev 账号与模型」插件（@vibedev-si/dsh-vibedev，原 dsh-media）。请在插件页安装并启用它。')
     return media
   }
 
