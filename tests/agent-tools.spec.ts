@@ -4,11 +4,12 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { filmAgentTools, filmCoreTools, filmToolGroups, filmToolsTool } from '../src/agent/index.js'
 import type { FilmToolServices } from '../src/agent/index.js'
 import { FILM_GUIDANCE } from '../src/agent/guidance.js'
 import { GUIDANCE_SECTION, installFilmAgentTools } from '../src/agent/install.js'
+import type { FilmToolGroup } from '../src/agent/install.js'
 import { buildModelingBrief } from '../src/modeling/contracts/modeling-brief.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
 import { compactTask } from '../src/agent/media-task-tools.js'
@@ -1511,7 +1512,17 @@ describe('installing the tools into film conversations', () => {
     return { ctx, agent, live, emit, dispose: () => { for (const dispose of disposers) dispose() } }
   }
 
+  /** A moment for anything that would still arrive (only to check that nothing more does: never to wait for something to happen). */
   const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 20))
+
+  /** The groups, each deciding whether a conversation starts with it only after `ms` — the board read of a slow disk or a loaded machine. */
+  const slowGroups = (groups: Record<string, FilmToolGroup>, ms: number): Record<string, FilmToolGroup> => Object.fromEntries(Object.entries(groups).map(([name, group]) => [name, {
+    ...group,
+    startsEnabled: async (folder: string): Promise<boolean> => {
+      await new Promise(resolve => setTimeout(resolve, ms))
+      return await group.startsEnabled?.(folder) ?? false
+    },
+  }]))
 
   it('gives the tools to agents in a film workspace, and to others when their workspace gets a film', async () => {
     await startFilm()
@@ -1521,9 +1532,11 @@ describe('installing the tools into film conversations', () => {
     const early = host.agent('early', cwd)
     host.live.push(early)
     const core = filmCoreTools(services)
-    const installer = installFilmAgentTools(host.ctx as never, { tools: () => core, groups: filmToolGroups(services), guidance: 'film guidance' })
-    await settle()
-    expect(early.tools.size).toBe(core.length)
+    // An agent already running gets the tools once its workspace and board are read (whether the director and cutting groups
+    // start enabled), which takes as long as the disk does: wait for the installation itself, here slower than any fixed wait.
+    const installer = installFilmAgentTools(host.ctx as never, { tools: () => core, groups: slowGroups(filmToolGroups(services), 60), guidance: 'film guidance' })
+    expect(early.tools.size).toBe(0)
+    await vi.waitFor(() => expect(early.tools.size).toBe(core.length), { timeout: 10_000, interval: 10 })
     expect(early.tools.has('director_query')).toBe(false)
     expect(early.sections).toEqual(new Set([GUIDANCE_SECTION]))
 
