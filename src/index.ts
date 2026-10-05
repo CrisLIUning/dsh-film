@@ -21,6 +21,7 @@
  * @module dsh-film
  */
 
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -104,7 +105,8 @@ export function apply(ctx: Context, config: Config): void {
 
   // Nested too: a profile without agents (a bare Host) has nobody to give tools to.
   ctx.inject(['agents', 'tools'], (scoped) => {
-    const install = applyFilmAgentTools(scoped, { studio, boardAgent, events })
+    // The catalogues come with the canvas build the workbench serves (C3).
+    const install = applyFilmAgentTools(scoped, { studio, boardAgent, events, catalogRoot: join(appsRoot, 'canvas', 'catalog') })
     projectCreated = install
     scoped.effect(() => () => {
       if (projectCreated === install) projectCreated = () => {}

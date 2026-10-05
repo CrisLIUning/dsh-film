@@ -15,11 +15,17 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { validateBoardOps } from './board-ops.js'
 import type { BoardConnection, BoardNode, BoardOp, BoardSnapshot } from './board-ops.js'
+import { planGenerationOptions } from './generation-options.js'
+import type { CheckedGenerationOptions } from './generation-options.js'
+import { CanvasToolError } from './tool-error.js'
+
+export { CanvasToolError } from './tool-error.js'
 
 export const CANVAS_WRITE_TOOLS = [
   'canvas_apply_ops',
   'canvas_create_text_nodes',
   'canvas_create_generation_flow',
+  'canvas_set_generation_options',
   'canvas_run_generation',
   'canvas_connect_nodes',
   'canvas_delete_nodes',
@@ -27,12 +33,12 @@ export const CANVAS_WRITE_TOOLS = [
 
 export type CanvasWriteTool = (typeof CANVAS_WRITE_TOOLS)[number]
 
-export class CanvasToolError extends Error {
-  override name = 'CanvasToolError'
-
-  constructor(readonly code: string, message: string) {
-    super(message)
-  }
+/** What some write tools compile with besides their arguments: values already checked against the canvas catalogues. */
+export interface BoardOpsContext {
+  /** canvas_create_generation_flow: generation settings stored on the new generation node (camera move, camera, preset fields). */
+  configMetadata?: Record<string, unknown>
+  /** canvas_set_generation_options: the options, checked. */
+  generationOptions?: CheckedGenerationOptions
 }
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio'
@@ -69,7 +75,7 @@ function textNodeOp(input: { id?: string; text?: string; title?: string }, x: nu
   }
 }
 
-function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: number): BoardOp {
+function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: number, settings: Record<string, unknown> = {}): BoardOp {
   const mode = generationMode(input.mode)
   const prompt = String(input.prompt ?? '')
   return {
@@ -89,6 +95,8 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
       seconds: input.seconds,
       // A video model that declares native audio speaks the line only when asked.
       generateAudio: input.generateAudio,
+      // Settings the page composes into the prompt when it generates (camera move, camera), never prompt text.
+      ...settings,
     }),
   }
 }
@@ -98,9 +106,10 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
  * builds by hand, so the prompt stays a visible, editable node.
  * @param input - the tool's arguments.
  * @param snapshot - the board, for placement.
+ * @param settings - generation settings for the generation node, already checked against the catalogues.
  * @returns the ops.
  */
-export function generationFlowOps(input: Record<string, unknown>, snapshot: BoardSnapshot | null): BoardOp[] {
+export function generationFlowOps(input: Record<string, unknown>, snapshot: BoardSnapshot | null, settings: Record<string, unknown> = {}): BoardOp[] {
   const mode = generationMode(input.mode)
   const prompt = String(input.prompt ?? '')
   const x = typeof input.x === 'number' ? input.x : nextX(snapshot)
@@ -111,7 +120,7 @@ export function generationFlowOps(input: Record<string, unknown>, snapshot: Boar
   const tokens = [`@[node:${textId}]`, ...referenceNodeIds.map(id => `@[node:${id}]`)]
   return [
     textNodeOp({ id: textId, text: prompt, title: typeof input.title === 'string' && input.title !== '' ? input.title : '提示词' }, x, y),
-    configNodeOp(configId, { ...input, prompt: tokens.join('\n') }, x + 420, y),
+    configNodeOp(configId, { ...input, prompt: tokens.join('\n') }, x + 420, y, settings),
     { type: 'connect_nodes', fromNodeId: textId, toNodeId: configId },
     ...referenceNodeIds.map(fromNodeId => ({ type: 'connect_nodes', fromNodeId, toNodeId: configId })),
     { type: 'select_nodes', ids: [configId] },
@@ -125,9 +134,10 @@ export function generationFlowOps(input: Record<string, unknown>, snapshot: Boar
  * @param tool - the tool.
  * @param input - its arguments.
  * @param snapshot - the board, for placement.
+ * @param context - what the tool checked against the canvas catalogues before compiling.
  * @returns the ops.
  */
-export function buildBoardOps(tool: CanvasWriteTool, input: Record<string, unknown>, snapshot: BoardSnapshot | null): BoardOp[] {
+export function buildBoardOps(tool: CanvasWriteTool, input: Record<string, unknown>, snapshot: BoardSnapshot | null, context: BoardOpsContext = {}): BoardOp[] {
   switch (tool) {
     case 'canvas_apply_ops': {
       const ops = input.ops
@@ -150,7 +160,12 @@ export function buildBoardOps(tool: CanvasWriteTool, input: Record<string, unkno
       ))
     }
     case 'canvas_create_generation_flow':
-      return generationFlowOps(input, snapshot)
+      return generationFlowOps(input, snapshot, context.configMetadata)
+    case 'canvas_set_generation_options': {
+      // One update_node per node whose settings change; values were checked against the catalogues first.
+      if (context.generationOptions === undefined) throw new CanvasToolError('CANVAS_BOARD_INVALID', 'generation options must be checked against the canvas catalogues first')
+      return planGenerationOptions(context.generationOptions, snapshot).ops
+    }
     case 'canvas_run_generation': {
       const nodeId = typeof input.nodeId === 'string' ? input.nodeId : ''
       if (nodeId === '') throw new CanvasToolError('CANVAS_BOARD_INVALID', 'nodeId is required')

@@ -28,12 +28,15 @@ let services: FilmToolServices
 let created: string[]
 let tools: Map<string, ToolDefinition>
 
+/** The canvas build's catalogues (copies of canvas web/src/lib/canvas/catalog/*.json; the local apps/ is older). */
+const catalogRoot = join(import.meta.dirname, 'fixtures', 'catalog')
+
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'dsh-film-agent-'))
   events = new ProjectEvents()
   boardAgent = new CanvasBoardAgent()
   created = []
-  services = { studio: createStudioRouter({ events, boardAgent }), boardAgent, events, projectCreated: (dir) => { created.push(dir) } }
+  services = { studio: createStudioRouter({ events, boardAgent }), boardAgent, events, projectCreated: (dir) => { created.push(dir) }, catalogRoot }
   tools = new Map([filmProjectTool(services), ...filmAgentTools(services)].map(tool => [tool.name, tool]))
 })
 
@@ -73,8 +76,8 @@ describe('the tool set', () => {
       'story_import', 'story_export',
       'story_source', 'story_handoff', 'story_adopt', 'story_impact', 'story_director_links',
       'canvas_list_clients', 'canvas_get_state', 'canvas_get_selection', 'canvas_read_node', 'canvas_get_generation_status', 'canvas_get_document',
-      'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes',
-      'canvas_apply_ops', 'canvas_attach_media',
+      'canvas_create_text_nodes', 'canvas_create_generation_flow', 'canvas_generation_options', 'canvas_set_generation_options',
+      'canvas_run_generation', 'canvas_connect_nodes', 'canvas_delete_nodes', 'canvas_apply_ops', 'canvas_attach_media',
       'media_get_task', 'media_cancel_task',
       'director_query', 'director_models', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
@@ -86,10 +89,10 @@ describe('the tool set', () => {
     }
   })
 
-  it('carries 30 core tools and none of the cut tools 0.2.0 removed', () => {
+  it('carries 32 core tools and none of the cut tools 0.2.0 removed', () => {
     const core = filmCoreTools(services).map(tool => tool.name)
-    expect(core).toHaveLength(30)
-    expect(core).toEqual(expect.arrayContaining(['media_get_task', 'media_cancel_task']))
+    expect(core).toHaveLength(32)
+    expect(core).toEqual(expect.arrayContaining(['media_get_task', 'media_cancel_task', 'canvas_generation_options', 'canvas_set_generation_options']))
     // Narrowed in 0.3 to the removed tools: the video_* cutting tools are new, and their texts
     // still never name the removed desk, recognition or render engine.
     const removed = ['timeline_query', 'timeline_edit', 'timeline_transcribe', 'timeline_apply_captions', 'timeline_render']
@@ -104,6 +107,23 @@ describe('the tool set', () => {
     expect(review.properties.target?.enum).toEqual(['generation'])
     expect(review.properties.mode?.enum).toEqual(['image', 'video'])
     expect(review.properties.baseRevision).toBeUndefined()
+  })
+
+  it('declares the generation-option schemas of C11 and teaches them as node settings, never prompt text', () => {
+    const schema = (name: string): any => tools.get(name)!.parameters
+    const set = schema('canvas_set_generation_options')
+    expect(Object.keys(set.properties)).toEqual(['target', 'nodeIds', 'cameraMove', 'cameraControl', 'preset', 'clear'])
+    expect(set.required).toEqual(['nodeIds'])
+    expect(set.properties.cameraMove.required).toEqual(['moves'])
+    expect(set.properties.cameraMove.properties.moves.items.properties.speed.enum).toEqual(['slow', 'steady', 'fast'])
+    expect(set.properties.cameraMove.properties.combine.enum).toEqual(['sequence', 'together'])
+    expect(Object.keys(set.properties.cameraControl.properties)).toEqual(['enabled', 'look', 'lens', 'focalLength', 'aperture', 'shotSize', 'angle'])
+    expect(set.properties.cameraControl.properties.shotSize.oneOf.map((branch: any) => branch.type)).toEqual(['string', 'null'])
+    expect(set.properties.clear.items.enum).toEqual(['cameraMove', 'cameraControl'])
+    expect(Object.keys(schema('canvas_create_generation_flow').properties)).toEqual(expect.arrayContaining(['cameraMove', 'cameraControl', 'preset']))
+    expect(schema('canvas_generation_options').properties.kind.enum).toEqual(['camera_moves', 'camera', 'presets'])
+    for (const text of ['canvas_generation_options', 'canvas_set_generation_options', 'never write them into prompt text']) expect(FILM_GUIDANCE).toContain(text)
+    expect(tools.get('canvas_set_generation_options')!.description).toContain('never write them into prompt text')
   })
 
   it('puts director_models in the director group and teaches director_stage place_model', () => {
@@ -591,10 +611,199 @@ describe('storyboard tools with no page open', () => {
   })
 })
 
+describe('generation options (C11)', () => {
+  /** The refusal a call ends with. */
+  const refused = (name: string, args: Record<string, unknown>): Promise<any> => run(name, args).then(() => { throw new Error(`${name} was not refused`) }, (error: unknown) => error)
+  const savedNode = async (id: string): Promise<any> => (await savedBoard()).nodes.find((node: { id: string }) => node.id === id)
+
+  it('canvas_generation_options lists the camera moves, camera settings and presets of the canvas build', async () => {
+    const moves = await run('canvas_generation_options', { kind: 'camera_moves' })
+    expect(moves).toMatchObject({ catalogVersion: '2026-10-05.1', kind: 'camera_moves', speeds: { slow: { zh: '缓慢地', en: 'slowly' } } })
+    expect(moves.items).toHaveLength(42)
+    expect(moves.categories).toHaveLength(12)
+    expect(moves.items[0]).toEqual({ id: 'static', category: 'fixed', name: { zh: '固定镜头', en: 'Locked-off' }, summary: { zh: '机位焦距不变，只拍动作', en: 'Nothing moves but the scene' }, speedable: false, exclusive: true })
+    expect(moves.items.find((move: any) => move.id === 'dolly-zoom')).toMatchObject({ bestEffort: true })
+    expect(moves.note).toContain('1–3 moves')
+    expect((await run('canvas_generation_options', { kind: 'camera_moves', category: 'push' })).items.map((move: any) => move.id)).toEqual(['push-in', 'push-in-face', 'push-in-detail', 'snap-push'])
+    // Only video takes camera moves.
+    expect(await run('canvas_generation_options', { kind: 'camera_moves', mode: 'image' })).toMatchObject({ items: [], note: 'Camera moves are for video generation only.' })
+    await expect(run('canvas_generation_options', { kind: 'camera_moves', category: 'dolly' })).rejects.toThrow(/^CANVAS_OPTION_UNKNOWN: Unknown category "dolly"\. The categories: fixed \(固定\), push \(推\)/u)
+    await expect(run('canvas_generation_options', { kind: 'camera', category: 'push' })).rejects.toThrow(/CANVAS_OPTION_UNKNOWN: category filters camera_moves only/u)
+
+    const camera = await run('canvas_generation_options', { kind: 'camera' })
+    expect(camera.items.looks.map((entry: any) => entry.id)).toEqual(['digital-cinema', 'film-35mm', 'film-16mm', 'phone-documentary', 'vintage-ccd'])
+    expect(camera.items.focalLengths.map((stop: any) => stop.mm)).toEqual([14, 18, 24, 35, 50, 85, 105, 135, 200])
+    expect(camera.items.apertures.map((stop: any) => stop.f)).toEqual([1.4, 2, 2.8, 4, 5.6, 8, 11, 16])
+    expect(camera.items.shotSizes).toHaveLength(8)
+    expect(camera.defaults).toEqual({ look: 'digital-cinema', lens: 'spherical-prime', focalLength: 50, aperture: 2.8 })
+    expect((await run('canvas_generation_options', { kind: 'camera', mode: 'text' })).items).toEqual({})
+
+    expect((await run('canvas_generation_options', { kind: 'presets', mode: 'video' })).items.map((preset: any) => preset.id)).toEqual(['p.vertical-drama', 'p.landscape-trailer', 'p.cheap-preview'])
+    expect((await run('canvas_generation_options', { kind: 'presets' })).items).toHaveLength(6)
+    await expect(run('canvas_generation_options', { kind: 'skills' })).rejects.toThrow(/kind/u)
+    expect(tools.get('canvas_generation_options')!.isConcurrencySafe?.({ kind: 'camera' } as never)).toBe(true)
+  })
+
+  it('answers CANVAS_CATALOG_MISSING when the build has no catalogue, and clears without one', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video', metadata: { cameraMove: { v: 1, moves: [{ id: 'push-in' }] } } }] })
+    services.catalogRoot = join(cwd, 'no-catalog')
+    await expect(run('canvas_generation_options', { kind: 'camera_moves' })).rejects.toThrow(/^CANVAS_CATALOG_MISSING: .*apps\/canvas\/catalog\/camera-moves\.json/u)
+    await expect(run('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'push-in' }] } })).rejects.toThrow(/CANVAS_CATALOG_MISSING/u)
+    expect((await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })).applied).toEqual([{ nodeId: 'shot', set: [], cleared: ['cameraMove'], skipped: [], changed: true }])
+    expect((await savedNode('shot')).metadata.cameraMove).toBeNull()
+  })
+
+  it('stores a camera move and camera settings on a closed board as the page reads them, and announces the change', async () => {
+    const film = await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'shot', nodeType: 'video' },
+      { type: 'add_node', id: 'gen', nodeType: 'config', metadata: { generationMode: 'video' } },
+    ] })
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    const result = await run('canvas_set_generation_options', {
+      nodeIds: ['shot', 'gen'], cameraMove: { moves: [{ id: 'push-in', speed: 'slow' }, { id: 'orbit-left' }] }, cameraControl: { focalLength: 40, aperture: 3 },
+    })
+    expect(result).toMatchObject({
+      source: 'persisted', resultView: 'changes', totalNodeCount: 2,
+      applied: [
+        { nodeId: 'shot', set: ['cameraMove', 'cameraControl'], cleared: [], skipped: [], changed: true },
+        { nodeId: 'gen', set: ['cameraMove', 'cameraControl'], cleared: [], skipped: [], changed: true },
+      ],
+      adjusted: [expect.stringMatching(/^focalLength 40 became 35mm/u), expect.stringMatching(/^aperture 3 became f\/2\.8/u)],
+    })
+    expect(result.nodes.map((node: any) => node.id)).toEqual(['shot', 'gen'])
+    expect(seen).toContainEqual({ type: 'story-canvas-changed', projectId: film.id, boardId: film.id })
+    const shot = await savedNode('shot')
+    expect(shot.metadata.cameraMove).toEqual({ v: 1, moves: [{ id: 'push-in', speed: 'slow' }, { id: 'orbit-left' }], combine: 'sequence' })
+    expect(shot.metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'digital-cinema', lens: 'spherical-prime', focalLength: 35, aperture: 2.8 })
+    // canvas_get_state reads a node's settings.
+    expect((await run('canvas_get_state')).nodes.find((node: any) => node.id === 'gen').metadata).toMatchObject({ cameraMove: shot.metadata.cameraMove, cameraControl: shot.metadata.cameraControl })
+
+    // Fields left out keep the node's; enabled defaults to true; a null shot size removes it.
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { enabled: false } })
+    expect((await savedNode('shot')).metadata.cameraControl).toMatchObject({ enabled: false, focalLength: 35 })
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { look: 'film-35mm', shotSize: 'close', angle: 'low' } })
+    expect((await savedNode('shot')).metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'film-35mm', lens: 'spherical-prime', focalLength: 35, aperture: 2.8, shotSize: 'close', angle: 'low' })
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { shotSize: null } })
+    expect((await savedNode('shot')).metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'film-35mm', lens: 'spherical-prime', focalLength: 35, aperture: 2.8, angle: 'low' })
+
+    // The same move again saves nothing.
+    const before = (await savedBoard()).updatedAt
+    seen.length = 0
+    expect(await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'push-in', speed: 'slow' }, { id: 'orbit-left' }] } }))
+      .toMatchObject({ source: 'persisted', changed: false, applied: [{ nodeId: 'shot', set: ['cameraMove'], changed: false }] })
+    expect((await savedBoard()).updatedAt).toBe(before)
+    expect(seen).toEqual([])
+  })
+
+  it('clears with null, which every reader takes as no setting (update_node cannot delete a key)', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }] })
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'handheld' }] }, cameraControl: {} })
+    const cleared = await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove', 'cameraControl'] })
+    expect(cleared.applied).toEqual([{ nodeId: 'shot', set: [], cleared: ['cameraMove', 'cameraControl'], skipped: [], changed: true }])
+    const metadata = (await savedNode('shot')).metadata
+    expect(metadata).toHaveProperty('cameraMove', null)
+    expect(metadata).toHaveProperty('cameraControl', null)
+    expect((await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })).changed).toBe(false)
+    // A cleared camera starts again from the defaults.
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { aperture: 8 } })
+    expect((await savedNode('shot')).metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'digital-cinema', lens: 'spherical-prime', focalLength: 50, aperture: 8 })
+  })
+
+  it('skips what a node does not take, and refuses unknown ids, wrong targets and settings no node takes before writing', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'still', nodeType: 'image' },
+      { type: 'add_node', id: 'shot', nodeType: 'video' },
+      { type: 'add_node', id: 'pano', nodeType: 'image', metadata: { panoramaProjection: 'equirectangular' } },
+      { type: 'add_node', id: 'edit', nodeType: 'video', metadata: { videoMode: 'video-edit' } },
+      { type: 'add_node', id: 'note', nodeType: 'text', metadata: { content: '镜 1' } },
+    ] })
+    const mixed = await run('canvas_set_generation_options', { nodeIds: ['still', 'shot', 'pano', 'edit'], cameraMove: { moves: [{ id: 'whip-pan', speed: 'fast' }] }, cameraControl: { lens: 'anamorphic' } })
+    expect(mixed.applied).toEqual([
+      { nodeId: 'still', set: ['cameraControl'], cleared: [], skipped: [{ field: 'cameraMove', reason: 'camera moves are for video; this is an image node' }], changed: true },
+      { nodeId: 'shot', set: ['cameraMove', 'cameraControl'], cleared: [], skipped: [], changed: true },
+      {
+        nodeId: 'pano', set: [], cleared: [], changed: false,
+        skipped: [{ field: 'cameraMove', reason: 'camera moves are for video; this is an image node' }, { field: 'cameraControl', reason: 'a panorama shows a whole environment and takes no camera settings' }],
+      },
+      {
+        nodeId: 'edit', set: [], cleared: [], changed: false,
+        skipped: [{ field: 'cameraMove', reason: expect.stringContaining('video-edit') }, { field: 'cameraControl', reason: expect.stringContaining('video-edit') }],
+      },
+    ])
+    expect(mixed.adjusted).toEqual(['whip-pan has no speed; the speed was left out'])
+    expect((await savedNode('shot')).metadata.cameraMove).toEqual({ v: 1, moves: [{ id: 'whip-pan' }], combine: 'sequence' })
+
+    const board = JSON.stringify(await savedBoard())
+    const unknown = await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'dolly-in' }] } })
+    expect(unknown.code).toBe('CANVAS_OPTION_UNKNOWN')
+    expect(unknown.message).toMatch(/Unknown camera move id: dolly-in\. The valid ids: static, static-breathing, push-in, .*pov/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { look: 'imax' } })).message).toMatch(/CANVAS_OPTION_UNKNOWN: .*digital-cinema \(数字电影机\)/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], preset: 'p.nope' })).message).toMatch(/CANVAS_OPTION_UNKNOWN: .*p\.vertical-drama/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], cameraMove: { moves: [{ id: 'push-in' }] } })).code).toBe('CANVAS_OPTION_MODE')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still', 'note'], cameraControl: {} })).message).toMatch(/^CANVAS_OPTION_TARGET: note is a text node/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['gone'], cameraControl: {} })).code).toBe('CANVAS_NODE_NOT_FOUND')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'static' }, { id: 'push-in' }] } })).message).toMatch(/CANVAS_OPTION_INVALID: static \(固定镜头\) stands alone/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'push-in' }] }, clear: ['cameraMove'] })).message).toMatch(/both set and cleared/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'] })).message).toMatch(/Pass cameraMove, cameraControl, preset or clear/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: [] })).code).toBe('CANVAS_OPTION_INVALID')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot', 'shot'], clear: ['cameraMove'] })).code).toBe('CANVAS_OPTION_INVALID')
+    await expect(run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { shotSize: 'cowboy' } })).rejects.toThrow(/shotSize/u)
+    expect(JSON.stringify(await savedBoard())).toBe(board)
+  })
+
+  it('applies a preset to the nodes of its mode and says what it skipped', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }, { type: 'add_node', id: 'still', nodeType: 'image' }] })
+    const drama = await run('canvas_set_generation_options', { nodeIds: ['shot', 'still'], preset: 'p.vertical-drama' })
+    expect(drama.applied).toEqual([
+      { nodeId: 'shot', set: ['size', 'vquality', 'seconds', 'generateAudio'], cleared: [], skipped: [], changed: true },
+      { nodeId: 'still', set: [], cleared: [], skipped: [{ field: 'preset', reason: 'p.vertical-drama is a video preset; this is an image node' }], changed: false },
+    ])
+    expect(drama.note).toContain('fits a preset')
+    expect((await savedNode('shot')).metadata).toMatchObject({ size: '9:16', vquality: '720', seconds: '5', generateAudio: 'true' })
+    const card = await run('canvas_set_generation_options', { nodeIds: ['still'], preset: 'p.character-card', cameraControl: { focalLength: 85 } })
+    expect(card.applied).toEqual([{ nodeId: 'still', set: ['size', 'count', 'cameraControl'], cleared: [], skipped: [{ field: 'skills', reason: expect.stringContaining('vd.character-sheet') }], changed: true }])
+    expect((await savedNode('still')).metadata).toMatchObject({ size: '1536x1024', count: 1, cameraControl: { focalLength: 85 } })
+  })
+
+  it('canvas_create_generation_flow stores the settings on the closed board\'s generation node', async () => {
+    await startFilm()
+    const flow = await run('canvas_create_generation_flow', {
+      prompt: '雨夜，客栈门口', mode: 'video', cameraMove: { moves: [{ id: 'lead-front' }] }, cameraControl: { look: 'film-35mm', focalLength: 85 },
+    })
+    const [text, config] = flow.nodes as Array<{ type: string; metadata: Record<string, unknown> }>
+    expect(text!.metadata).not.toHaveProperty('cameraMove')
+    expect(config!.metadata).toMatchObject({
+      generationMode: 'video',
+      cameraMove: { v: 1, moves: [{ id: 'lead-front' }], combine: 'sequence' },
+      cameraControl: { v: 1, enabled: true, look: 'film-35mm', lens: 'spherical-prime', focalLength: 85, aperture: 2.8 },
+    })
+    // A preset fills the mode and the settings the call leaves out.
+    const preset = await run('canvas_create_generation_flow', { prompt: '回眸', preset: 'p.vertical-drama', seconds: '8' })
+    expect(preset.preset).toBe('p.vertical-drama')
+    expect(preset.nodes[1].metadata).toMatchObject({ generationMode: 'video', size: '9:16', vquality: '720', seconds: '8', generateAudio: true })
+    const before = (await savedBoard()).nodes.length
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', cameraMove: { moves: [{ id: 'push-in' }] } })).message).toMatch(/^CANVAS_OPTION_MODE: Camera moves are for video; this flow's mode is image/u)
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'text', cameraControl: {} })).code).toBe('CANVAS_OPTION_MODE')
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'image', preset: 'p.vertical-drama' })).code).toBe('CANVAS_OPTION_MODE')
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'video', cameraMove: { moves: [{ id: 'fly-through' }] } })).code).toBe('CANVAS_OPTION_UNKNOWN')
+    expect((await savedBoard()).nodes).toHaveLength(before)
+  })
+})
+
 describe('storyboard tools with a page open', () => {
-  /** A canvas page: it takes its lease, reports its board and answers calls with the board's executor. */
+  /**
+   * A canvas page: it takes its lease, reports its board and answers calls with the board's executor; the runs a
+   * batch starts are recorded, as the page starts them after answering.
+   */
   function openPage(projectId: string, behaviour: { refuse?: string; silent?: boolean } = {}) {
     const sent: Array<{ event: string; data: any }> = []
+    const runs: BoardOp[] = []
     let board: BoardSnapshot = { projectId, title: '雨夜来客', nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } }
     let lease!: BoardLease
     let sequence = 1
@@ -610,7 +819,8 @@ describe('storyboard tools with a page open', () => {
               boardAgent.resolve(lease, { requestId: call.requestId, error: behaviour.refuse })
               return
             }
-            board = applyBoardOps(board, call.input.ops)
+            board = applyBoardOps(board, call.input.ops.filter(op => op.type !== 'run_generation'))
+            runs.push(...call.input.ops.filter(op => op.type === 'run_generation'))
             boardAgent.resolve(lease, { requestId: call.requestId, result: board, sequence: ++sequence })
           })
         }
@@ -624,7 +834,7 @@ describe('storyboard tools with a page open', () => {
     const hello = sent[0]!.data as { generation: string; writeToken: string }
     lease = { target, generation: hello.generation, writeToken: hello.writeToken }
     boardAgent.setSnapshot(lease, board, sequence)
-    return { sent, target, lease, release, board: () => board }
+    return { sent, runs, target, lease, release, board: () => board, calls: () => sent.filter(item => item.event === 'tool_call').map(item => item.data) }
   }
 
   it('sends writes to the page and reads the board it reports', async () => {
@@ -660,6 +870,27 @@ describe('storyboard tools with a page open', () => {
     const sent: unknown[] = []
     boardAgent.connect({ projectId: film.id, clientId: 'page-2', incarnation: 'load-2' }, { send: (_event, data) => { sent.push(data); return true }, close() {}, closed: false })
     await expect(run('canvas_create_text_nodes', { items: [{ text: '镜 1' }] })).rejects.toThrow(/CANVAS_BOARD_NOT_READY/)
+  })
+
+  it('sets generation options on the open page as update_node ops, and writes nothing behind it', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }, { type: 'add_node', id: 'still', nodeType: 'image' }] })
+    const result = await run('canvas_set_generation_options', { nodeIds: ['shot', 'still'], cameraMove: { moves: [{ id: 'crane-up' }] }, cameraControl: { aperture: 1.4 } })
+    expect(result).toMatchObject({ source: 'live', target: page.target, applied: [{ nodeId: 'shot', changed: true }, { nodeId: 'still', set: ['cameraControl'], skipped: [{ field: 'cameraMove' }] }] })
+    const camera = { v: 1, enabled: true, look: 'digital-cinema', lens: 'spherical-prime', focalLength: 50, aperture: 1.4 }
+    expect(page.calls().at(-1)).toMatchObject({ name: 'canvas_apply_ops', input: { boardId: film.id, ops: [
+      { type: 'update_node', id: 'shot', metadata: { cameraMove: { v: 1, moves: [{ id: 'crane-up' }], combine: 'sequence' }, cameraControl: camera } },
+      { type: 'update_node', id: 'still', metadata: { cameraControl: camera } },
+    ] } })
+    expect(page.board().nodes!.find(node => node.id === 'shot')!.metadata).toMatchObject({ cameraControl: camera })
+    expect((await savedBoard()).nodes).toEqual([])
+    // Clearing on the page sends null; nothing to change sends nothing.
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })
+    expect(page.calls().at(-1).input.ops).toEqual([{ type: 'update_node', id: 'shot', metadata: { cameraMove: null } }])
+    const calls = page.calls().length
+    expect(await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })).toMatchObject({ source: 'live', changed: false })
+    expect(page.calls()).toHaveLength(calls)
   })
 })
 
