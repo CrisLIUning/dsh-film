@@ -12,9 +12,11 @@
  * - Cut: a `Conversion` with `trim` and `copy: { mode: 'forced' }`. With the
  *   default `'expand'` boundary the copy starts at the key frame before the
  *   in point and the MP4 gets an edit list that starts playback exactly at
- *   it; `'shrink'` moves the in point to the first key frame at or after it,
- *   so picture and sound both start there with no pre-roll and no edit list
- *   on the picture (for players that ignore edit lists). Audio-only files
+ *   it; `'shrink'` starts on a key frame — the one whose picture shows at the
+ *   in point (at most a frame before it), else the first one after it — so
+ *   picture and sound both start there with no pre-roll and no edit list on
+ *   the picture (for players that ignore edit lists, and for generation
+ *   references, which must hold nothing the person cut away). Audio-only files
  *   keep their container. The result reports the source range it really
  *   holds (`range`).
  * - Join: mediabunny has no concatenation, so packets are read from each clip
@@ -488,7 +490,7 @@ async function convert(
  * @param source - the absolute source path.
  * @param target - the absolute result path wanted (`.mp4` for a video, the source's container for audio).
  * @param range - the range, in ms of the source.
- * @param boundary - `'expand'` copies from the key frame before the in point and starts playback at the in point (an edit list); `'shrink'` moves the in point to the first key frame at or after it.
+ * @param boundary - `'expand'` copies from the key frame before the in point and starts playback at the in point (an edit list); `'shrink'` starts on the key frame showing at the in point, else the first one after it.
  * @param options - cancel and progress.
  * @returns the result.
  */
@@ -511,10 +513,14 @@ export async function cutFile(source: string, target: string, range: { inMs: num
 }
 
 /**
- * The first key frame at or after a time.
+ * Where a `'shrink'` cut starts: the key frame whose picture is the one showing
+ * at the in point (it starts at most a frame before it — the cut is then exact
+ * to the frame, as the page asks for its generation references), else the
+ * first key frame after the in point. A key frame of a cut's hidden pre-roll
+ * (before 0) never starts one.
  * @param path - the video.
- * @param inMs - the time.
- * @returns its presentation time in seconds, or `undefined` when none follows.
+ * @param inMs - the in point.
+ * @returns the key frame's presentation time in seconds, or `undefined` when none follows.
  */
 async function keyFrameFrom(path: string, inMs: number): Promise<number | undefined> {
   const input = openInput(path)
@@ -523,6 +529,8 @@ async function keyFrameFrom(path: string, inMs: number): Promise<number | undefi
     if (track === null) return undefined
     const sink = new EncodedPacketSink(track)
     let packet = await sink.getKeyPacket((inMs + KEYFRAME_TOLERANCE_MS) / 1000, { verifyKeyPackets: true }) ?? await sink.getFirstKeyPacket({ verifyKeyPackets: true })
+    // The last key frame up to the in point still shows there while the in point lies inside its frame.
+    if (packet !== null && packet.timestamp >= 0 && packet.duration > 0 && inMs < (packet.timestamp + packet.duration) * 1000 - KEYFRAME_TOLERANCE_MS / 2) return packet.timestamp
     while (packet !== null && packet.timestamp * 1000 < inMs - KEYFRAME_TOLERANCE_MS) packet = await sink.getNextKeyPacket(packet, { verifyKeyPackets: true })
     return packet?.timestamp
   } finally {

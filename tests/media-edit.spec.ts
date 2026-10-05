@@ -145,6 +145,31 @@ describe('cutFile', () => {
     expect(result.range).toEqual({ inMs: 1000, outMs: 2520 })
   })
 
+  it('with the shrink boundary starts on the key frame whose picture shows at the in point — an exact cut for a generation reference — not a GOP later', async () => {
+    const source = await writeFixture(join(media, 'src.mp4'), { frames: 75, gop: 25 })
+    // 25 fps: the key frame at 1 s shows from 1000 to 1040 ms. A mark at 1020 ms is on that picture, so the cut starts there.
+    const result = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 1020, outMs: 2500 }, 'shrink')
+    const { times, firstType } = await pictureTimes(result.path)
+    expect(firstType).toBe('key')
+    expect(times[0]).toBe(0)
+    expect(times).toHaveLength(38)
+    expect(Math.min(...times)).toBe(0)
+    expect(result.range).toEqual({ inMs: 1000, outMs: 2520 })
+    // Through the key frame's last millisecond, on the key frame as the probe rounds it, or a little before it: the same start.
+    for (const inMs of [1039, 1000, 1001, 980]) {
+      expect((await cutFile(source, join(media, `clip-${inMs}.mp4`), { inMs, outMs: 2500 }, 'shrink')).range, String(inMs)).toEqual({ inMs: 1000, outMs: 2520 })
+    }
+    // From the next picture on (1040 ms) the key frame no longer shows: the cut starts on the next key frame.
+    expect((await cutFile(source, join(media, 'clip-1040.mp4'), { inMs: 1040, outMs: 2500 }, 'shrink')).range).toEqual({ inMs: 2000, outMs: 2520 })
+    // With B-frames (as real generated clips have), the key frame still starts the cut with nothing before 0.
+    const bframes = await writeFixture(join(media, 'b.mp4'), { frames: 75, gop: 25, bframes: true })
+    const cut = await cutFile(bframes, join(media, 'clip-b.mp4'), { inMs: 1020, outMs: 2500 }, 'shrink')
+    expect(cut.range?.inMs).toBe(1000)
+    const pictures = await pictureTimes(cut.path)
+    expect(pictures.firstType).toBe('key')
+    expect(Math.min(...pictures.times)).toBe(0)
+  })
+
   it('with the shrink boundary refuses a range with no key frame in it', async () => {
     const source = await writeFixture(join(media, 'src.mp4'), { frames: 75, gop: 25 })
     const refused = await cutFile(source, join(media, 'clip-1.mp4'), { inMs: 1100, outMs: 1900 }, 'shrink').catch((error: unknown) => error)
