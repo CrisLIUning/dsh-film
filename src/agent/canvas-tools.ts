@@ -356,8 +356,9 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'canvas_get_document',
-      description: 'Read a bounded page of the SAVED board — nodes with their content previews, prompts, statuses and media task ids, and their links — whether or '
-        + 'not a page is open. This is persisted state, not the live selection or unsaved edits. Follow nextOffset, or pass nodeId for one node: that view '
+      description: 'Read a bounded page of the SAVED board — nodes with their content previews, prompts, statuses, media task ids and generation settings '
+        + '(metadata.cameraMove, metadata.cameraControl), and their links — whether or not a page is open. This is persisted state, not the live selection or '
+        + 'unsaved edits. Follow nextOffset, or pass nodeId for one node: that view '
         + 'adds adoptionTarget (the node\'s exact saved prompt, composerContent and references — story_adopt\'s expectedTarget) and its screenplay links. '
         + 'Never read or write film/canvas/document.json with file tools: it is the live board.',
       parameters: {

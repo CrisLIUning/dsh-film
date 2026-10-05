@@ -715,8 +715,12 @@ describe('generation options (C11)', () => {
     const shot = await savedNode('shot')
     expect(shot.metadata.cameraMove).toEqual({ v: 1, moves: [{ id: 'push-in', speed: 'slow' }, { id: 'orbit-left' }], combine: 'sequence' })
     expect(shot.metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'digital-cinema', lens: 'spherical-prime', focalLength: 35, aperture: 2.8 })
-    // canvas_get_state reads a node's settings.
+    // canvas_get_state reads a node's settings, and so does canvas_get_document's summary (without the schema version).
     expect((await run('canvas_get_state')).nodes.find((node: any) => node.id === 'gen').metadata).toMatchObject({ cameraMove: shot.metadata.cameraMove, cameraControl: shot.metadata.cameraControl })
+    const { v: _move, ...move } = shot.metadata.cameraMove
+    const { v: _camera, ...camera } = shot.metadata.cameraControl
+    expect((await run('canvas_get_document', { nodeId: 'gen' })).node.metadata).toMatchObject({ cameraMove: move, cameraControl: camera })
+    expect((await run('canvas_get_document', {})).nodes.find((node: any) => node.id === 'shot').metadata).toMatchObject({ cameraMove: move, cameraControl: camera })
 
     // Fields left out keep the node's; enabled defaults to true; a null shot size removes it.
     await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { enabled: false } })
@@ -733,6 +737,32 @@ describe('generation options (C11)', () => {
       .toMatchObject({ source: 'persisted', changed: false, applied: [{ nodeId: 'shot', set: ['cameraMove'], changed: false }] })
     expect((await savedBoard()).updatedAt).toBe(before)
     expect(seen).toEqual([])
+  })
+
+  it('canvas_get_document shows the settings compactly, as stored, and a cleared one not at all', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      // As a hand edit or an older page may leave them: extra members, a move without an id, a fourth move, a speed that is not one, numbers as text.
+      { type: 'add_node', id: 'shot', nodeType: 'video', metadata: {
+        cameraMove: { v: 1, moves: [{ id: 'push-in', speed: 'slow', note: 'x' }, { id: 'orbit-left', speed: 'brisk' }, { speed: 'fast' }, { id: 'crane-up' }, { id: 'tilt-up' }], combine: 'together', extra: true },
+        cameraControl: { v: 1, enabled: false, look: 'film-35mm', lens: 'anamorphic', focalLength: '85mm', aperture: 2.8, shotSize: 'close', angle: 'sideways', extra: { deep: true } },
+      } },
+      { type: 'add_node', id: 'cleared', nodeType: 'video', metadata: { cameraMove: null, cameraControl: null } },
+      { type: 'add_node', id: 'other', nodeType: 'config', metadata: { generationMode: 'video', cameraMove: { v: 2, moves: [{ id: 'push-in' }] }, cameraControl: { v: 2, look: 'film-35mm' } } },
+      { type: 'add_node', id: 'bare', nodeType: 'image', metadata: { cameraControl: {} } },
+    ] })
+    const summary = async (id: string): Promise<any> => (await run('canvas_get_document', { nodeId: id })).node.metadata
+    const shot = await summary('shot')
+    expect(shot.cameraMove).toEqual({ moves: [{ id: 'push-in', speed: 'slow' }, { id: 'orbit-left' }, { id: 'crane-up' }], combine: 'together' })
+    expect(shot.cameraControl).toEqual({ enabled: false, look: 'film-35mm', lens: 'anamorphic', focalLength: '85mm', aperture: 2.8, shotSize: 'close' })
+    // Cleared (null) and another schema version are no setting; a setting without members applies with the page's defaults.
+    for (const id of ['cleared', 'other']) {
+      const metadata = await summary(id)
+      expect(metadata, id).not.toHaveProperty('cameraMove')
+      expect(metadata, id).not.toHaveProperty('cameraControl')
+    }
+    expect((await summary('bare')).cameraControl).toEqual({ enabled: true })
+    expect(tools.get('canvas_get_document')!.description).toContain('metadata.cameraMove, metadata.cameraControl')
   })
 
   it('clears with null, which every reader takes as no setting (update_node cannot delete a key)', async () => {

@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { validateBoardOps } from './board-ops.js'
 import type { BoardConnection, BoardNode, BoardOp, BoardSnapshot } from './board-ops.js'
-import { planGenerationOptions } from './generation-options.js'
+import { compactCameraControl, compactCameraMove, planGenerationOptions } from './generation-options.js'
 import type { CheckedGenerationOptions } from './generation-options.js'
 import { CanvasToolError } from './tool-error.js'
 
@@ -483,6 +483,11 @@ function summarizeSavedNode(value: unknown, projectId: string, exact = false): R
   for (const key of ['prompt', 'composerContent']) {
     if (typeof metadata[key] === 'string') saved[key] = savedText(metadata[key], 1600)
   }
+  // The generation settings (C1) canvas_get_state shows whole, compactly; a cleared one (null) is no setting.
+  const cameraMove = compactCameraMove(metadata.cameraMove)
+  if (cameraMove !== undefined) saved.cameraMove = cameraMove
+  const cameraControl = compactCameraControl(metadata.cameraControl)
+  if (cameraControl !== undefined) saved.cameraControl = cameraControl
   return {
     id: node.id, type: node.type, title: savedText(metadata.title ?? node.title, 200),
     position: node.position, width: node.width, height: node.height,

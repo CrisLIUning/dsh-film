@@ -220,6 +220,52 @@ export function sanitizeCameraControl(value: unknown, catalog: CameraControlCata
   return setting
 }
 
+const shortString = (value: unknown, max: number): string | undefined => (typeof value === 'string' && value !== '' ? value.slice(0, max) : undefined)
+
+/**
+ * A stored camera move as the saved board's summary shows it (canvas_get_document;
+ * canvas_get_state shows the value whole): the moves, each an id and a speed
+ * when it has one of the three, at most three, and how they combine — no
+ * schema version, no other members. Read as stored, without the catalogue.
+ * @param value - metadata.cameraMove.
+ * @returns the compact move, or undefined when there is none (not an object, cleared with null, another schema version, no moves).
+ */
+export function compactCameraMove(value: unknown): { moves: Array<{ id: string; speed?: CameraMoveSpeed }>; combine: 'sequence' | 'together' } | undefined {
+  if (!isRecord(value) || (value.v !== undefined && value.v !== 1) || !Array.isArray(value.moves)) return undefined
+  const moves: Array<{ id: string; speed?: CameraMoveSpeed }> = []
+  for (const raw of value.moves) {
+    if (!isRecord(raw)) continue
+    const id = shortString(raw.id, 80)
+    if (id === undefined) continue
+    moves.push(isSpeed(raw.speed) ? { id, speed: raw.speed } : { id })
+    if (moves.length === CAMERA_MOVE_LIMIT) break
+  }
+  return moves.length === 0 ? undefined : { moves, combine: value.combine === 'together' ? 'together' : 'sequence' }
+}
+
+/**
+ * Stored camera settings as the saved board's summary shows them
+ * (canvas_get_document; canvas_get_state shows the value whole): enabled (a
+ * setting without it applies), look, lens, focal length, aperture, and the
+ * shot size and angle when they are listed ones — no schema version, no other
+ * members. Read as stored, without the catalogue: an unknown look stays as it
+ * is (the page would use its default), and a focal length or aperture is not snapped.
+ * @param value - metadata.cameraControl.
+ * @returns the compact settings, or undefined when there are none (not an object, cleared with null, another schema version).
+ */
+export function compactCameraControl(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || (value.v !== undefined && value.v !== 1)) return undefined
+  const stop = (item: unknown): number | string | undefined => (typeof item === 'number' ? (Number.isFinite(item) ? item : undefined) : shortString(item, 16))
+  const setting: Record<string, unknown> = { enabled: value.enabled !== false }
+  const fields: Array<[string, unknown]> = [
+    ['look', shortString(value.look, 80)], ['lens', shortString(value.lens, 80)], ['focalLength', stop(value.focalLength)], ['aperture', stop(value.aperture)],
+  ]
+  for (const [key, item] of fields) if (item !== undefined) setting[key] = item
+  if ((CAMERA_SHOT_SIZES as readonly unknown[]).includes(value.shotSize)) setting.shotSize = value.shotSize
+  if ((CAMERA_ANGLES as readonly unknown[]).includes(value.angle)) setting.angle = value.angle
+  return setting
+}
+
 /** The prefix of the camera line (C3). */
 const CAMERA_DIRECTION_PREFIX: Record<PromptLanguage, string> = {
   zh: '拍摄方式（只描述成像，不要在画面里出现相机或摄影器材）：',
