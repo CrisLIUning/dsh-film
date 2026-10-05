@@ -167,6 +167,12 @@ describe('the tool set', () => {
     expect(tools.get('media_get_task')!.description).toContain('video_*')
     expect(tools.get('media_get_task')!.description).toContain('landedNodeId')
     expect(tools.get('media_cancel_task')!.description).toContain('video_*')
+    // expectedContent goes to the tools that take it — not video_join or video_get_subtitles — as the guidance (and README) say,
+    // and what each result carries is said per operation.
+    const takesContent = (name: string): boolean => Object.keys((tools.get(name)!.parameters as any).properties).includes('expectedContent')
+    expect(groups.editing!.tools().map(tool => tool.name).filter(takesContent)).toEqual(['video_clip', 'video_split', 'video_render_clip', 'video_extract_audio', 'video_set_subtitles'])
+    expect(FILM_GUIDANCE).toContain('expectedContent to video_clip, video_split, video_render_clip and video_extract_audio (video_join takes node ids only)')
+    expect(FILM_GUIDANCE).toContain('a join its clips\' subtitles and director shots, a sound copy nothing')
     // The subtitle tools are in the group, and the group and the guidance say so (in the word the removal guard allows).
     expect(groups.editing!.description).toMatch(/subtitle/u)
     expect(FILM_GUIDANCE).toContain('### Subtitles')
