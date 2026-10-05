@@ -95,6 +95,8 @@ const NODE_SPECS: Readonly<Record<string, { width: number; height: number; title
   audio: { width: 340, height: 120, title: '音频', metadata: { content: '', status: 'idle' } },
   group: { width: 760, height: 480, title: '组', metadata: { status: 'idle' } },
   director: { width: 420, height: 300, title: '3D 导演台', metadata: { status: 'idle' } },
+  // A prompt skill node (W10): one skill applied to the image, video and generation nodes it is wired into.
+  skill: { width: 300, height: 220, title: '提示词技能', metadata: { status: 'idle' } },
 }
 
 /** Node types this module can create on a closed board. */

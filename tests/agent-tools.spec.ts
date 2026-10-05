@@ -119,18 +119,27 @@ describe('the tool set', () => {
   it('declares the generation-option schemas of C11 and teaches them as node settings, never prompt text', () => {
     const schema = (name: string): any => tools.get(name)!.parameters
     const set = schema('canvas_set_generation_options')
-    expect(Object.keys(set.properties)).toEqual(['target', 'nodeIds', 'cameraMove', 'cameraControl', 'preset', 'clear'])
+    expect(Object.keys(set.properties)).toEqual(['target', 'nodeIds', 'cameraMove', 'cameraControl', 'skills', 'frameRoles', 'preset', 'clear'])
     expect(set.required).toEqual(['nodeIds'])
     expect(set.properties.cameraMove.required).toEqual(['moves'])
     expect(set.properties.cameraMove.properties.moves.items.properties.speed.enum).toEqual(['slow', 'steady', 'fast'])
     expect(set.properties.cameraMove.properties.combine.enum).toEqual(['sequence', 'together'])
     expect(Object.keys(set.properties.cameraControl.properties)).toEqual(['enabled', 'look', 'lens', 'focalLength', 'aperture', 'shotSize', 'angle'])
     expect(set.properties.cameraControl.properties.shotSize.oneOf.map((branch: any) => branch.type)).toEqual(['string', 'null'])
-    expect(set.properties.clear.items.enum).toEqual(['cameraMove', 'cameraControl'])
-    expect(Object.keys(schema('canvas_create_generation_flow').properties)).toEqual(expect.arrayContaining(['cameraMove', 'cameraControl', 'preset']))
-    expect(schema('canvas_generation_options').properties.kind.enum).toEqual(['camera_moves', 'camera', 'presets'])
-    for (const text of ['canvas_generation_options', 'canvas_set_generation_options', 'never write them into prompt text', 'CANVAS_PROMPT_OVER_LIMIT']) expect(FILM_GUIDANCE).toContain(text)
+    expect(Object.keys(set.properties.skills.items.properties)).toEqual(['id', 'vars', 'as'])
+    expect(set.properties.skills.items.required).toEqual(['id'])
+    expect(set.properties.skills.items.properties.as.enum).toEqual(['attach', 'node'])
+    expect(Object.keys(set.properties.frameRoles.properties)).toEqual(['first', 'last'])
+    expect(set.properties.frameRoles.properties.first.oneOf.map((branch: any) => branch.type)).toEqual(['string', 'null'])
+    expect(set.properties.frameRoles.description).toContain('image-to-video')
+    expect(set.properties.clear.items.enum).toEqual(['cameraMove', 'cameraControl', 'skills', 'frameRoles'])
+    expect(Object.keys(schema('canvas_create_generation_flow').properties)).toEqual(expect.arrayContaining(['cameraMove', 'cameraControl', 'skills', 'frameRoles', 'preset']))
+    expect(schema('canvas_generation_options').properties.kind.enum).toEqual(['camera_moves', 'camera', 'skills', 'presets'])
+    for (const text of ['canvas_generation_options', 'canvas_set_generation_options', 'never write them into prompt text', 'CANVAS_PROMPT_OVER_LIMIT', 'not agent skills', 'film-screenwriting', 'frameRoles', 'first-last-frame']) {
+      expect(FILM_GUIDANCE).toContain(text)
+    }
     expect(tools.get('canvas_set_generation_options')!.description).toContain('never write them into prompt text')
+    expect(tools.get('canvas_generation_options')!.description).toContain('not agent skills')
   })
 
   it('puts director_models in the director group and teaches director_stage place_model', () => {
@@ -672,7 +681,7 @@ describe('generation options (C11)', () => {
     // Only video takes camera moves.
     expect(await run('canvas_generation_options', { kind: 'camera_moves', mode: 'image' })).toMatchObject({ items: [], note: 'Camera moves are for video generation only.' })
     await expect(run('canvas_generation_options', { kind: 'camera_moves', category: 'dolly' })).rejects.toThrow(/^CANVAS_OPTION_UNKNOWN: Unknown category "dolly"\. The categories: fixed \(固定\), push \(推\)/u)
-    await expect(run('canvas_generation_options', { kind: 'camera', category: 'push' })).rejects.toThrow(/CANVAS_OPTION_UNKNOWN: category filters camera_moves only/u)
+    await expect(run('canvas_generation_options', { kind: 'camera', category: 'push' })).rejects.toThrow(/CANVAS_OPTION_UNKNOWN: category filters camera_moves and skills only/u)
 
     const camera = await run('canvas_generation_options', { kind: 'camera' })
     expect(camera.items.looks.map((entry: any) => entry.id)).toEqual(['digital-cinema', 'film-35mm', 'film-16mm', 'phone-documentary', 'vintage-ccd'])
@@ -684,8 +693,31 @@ describe('generation options (C11)', () => {
 
     expect((await run('canvas_generation_options', { kind: 'presets', mode: 'video' })).items.map((preset: any) => preset.id)).toEqual(['p.vertical-drama', 'p.landscape-trailer', 'p.cheap-preview'])
     expect((await run('canvas_generation_options', { kind: 'presets' })).items).toHaveLength(6)
-    await expect(run('canvas_generation_options', { kind: 'skills' })).rejects.toThrow(/kind/u)
+    await expect(run('canvas_generation_options', { kind: 'lenses' })).rejects.toThrow(/kind/u)
     expect(tools.get('canvas_generation_options')!.isConcurrencySafe?.({ kind: 'camera' } as never)).toBe(true)
+  })
+
+  it('canvas_generation_options lists the prompt skills of the canvas build, with their templates and variables', async () => {
+    const skills = await run('canvas_generation_options', { kind: 'skills' })
+    expect(skills).toMatchObject({ catalogVersion: '2026-10-05.1', kind: 'skills' })
+    expect(skills.items).toHaveLength(23)
+    expect(skills.categories).toEqual(['storyboard', 'design-sheet', 'performance', 'camera', 'style', 'sound', 'commerce', 'continuity', 'utility'])
+    const sheet = skills.items.find((skill: any) => skill.id === 'vd.character-sheet')
+    expect(sheet).toMatchObject({
+      version: 1, name: { zh: '角色设定卡' }, kind: 'wrap', appliesTo: ['image'], purpose: 'character-sheet', category: 'design-sheet',
+      variables: expect.arrayContaining([expect.objectContaining({ key: 'name', required: true })]), composes: { motion: 'drop', camera: 'drop' },
+      template: expect.stringContaining('{{prompt}}'),
+    })
+    expect(skills.items.find((skill: any) => skill.id === 'vd.first-last-bridge')).toMatchObject({ videoModes: ['first-last-frame'] })
+    expect(skills.note).toContain('not agent skills')
+    expect(skills.note).toContain('as: "node"')
+    // By mode and by category.
+    const text = await run('canvas_generation_options', { kind: 'skills', mode: 'text' })
+    expect(text.items.map((skill: any) => skill.id)).toEqual(['vd.script-to-shots'])
+    const video = await run('canvas_generation_options', { kind: 'skills', mode: 'video' })
+    expect(video.items.every((skill: any) => skill.appliesTo.includes('video'))).toBe(true)
+    expect((await run('canvas_generation_options', { kind: 'skills', category: 'sound' })).items.map((skill: any) => skill.id)).toEqual(['vd.sound-bed'])
+    await expect(run('canvas_generation_options', { kind: 'skills', category: 'push' })).rejects.toThrow(/^CANVAS_OPTION_UNKNOWN: Unknown skill category "push"\. The categories: storyboard, design-sheet/u)
   })
 
   it('answers CANVAS_CATALOG_MISSING when the build has no catalogue, and clears without one', async () => {
@@ -833,14 +865,14 @@ describe('generation options (C11)', () => {
     expect((await refused('canvas_set_generation_options', { nodeIds: ['gone'], cameraControl: {} })).code).toBe('CANVAS_NODE_NOT_FOUND')
     expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'static' }, { id: 'push-in' }] } })).message).toMatch(/CANVAS_OPTION_INVALID: static \(固定镜头\) stands alone/u)
     expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'push-in' }] }, clear: ['cameraMove'] })).message).toMatch(/both set and cleared/u)
-    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'] })).message).toMatch(/Pass cameraMove, cameraControl, preset or clear/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'] })).message).toMatch(/Pass cameraMove, cameraControl, skills, frameRoles, preset or clear/u)
     expect((await refused('canvas_set_generation_options', { nodeIds: [] })).code).toBe('CANVAS_OPTION_INVALID')
     expect((await refused('canvas_set_generation_options', { nodeIds: ['shot', 'shot'], clear: ['cameraMove'] })).code).toBe('CANVAS_OPTION_INVALID')
     await expect(run('canvas_set_generation_options', { nodeIds: ['shot'], cameraControl: { shotSize: 'cowboy' } })).rejects.toThrow(/shotSize/u)
     expect(JSON.stringify(await savedBoard())).toBe(board)
   })
 
-  it('applies a preset to the nodes of its mode and says what it skipped', async () => {
+  it('applies a preset to the nodes of its mode, attaches its skills and says what it skipped', async () => {
     await startFilm()
     await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }, { type: 'add_node', id: 'still', nodeType: 'image' }] })
     const drama = await run('canvas_set_generation_options', { nodeIds: ['shot', 'still'], preset: 'p.vertical-drama' })
@@ -850,9 +882,20 @@ describe('generation options (C11)', () => {
     ])
     expect(drama.note).toContain('fits a preset')
     expect((await savedNode('shot')).metadata).toMatchObject({ size: '9:16', vquality: '720', seconds: '5', generateAudio: 'true' })
+    // As the canvas's presets: the sheet skill is attached without its required name, which the page leaves out until it is set.
     const card = await run('canvas_set_generation_options', { nodeIds: ['still'], preset: 'p.character-card', cameraControl: { focalLength: 85 } })
-    expect(card.applied).toEqual([{ nodeId: 'still', set: ['size', 'count', 'cameraControl'], cleared: [], skipped: [{ field: 'skills', reason: expect.stringContaining('vd.character-sheet') }], changed: true }])
-    expect((await savedNode('still')).metadata).toMatchObject({ size: '1536x1024', count: 1, cameraControl: { focalLength: 85 } })
+    expect(card.applied).toEqual([{
+      nodeId: 'still', set: ['size', 'count', 'promptPurpose', 'cameraControl', 'skills'], cleared: [], skipped: [], changed: true,
+      notes: [expect.stringMatching(/^vd\.character-sheet \(角色设定卡\) needs name \(角色名\): pass it in vars.* Until then the lines that use it are left out\.$/u)],
+      skills: [{ id: 'vd.character-sheet', source: 'node', state: 'active', missing: ['name'] }],
+    }])
+    const still = (await savedNode('still')).metadata
+    expect(still).toMatchObject({ size: '1536x1024', count: 1, promptPurpose: 'character-sheet', cameraControl: { focalLength: 85 } })
+    expect(still.promptSkills).toEqual([{ id: 'vd.character-sheet', version: 1, vars: { style: '写实电影美术' }, snapshot: expect.objectContaining({ kind: 'wrap' }) }])
+    // The name given afterwards completes it.
+    const named = await run('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.character-sheet', vars: { name: '林' } }] })
+    expect(named.applied[0].skills).toEqual([{ id: 'vd.character-sheet', source: 'node', state: 'active' }])
+    expect((await savedNode('still')).metadata.promptSkills[0].vars).toEqual({ style: '写实电影美术', name: '林' })
   })
 
   it('canvas_create_generation_flow stores the settings on the closed board\'s generation node', async () => {
@@ -876,6 +919,210 @@ describe('generation options (C11)', () => {
     expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'text', cameraControl: {} })).code).toBe('CANVAS_OPTION_MODE')
     expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'image', preset: 'p.vertical-drama' })).code).toBe('CANVAS_OPTION_MODE')
     expect((await refused('canvas_create_generation_flow', { prompt: '雨夜', mode: 'video', cameraMove: { moves: [{ id: 'fly-through' }] } })).code).toBe('CANVAS_OPTION_UNKNOWN')
+    expect((await savedBoard()).nodes).toHaveLength(before)
+  })
+
+  /** The canvas catalogue's entry for a skill, and the snapshot a node freezes from it (variables included, C.4). */
+  const catalogSkill = async (id: string): Promise<any> => {
+    const entry = JSON.parse(await readFile(join(catalogRoot, 'vibedev-skills.json'), 'utf8')).skills.find((skill: { id: string }) => skill.id === id)
+    const { id: _id, version: _version, summary: _summary, category: _category, notes: _notes, tags: _tags, ...snapshot } = entry
+    return { entry, snapshot }
+  }
+
+  it('attaches prompt skills on a closed board as frozen snapshots copied from the catalogue (C11, C.4)', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'still', nodeType: 'image' },
+      { type: 'add_node', id: 'shot', nodeType: 'video' },
+      { type: 'add_node', id: 'gen', nodeType: 'config', metadata: { generationMode: 'text' } },
+    ] })
+    const result = await run('canvas_set_generation_options', { nodeIds: ['still', 'shot'], skills: [{ id: 'vd.storyboard-frame', vars: { setting: '雨夜客栈' } }, { id: 'vd.style-lock', vars: { style: '水墨' } }] })
+    expect(result.source).toBe('persisted')
+    expect(result.applied).toEqual([
+      {
+        nodeId: 'still', set: ['promptPurpose', 'skills'], cleared: [], skipped: [], changed: true,
+        skills: [{ id: 'vd.storyboard-frame', source: 'node', state: 'active' }, { id: 'vd.style-lock', source: 'node', state: 'active' }],
+      },
+      {
+        nodeId: 'shot', set: ['skills'], cleared: [], changed: true,
+        skipped: [{ field: 'skills', reason: 'vd.storyboard-frame is for image generation; this is a video node' }],
+        skills: [{ id: 'vd.style-lock', source: 'node', state: 'active' }],
+      },
+    ])
+    const frame = await catalogSkill('vd.storyboard-frame')
+    const still = (await savedNode('still')).metadata
+    // The snapshot is the catalogue's text and variables; the defaults are filled in; nothing says the writer applied it.
+    expect(still.promptSkills[0]).toEqual({ id: 'vd.storyboard-frame', version: 1, vars: { shot_size: '中景', placement: '画面三分线处', setting: '雨夜客栈' }, snapshot: frame.snapshot })
+    expect(still.promptSkills[1]).toMatchObject({ id: 'vd.style-lock', vars: { style: '水墨' }, snapshot: { kind: 'append' } })
+    expect(JSON.stringify(still.promptSkills)).not.toContain('appliedBy')
+    expect(still.promptPurpose).toBe('shot')
+    // canvas_get_state and canvas_get_document read them as ids, kinds, names and values.
+    const compact = [{ id: 'vd.storyboard-frame', version: 1, kind: 'wrap', name: '分镜画面描述', vars: { shot_size: '中景', placement: '画面三分线处', setting: '雨夜客栈' } }, { id: 'vd.style-lock', version: 1, kind: 'append', name: '风格统一', vars: { style: '水墨' } }]
+    expect((await run('canvas_get_state')).nodes.find((node: any) => node.id === 'still').metadata.promptSkills).toEqual(compact)
+    expect((await run('canvas_get_document', { nodeId: 'still' })).node.metadata.promptSkills).toEqual(compact)
+    // A text-mode generation node takes the text skill.
+    expect((await run('canvas_set_generation_options', { nodeIds: ['gen'], skills: [{ id: 'vd.script-to-shots', vars: { shot_count: 8 } }] })).applied[0].skills).toEqual([{ id: 'vd.script-to-shots', source: 'node', state: 'active' }])
+    expect((await savedNode('gen')).metadata.promptSkills[0].vars).toEqual({ shot_count: '8' })
+
+    // Another wrap skill replaces the node's; the attached append skill keeps its frozen version and takes the new value.
+    const swapped = await run('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.cover-poster', vars: { title: '雨夜来客' } }, { id: 'vd.style-lock', vars: { palette: '青灰' } }] })
+    expect(swapped.applied[0].notes).toEqual(['vd.cover-poster replaced vd.storyboard-frame (a node takes one wrap skill)'])
+    expect((await savedNode('still')).metadata.promptSkills.map((skill: any) => [skill.id, skill.vars])).toEqual([['vd.cover-poster', { title: '雨夜来客' }], ['vd.style-lock', { style: '水墨', palette: '青灰' }]])
+
+    // Refused before anything is written: a required value left empty, a third append skill, two wrap skills, unknown ids and variables.
+    const board = JSON.stringify(await savedBoard())
+    const vars = await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.character-sheet' }] })
+    expect(vars.code).toBe('CANVAS_SKILL_VARS')
+    expect(vars.message).toMatch(/^CANVAS_SKILL_VARS: vd\.character-sheet \(角色设定卡\) needs name \(角色名\) on still: pass it in vars/u)
+    await run('canvas_set_generation_options', { nodeIds: ['shot'], skills: [{ id: 'vd.lighting-mood', vars: { mood: '压抑' } }] })
+    const third = await refused('canvas_set_generation_options', { nodeIds: ['shot'], skills: [{ id: 'vd.identity-lock' }] })
+    expect(third.code).toBe('CANVAS_SKILL_LIMIT')
+    expect(third.message).toMatch(/shot already has 2 append skills \(vd\.style-lock, vd\.lighting-mood\)/u)
+    const afterShot = JSON.stringify(await savedBoard())
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.character-sheet', vars: { name: '林' } }, { id: 'vd.cover-poster', vars: { title: 'x' } }] })).code).toBe('CANVAS_SKILL_LIMIT')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.nope' }] })).message).toMatch(/^CANVAS_OPTION_UNKNOWN: Unknown prompt skill id: vd\.nope\. The valid ids: vd\.storyboard-frame \(分镜画面描述\)/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.style-lock', vars: { mood: 'x' } }] })).message).toMatch(/CANVAS_SKILL_VARS: vd\.style-lock \(风格统一\) has no variable "mood"\. It declares: style \(风格关键词, required\)/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.style-lock', vars: { style: ['x'] } }] })).code).toBe('CANVAS_SKILL_VARS')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['still'], skills: [] })).code).toBe('CANVAS_OPTION_INVALID')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['shot'], skills: [{ id: 'vd.character-sheet', vars: { name: '林' } }] })).message).toMatch(/^CANVAS_OPTION_MODE: None of these nodes takes skill vd\.character-sheet: shot/u)
+    expect(JSON.stringify(await savedBoard())).not.toBe(board)
+    expect(JSON.stringify(await savedBoard())).toBe(afterShot)
+
+    // clear removes the node's own skills (null); with skills given too it replaces them.
+    const replaced = await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['skills'], skills: [{ id: 'vd.identity-lock' }] })
+    expect(replaced.applied[0]).toMatchObject({ set: ['skills'], skills: [{ id: 'vd.identity-lock', state: 'active' }] })
+    expect((await savedNode('shot')).metadata.promptSkills.map((skill: any) => skill.id)).toEqual(['vd.identity-lock'])
+    expect((await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['skills'] })).applied[0]).toMatchObject({ cleared: ['skills'], skills: [], changed: true })
+    expect((await savedNode('shot')).metadata).toHaveProperty('promptSkills', null)
+    expect((await run('canvas_get_document', { nodeId: 'shot' })).node.metadata).not.toHaveProperty('promptSkills')
+  })
+
+  it('adds a skill node on a closed board, wired into the nodes it applies to, and wires the same one again later', async () => {
+    const film = await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'a', nodeType: 'image', position: { x: 0, y: 100 } },
+      { type: 'add_node', id: 'b', nodeType: 'config', position: { x: 400, y: 40 }, metadata: { generationMode: 'video' } },
+      { type: 'add_node', id: 'c', nodeType: 'config', position: { x: 800, y: 40 }, metadata: { generationMode: 'audio' } },
+      { type: 'add_node', id: 'note', nodeType: 'text', metadata: { content: '镜 1' } },
+    ] })
+    const seen: ProjectEvent[] = []
+    events.subscribe(cwd, (event) => { seen.push(event) })
+    const result = await run('canvas_set_generation_options', { nodeIds: ['a', 'b', 'c'], skills: [{ id: 'vd.lighting-mood', vars: { mood: '冷峻' }, as: 'node' }] })
+    const skillId = result.skillNodes[0].id as string
+    expect(result.skillNodes).toEqual([{ id: expect.stringMatching(/^skill-/u), skill: 'vd.lighting-mood', version: 1, created: true, wiredTo: ['a', 'b'] }])
+    expect(result.applied).toEqual([
+      { nodeId: 'a', set: [], cleared: [], skipped: [], changed: false, skillNodes: [skillId], skills: [{ id: 'vd.lighting-mood', source: 'skill-node', nodeId: skillId, state: 'active' }] },
+      { nodeId: 'b', set: [], cleared: [], skipped: [], changed: false, skillNodes: [skillId], skills: [{ id: 'vd.lighting-mood', source: 'skill-node', nodeId: skillId, state: 'active' }] },
+      { nodeId: 'c', set: [], cleared: [], changed: false, skipped: [{ field: 'skills', reason: 'vd.lighting-mood is for image and video generation; this generation node is in audio mode' }] },
+    ])
+    expect(seen).toContainEqual({ type: 'story-canvas-changed', projectId: film.id, boardId: film.id })
+    const board = await savedBoard()
+    const node = board.nodes.find((item: any) => item.id === skillId)
+    const lighting = await catalogSkill('vd.lighting-mood')
+    // The canvas's skill node: 300×220, right of everything, its skill frozen with the catalogue version and its values (defaults filled).
+    expect(node).toEqual({
+      id: skillId, type: 'skill', title: '光影氛围', position: { x: 1220, y: 40 }, width: 300, height: 220,
+      metadata: { status: 'idle', skillSnapshot: { ...lighting.snapshot, id: 'vd.lighting-mood', version: 1, catalogVersion: '2026-10-05.1', frozenAt: expect.any(String) }, skillVars: { mood: '冷峻' } },
+    })
+    expect(board.connections.filter((link: any) => link.fromNodeId === skillId).map((link: any) => link.toNodeId)).toEqual(['a', 'b'])
+    expect((await run('canvas_get_document', { nodeId: skillId })).node.metadata.skill).toEqual({ id: 'vd.lighting-mood', version: 1, catalogVersion: '2026-10-05.1', kind: 'append', name: '光影氛围', appliesTo: ['image', 'video'], vars: { mood: '冷峻' } })
+    expect((await run('canvas_get_state')).nodes.find((item: any) => item.id === skillId).metadata.skillSnapshot).toEqual({ id: 'vd.lighting-mood', version: 1, catalogVersion: '2026-10-05.1', kind: 'append', name: '光影氛围', appliesTo: ['image', 'video'] })
+
+    // The same skill with the same values for another node: the skill node already there is wired in, nothing new is added; nodes that have it are skipped.
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'd', nodeType: 'video' }] })
+    const again = await run('canvas_set_generation_options', { nodeIds: ['a', 'd'], skills: [{ id: 'vd.lighting-mood', vars: { mood: '冷峻' }, as: 'node' }] })
+    expect(again.skillNodes).toEqual([{ id: skillId, skill: 'vd.lighting-mood', version: 1, created: false, wiredTo: ['d'] }])
+    expect(again.applied[0].skipped).toEqual([{ field: 'skills', reason: `already takes vd.lighting-mood from skill node ${skillId}` }])
+    expect((await savedBoard()).nodes.filter((item: any) => item.type === 'skill')).toHaveLength(1)
+    const unchanged = await run('canvas_set_generation_options', { nodeIds: ['a'], skills: [{ id: 'vd.lighting-mood', vars: { mood: '冷峻' }, as: 'node' }] })
+    expect(unchanged).toMatchObject({ source: 'persisted', changed: false })
+    expect(unchanged).not.toHaveProperty('skillNodes')
+    // A node's own wrap skill wins over a skill node's.
+    await run('canvas_set_generation_options', { nodeIds: ['a'], skills: [{ id: 'vd.storyboard-frame' }] })
+    const wrap = await run('canvas_set_generation_options', { nodeIds: ['a'], skills: [{ id: 'vd.cover-poster', vars: { title: '雨' }, as: 'node' }] })
+    expect(wrap.applied[0].skills).toEqual([
+      { id: 'vd.storyboard-frame', source: 'node', state: 'active' },
+      { id: 'vd.lighting-mood', source: 'skill-node', nodeId: skillId, state: 'active' },
+      { id: 'vd.cover-poster', source: 'skill-node', nodeId: wrap.skillNodes[0].id, state: 'wrap-ignored' },
+    ])
+    // A skill node with a required value left empty is refused; so is a skill no node takes; a skill node takes no input and feeds only image, video and generation nodes.
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['a'], skills: [{ id: 'vd.style-lock', as: 'node' }] })).message).toMatch(/^CANVAS_SKILL_VARS: vd\.style-lock \(风格统一\) needs style \(风格关键词\) \(the skill node\)/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['c'], skills: [{ id: 'vd.identity-lock', as: 'node' }] })).code).toBe('CANVAS_OPTION_MODE')
+    expect((await refused('canvas_connect_nodes', { connections: [{ fromNodeId: skillId, toNodeId: 'note' }] })).message).toMatch(/^CANVAS_OPTION_TARGET: A skill node applies to image, video and generation \(config\) nodes; note is a text node/u)
+    expect((await refused('canvas_connect_nodes', { connections: [{ fromNodeId: 'a', toNodeId: skillId }] })).message).toMatch(/takes no input/u)
+  })
+
+  it('sets the first and last frames of a video generation node and reads them back (C1 frameRoles)', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'f1', nodeType: 'image', metadata: { content: '/api/projects/p/raw/canvas/media/1.png' } },
+      { type: 'add_node', id: 'f2', nodeType: 'image', metadata: { content: '/api/projects/p/raw/canvas/media/2.png' } },
+      { type: 'add_node', id: 'empty', nodeType: 'image' },
+      { type: 'add_node', id: 'gen', nodeType: 'config', metadata: { generationMode: 'video' } },
+      { type: 'add_node', id: 'still', nodeType: 'image' },
+      { type: 'connect_nodes', fromNodeId: 'f1', toNodeId: 'gen' },
+      { type: 'connect_nodes', fromNodeId: 'f2', toNodeId: 'gen' },
+      { type: 'connect_nodes', fromNodeId: 'empty', toNodeId: 'gen' },
+    ] })
+    const set = await run('canvas_set_generation_options', { nodeIds: ['gen', 'still'], frameRoles: { first: 'f2', last: 'f1' } })
+    expect(set.applied).toEqual([
+      {
+        nodeId: 'gen', set: ['frameRoles'], cleared: [], skipped: [], changed: true,
+        notes: [expect.stringMatching(/^first and last frames apply only once the node's video mode is image-to-video \(图生视频\) or first-last-frame \(首尾帧\); this node's is not set\./u)],
+      },
+      { nodeId: 'still', set: [], cleared: [], changed: false, skipped: [{ field: 'frameRoles', reason: 'first and last frames are for video; this is an image node' }] },
+    ])
+    expect((await savedNode('gen')).metadata.frameRoles).toEqual({ first: 'f2', last: 'f1' })
+    expect((await run('canvas_get_document', { nodeId: 'gen' })).node.metadata.frameRoles).toEqual({ first: 'f2', last: 'f1' })
+    expect((await run('canvas_get_state')).nodes.find((node: any) => node.id === 'gen').metadata.frameRoles).toEqual({ first: 'f2', last: 'f1' })
+    // Giving the last frame the first frame's image swaps them, as the page's slots do; null removes a role; in a frame mode there is no note.
+    await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'gen', metadata: { videoMode: 'first-last-frame' } }] })
+    const swapped = await run('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: { last: 'f2' } })
+    expect(swapped.applied[0]).not.toHaveProperty('notes')
+    expect((await savedNode('gen')).metadata.frameRoles).toEqual({ first: 'f1', last: 'f2' })
+    await run('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: { first: null } })
+    expect((await savedNode('gen')).metadata.frameRoles).toEqual({ last: 'f2' })
+    await run('canvas_set_generation_options', { nodeIds: ['gen'], clear: ['frameRoles'] })
+    expect((await savedNode('gen')).metadata.frameRoles).toBeNull()
+    // Only images the node takes, with content: refused with its images listed when no node takes the roles.
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: { first: 'empty' } })).message)
+      .toMatch(/^CANVAS_OPTION_MODE: None of these nodes takes frameRoles: gen \(empty is not among the images this node takes \(f1, f2\)\)/u)
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: { first: 'f1', last: 'f1' } })).code).toBe('CANVAS_OPTION_INVALID')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: {} })).code).toBe('CANVAS_OPTION_INVALID')
+    expect((await refused('canvas_set_generation_options', { nodeIds: ['gen'], frameRoles: { first: 'f1' }, clear: ['frameRoles'] })).message).toMatch(/frameRoles is both set and cleared/u)
+  })
+
+  it('canvas_create_generation_flow stores skills, a skill node and frame roles on the closed board\'s generation node', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [
+      { type: 'add_node', id: 'f1', nodeType: 'image', metadata: { content: '/api/projects/p/raw/canvas/media/1.png' } },
+      { type: 'add_node', id: 'f2', nodeType: 'image', metadata: { content: '/api/projects/p/raw/canvas/media/2.png' } },
+    ] })
+    const flow = await run('canvas_create_generation_flow', {
+      prompt: '她推门而入', mode: 'video', referenceNodeIds: ['f1', 'f2'], frameRoles: { first: 'f2', last: 'f1' },
+      skills: [{ id: 'vd.dialogue-shot', vars: { speaker: '林', lines: '你来晚了。' } }, { id: 'vd.style-lock', vars: { style: '黑色电影' }, as: 'node' }],
+    })
+    const config = flow.nodes.find((node: any) => node.type === 'config')
+    const skillNode = flow.nodes.find((node: any) => node.type === 'skill')
+    // The reply shows the skills compactly; the board holds the frozen snapshot.
+    expect(config.metadata).toMatchObject({ generationMode: 'video', frameRoles: { first: 'f2', last: 'f1' }, promptSkills: [{ id: 'vd.dialogue-shot', version: 1, kind: 'wrap', vars: { speaker: '林', lines: '你来晚了。' } }] })
+    expect(skillNode).toMatchObject({ title: '风格统一', width: 300, height: 220, metadata: { skillSnapshot: { id: 'vd.style-lock', version: 1 }, skillVars: { style: '黑色电影' } } })
+    const saved = await savedBoard()
+    expect(saved.nodes.find((node: any) => node.id === config.id).metadata.promptSkills[0].snapshot).toEqual((await catalogSkill('vd.dialogue-shot')).snapshot)
+    expect(saved.connections.some((link: any) => link.fromNodeId === skillNode.id && link.toNodeId === config.id)).toBe(true)
+    // The skill node is not a reference: the prompt mentions the prompt node and the references only.
+    expect(config.metadata.prompt).not.toContain(skillNode.id)
+    expect(flow.notes).toEqual([expect.stringContaining('video mode is image-to-video')])
+    // A sheet skill sets the 制作类型 and one image, unless the call gives a count.
+    const sheet = await run('canvas_create_generation_flow', { prompt: '林，二十岁', skills: [{ id: 'vd.character-sheet', vars: { name: '林' } }] })
+    expect(sheet.nodes.find((node: any) => node.type === 'config').metadata).toMatchObject({ generationMode: 'image', promptPurpose: 'character-sheet', count: 1 })
+    expect((await run('canvas_create_generation_flow', { prompt: '林', count: 2, skills: [{ id: 'vd.character-sheet', vars: { name: '林' } }] })).nodes.find((node: any) => node.type === 'config').metadata.count).toBe(2)
+    const before = (await savedBoard()).nodes.length
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨', skills: [{ id: 'vd.sound-bed', vars: { ambience: '雨声' } }] })).message).toMatch(/^CANVAS_OPTION_MODE: vd\.sound-bed \(环境声设计\) is for video generation; this flow's mode is image/u)
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨', frameRoles: { first: 'f1' } })).message).toMatch(/^CANVAS_OPTION_MODE: First and last frames are for video/u)
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨', mode: 'video', referenceNodeIds: ['f1'], frameRoles: { last: 'f2' } })).message)
+      .toMatch(/^CANVAS_OPTION_INVALID: frameRoles\.last f2 is not among the images this flow wires in \(f1\)/u)
+    expect((await refused('canvas_create_generation_flow', { prompt: '雨', mode: 'video', skills: [{ id: 'vd.dialogue-shot', vars: { speaker: '林' } }] })).code).toBe('CANVAS_SKILL_VARS')
     expect((await savedBoard()).nodes).toHaveLength(before)
   })
 })
@@ -985,6 +1232,25 @@ describe('storyboard tools with a page open', () => {
     expect(page.calls()).toHaveLength(calls)
   })
 
+  it('attaches skills and adds a skill node on the open page as page ops, and writes nothing behind it', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video' }, { type: 'add_node', id: 'still', nodeType: 'image' }] })
+    const result = await run('canvas_set_generation_options', {
+      nodeIds: ['shot', 'still'], skills: [{ id: 'vd.identity-lock' }, { id: 'vd.style-lock', vars: { style: '胶片' }, as: 'node' }],
+    })
+    expect(result).toMatchObject({ source: 'live', target: page.target, skillNodes: [{ skill: 'vd.style-lock', created: true, wiredTo: ['shot', 'still'] }] })
+    const skillId = result.skillNodes[0].id as string
+    const ops = page.calls().at(-1).input.ops as BoardOp[]
+    expect(ops.map(op => [op.type, op.id ?? op.toNodeId])).toEqual([
+      ['update_node', 'shot'], ['update_node', 'still'], ['add_node', skillId], ['connect_nodes', 'shot'], ['connect_nodes', 'still'],
+    ])
+    expect(ops[0]).toMatchObject({ metadata: { promptSkills: [{ id: 'vd.identity-lock', version: 1, vars: { ref_label: '所连角色参考图' } }] } })
+    expect(ops[2]).toMatchObject({ nodeType: 'skill', title: '风格统一', metadata: { status: 'idle', skillSnapshot: { id: 'vd.style-lock', catalogVersion: '2026-10-05.1' }, skillVars: { style: '胶片' } } })
+    expect(page.board().nodes!.find(node => node.id === skillId)).toMatchObject({ type: 'skill', width: 300, height: 220 })
+    expect((await savedBoard()).nodes).toEqual([])
+  })
+
   it('refuses a run whose camera lines would push the prompt past 4000 characters, before the page gets it (C2)', async () => {
     const film = await startFilm()
     const page = openPage(film.id)
@@ -994,7 +1260,7 @@ describe('storyboard tools with a page open', () => {
     const calls = page.calls().length
     const over = await run('canvas_run_generation', { nodeId: config }).then(() => undefined, (error: unknown) => error as Error & { code: string })
     expect(over?.code).toBe('CANVAS_PROMPT_OVER_LIMIT')
-    expect(over?.message).toMatch(new RegExp(`^CANVAS_PROMPT_OVER_LIMIT: With its camera move and camera lines, the prompt of ${config} would be 40\\d\\d characters, over the 4000`, 'u'))
+    expect(over?.message).toMatch(new RegExp(`^CANVAS_PROMPT_OVER_LIMIT: With what the storyboard adds when it sends it \\(the camera move line\\), the prompt of ${config} would be 40\\d\\d characters, over the 4000`, 'u'))
     expect(page.calls()).toHaveLength(calls)
     expect(page.runs).toEqual([])
     // The same flow started at once is refused whole: nothing is built.
@@ -1014,13 +1280,41 @@ describe('storyboard tools with a page open', () => {
     expect(page.runs.map(op => op.type)).toEqual(['run_generation', 'run_generation'])
   })
 
-  it('lets a run go with a warning when only some page setups would refuse it', async () => {
+  it('leaves a run that only some page setups would refuse to the page, which checks it itself', async () => {
     const film = await startFilm()
     const page = openPage(film.id)
     // 3985 characters: within the limit with the Chinese labels the page shows by default, over it with the English ones.
     const flow = await run('canvas_create_generation_flow', { prompt: '雨'.repeat(3985), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] }, autoRun: true })
-    expect(flow.warnings).toEqual([expect.objectContaining({ code: 'CANVAS_PROMPT_OVER_LIMIT', limit: 4000, note: expect.stringContaining('canvas_get_generation_status') })])
+    expect(flow).not.toHaveProperty('warnings')
     expect(page.runs).toHaveLength(1)
+  })
+
+  it('passes on the page\'s own refusal of a batch\'s runs word for word', async () => {
+    const film = await startFilm()
+    // The page checks each run before it answers (generation-run.ts) and refuses the whole batch with its reasons.
+    const reason = 'CANVAS_GENERATION_REFUSED: 页面不会开始这些生成，这批操作都没有执行。节点 gen：加上运镜等设置后提示词超过 4000 字，请精简提示词或去掉部分设置'
+    openPage(film.id, { refuse: reason })
+    const error = await run('canvas_run_generation', { nodeId: 'gen' }).then(() => undefined, (failure: unknown) => failure as Error & { code: string })
+    expect(error?.code).toBe('CANVAS_BOARD_REFUSED')
+    expect(error?.message.startsWith(`CANVAS_BOARD_REFUSED: ${reason} — `)).toBe(true)
+    expect(error?.message).toContain('nothing was applied, generated or billed')
+  })
+
+  it('refuses a run whose prompt skills push it past 4000 characters, and estimates a video node without a mode as a video', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    // A wrap skill around a prompt that fits by itself (C2: composition, not the person's text, pushed it over).
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'still', nodeType: 'image', metadata: { prompt: '雨'.repeat(3900) } }] })
+    await run('canvas_set_generation_options', { nodeIds: ['still'], skills: [{ id: 'vd.storyboard-frame' }] })
+    const calls = page.calls().length
+    const over = await run('canvas_run_generation', { nodeId: 'still' }).then(() => undefined, (error: unknown) => error as Error & { code: string })
+    expect(over?.code).toBe('CANVAS_PROMPT_OVER_LIMIT')
+    expect(over?.message).toMatch(/\(prompt skill vd\.storyboard-frame and the avoid line\), the prompt of still would be 4\d{3} characters/u)
+    expect(page.calls()).toHaveLength(calls)
+    // A video node runs as a video without a generationMode (nodeRunMode): its camera move counts.
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video', metadata: { prompt: '雨'.repeat(3990), cameraMove: { v: 1, moves: [{ id: 'push-in' }] } } }] })
+    await expect(run('canvas_run_generation', { nodeId: 'shot' })).rejects.toThrow(/CANVAS_PROMPT_OVER_LIMIT: .*\(the camera move line\)/u)
+    expect(page.runs).toEqual([])
   })
 
   it('reads the reason the open page recorded on a generation node it did not start', async () => {

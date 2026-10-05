@@ -24,7 +24,7 @@ export interface FilmToolServices {
   events: ProjectEvents
   /** Tell the installer a workspace now has a film. */
   projectCreated(cwd: string): void
-  /** The folder of the canvas catalogues (camera moves, camera, presets); the packaged build's apps/canvas/catalog/ when absent. */
+  /** The folder of the canvas catalogues (camera moves, camera, prompt skills, presets); the packaged build's apps/canvas/catalog/ when absent. */
   catalogRoot?: string
 }
 

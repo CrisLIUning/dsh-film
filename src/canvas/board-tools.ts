@@ -15,8 +15,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { validateBoardOps } from './board-ops.js'
 import type { BoardConnection, BoardNode, BoardOp, BoardSnapshot } from './board-ops.js'
-import { compactCameraControl, compactCameraMove, planGenerationOptions } from './generation-options.js'
+import { compactCameraControl, compactCameraMove, compactFrameRoles, planGenerationOptions } from './generation-options.js'
 import type { CheckedGenerationOptions } from './generation-options.js'
+import { SKILL_TARGET_TYPES, compactPromptSkills, compactSkillNode, compactSkillSnapshot } from './prompt-skills.js'
 import { CanvasToolError } from './tool-error.js'
 
 export { CanvasToolError } from './tool-error.js'
@@ -35,8 +36,10 @@ export type CanvasWriteTool = (typeof CANVAS_WRITE_TOOLS)[number]
 
 /** What some write tools compile with besides their arguments: values already checked against the canvas catalogues. */
 export interface BoardOpsContext {
-  /** canvas_create_generation_flow: generation settings stored on the new generation node (camera move, camera, preset fields). */
+  /** canvas_create_generation_flow: generation settings stored on the new generation node (camera move, camera, preset fields, prompt skills, frame roles). */
   configMetadata?: Record<string, unknown>
+  /** canvas_create_generation_flow: skill nodes wired into the new generation node (title and metadata). */
+  skillNodes?: Array<{ title: string; metadata: Record<string, unknown> }>
   /** canvas_set_generation_options: the options, checked. */
   generationOptions?: CheckedGenerationOptions
 }
@@ -103,13 +106,16 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
 
 /**
  * A prompt node, a generation node, and the wires into it — the shape a person
- * builds by hand, so the prompt stays a visible, editable node.
+ * builds by hand, so the prompt stays a visible, editable node. Skill nodes
+ * go under the prompt node, wired into the generation node.
  * @param input - the tool's arguments.
  * @param snapshot - the board, for placement.
  * @param settings - generation settings for the generation node, already checked against the catalogues.
+ * @param skillNodes - skill nodes to wire into the generation node.
  * @returns the ops.
  */
-export function generationFlowOps(input: Record<string, unknown>, snapshot: BoardSnapshot | null, settings: Record<string, unknown> = {}): BoardOp[] {
+export function generationFlowOps(input: Record<string, unknown>, snapshot: BoardSnapshot | null, settings: Record<string, unknown> = {},
+  skillNodes: ReadonlyArray<{ title: string; metadata: Record<string, unknown> }> = []): BoardOp[] {
   const mode = generationMode(input.mode)
   const prompt = String(input.prompt ?? '')
   const x = typeof input.x === 'number' ? input.x : nextX(snapshot)
@@ -118,11 +124,17 @@ export function generationFlowOps(input: Record<string, unknown>, snapshot: Boar
   const configId = `config-${randomUUID()}`
   const referenceNodeIds = Array.isArray(input.referenceNodeIds) ? input.referenceNodeIds.filter((id): id is string => typeof id === 'string') : []
   const tokens = [`@[node:${textId}]`, ...referenceNodeIds.map(id => `@[node:${id}]`)]
+  const skills = skillNodes.map(node => ({ ...node, id: `skill-${randomUUID()}` }))
   return [
     textNodeOp({ id: textId, text: prompt, title: typeof input.title === 'string' && input.title !== '' ? input.title : '提示词' }, x, y),
     configNodeOp(configId, { ...input, prompt: tokens.join('\n') }, x + 420, y, settings),
     { type: 'connect_nodes', fromNodeId: textId, toNodeId: configId },
     ...referenceNodeIds.map(fromNodeId => ({ type: 'connect_nodes', fromNodeId, toNodeId: configId })),
+    // A skill node is a setting, never a reference: it has no resource and is not mentioned in the prompt.
+    ...skills.flatMap((node, index) => [
+      { type: 'add_node', id: node.id, nodeType: 'skill', title: node.title, position: { x, y: y + 280 + index * 260 }, metadata: node.metadata },
+      { type: 'connect_nodes', fromNodeId: node.id, toNodeId: configId },
+    ]),
     { type: 'select_nodes', ids: [configId] },
     // Staged, not run, unless asked: building the flow is free and reviewable; running it may be billed.
     ...(input.autoRun === true ? [{ type: 'run_generation', nodeId: configId, mode, prompt: tokens.join('\n') }] : []),
@@ -160,7 +172,7 @@ export function buildBoardOps(tool: CanvasWriteTool, input: Record<string, unkno
       ))
     }
     case 'canvas_create_generation_flow':
-      return generationFlowOps(input, snapshot, context.configMetadata)
+      return generationFlowOps(input, snapshot, context.configMetadata, context.skillNodes)
     case 'canvas_set_generation_options': {
       // One update_node per node whose settings change; values were checked against the catalogues first.
       if (context.generationOptions === undefined) throw new CanvasToolError('CANVAS_BOARD_INVALID', 'generation options must be checked against the canvas catalogues first')
@@ -180,6 +192,16 @@ export function buildBoardOps(tool: CanvasWriteTool, input: Record<string, unkno
     case 'canvas_connect_nodes': {
       const connections = Array.isArray(input.connections) ? input.connections as Array<Record<string, unknown>> : []
       if (connections.length === 0) throw new CanvasToolError('CANVAS_BOARD_INVALID', 'connections must be a non-empty array')
+      // A skill node feeds image, video and generation nodes and takes no input, as the page lets a person wire it.
+      const byId = new Map((snapshot?.nodes ?? []).map(node => [node.id, node]))
+      for (const connection of connections) {
+        const from = byId.get(String(connection.fromNodeId ?? ''))
+        const to = byId.get(String(connection.toNodeId ?? ''))
+        if (to?.type === 'skill') throw new CanvasToolError('CANVAS_OPTION_TARGET', `${to.id} is a skill node, which takes no input: wire it into the nodes it should apply to.`)
+        if (from?.type === 'skill' && to !== undefined && !SKILL_TARGET_TYPES.includes(to.type)) {
+          throw new CanvasToolError('CANVAS_OPTION_TARGET', `A skill node applies to image, video and generation (config) nodes; ${to.id} is a ${to.type} node.`)
+        }
+      }
       return connections.map(connection => ({ type: 'connect_nodes', fromNodeId: String(connection.fromNodeId ?? ''), toNodeId: String(connection.toNodeId ?? '') }))
     }
     case 'canvas_delete_nodes': {
@@ -207,6 +229,18 @@ function compactNode(node: BoardNode): CompactNode {
   const truncatedFields: NonNullable<CompactNode['truncatedFields']> = []
   const omittedFields: string[] = []
   for (const [key, value] of Object.entries(metadata)) {
+    // Prompt skills as the page reads them, without their frozen templates: ids, kinds, names and variables.
+    if (key === 'promptSkills' && Array.isArray(value)) {
+      metadata[key] = compactPromptSkills(value) ?? []
+      continue
+    }
+    if (key === 'skillSnapshot' && node.type === 'skill') {
+      const skill = compactSkillSnapshot(value)
+      if (skill !== undefined) {
+        metadata[key] = skill
+        continue
+      }
+    }
     if ((TEXT_FIELDS as readonly string[]).includes(key)) {
       if (typeof value === 'string' && value.startsWith('data:')) {
         metadata[key] = '[inline data omitted]'
@@ -483,11 +517,18 @@ function summarizeSavedNode(value: unknown, projectId: string, exact = false): R
   for (const key of ['prompt', 'composerContent']) {
     if (typeof metadata[key] === 'string') saved[key] = savedText(metadata[key], 1600)
   }
-  // The generation settings (C1) canvas_get_state shows whole, compactly; a cleared one (null) is no setting.
+  // The generation settings (C1) canvas_get_state shows too, compactly; a cleared one (null) is no setting.
   const cameraMove = compactCameraMove(metadata.cameraMove)
   if (cameraMove !== undefined) saved.cameraMove = cameraMove
   const cameraControl = compactCameraControl(metadata.cameraControl)
   if (cameraControl !== undefined) saved.cameraControl = cameraControl
+  const promptSkills = compactPromptSkills(metadata.promptSkills)
+  if (promptSkills !== undefined) saved.promptSkills = promptSkills
+  const frameRoles = compactFrameRoles(metadata.frameRoles)
+  if (frameRoles !== undefined) saved.frameRoles = frameRoles
+  // A skill node's skill and its values.
+  const skill = node.type === 'skill' ? compactSkillNode(metadata) : undefined
+  if (skill !== undefined) saved.skill = skill
   return {
     id: node.id, type: node.type, title: savedText(metadata.title ?? node.title, 200),
     position: node.position, width: node.width, height: node.height,
