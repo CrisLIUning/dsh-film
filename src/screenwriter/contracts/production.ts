@@ -3,8 +3,11 @@ import type { StoryEntity, StoryMetadata } from './types.js';
 export const STORY_PRODUCTION_PURPOSES = ['image', 'character-sheet', 'scene-sheet', 'prop-sheet', 'shot'] as const;
 export type StoryProductionPurpose = typeof STORY_PRODUCTION_PURPOSES[number];
 
-/** Shared by handoff and prompt assistance. The model supplies prose, never identities. */
-export function storyProductionInstruction(purpose: StoryProductionPurpose, surface: 'image' | 'video' = 'image'): string {
+/**
+ * Shared by handoff and prompt assistance. The model supplies prose, never identities.
+ * `cameraMoveChosen`: the shot's camera movement is a node setting appended when it is sent (C13), so a video prompt leaves it out.
+ */
+export function storyProductionInstruction(purpose: StoryProductionPurpose, surface: 'image' | 'video' = 'image', options: { cameraMoveChosen?: boolean } = {}): string {
   const common = '遵循所连参考的项目风格、视觉身份和本场状态；已有设定优先。未确定的细节作为本次视觉提案，不冒充剧本事实，不擅自改变人物关系或情节。';
   const task: Record<StoryProductionPurpose, string> = {
     image: '生成一张主体清晰、可作后续参考的制作图。',
@@ -14,7 +17,7 @@ export function storyProductionInstruction(purpose: StoryProductionPurpose, surf
     shot: '生成一张分镜画面，遵循当前镜头的动作、人物位置、构图与场景关系，使用本场角色造型及相关主参考。不要把角色设定卡的多个视角复制进画面。',
   };
   const direction = surface === 'video'
-    ? '生成一段分镜视频，按当前镜头组织动作、人物位置、机位运动与声音；遵循剧本中的说话人、对白原文、画内／画外关系及反应顺序。依据本次时长安排表演，不把整场剧本默认塞进一个镜头。参考中的设定卡排版要求不适用于成片。'
+    ? `生成一段分镜视频，按当前镜头组织动作、人物位置${options.cameraMoveChosen === true ? '' : '、机位运动'}与声音；遵循剧本中的说话人、对白原文、画内／画外关系及反应顺序。依据本次时长安排表演，不把整场剧本默认塞进一个镜头。参考中的设定卡排版要求不适用于成片。`
     : task[purpose];
   return `${direction}\n${common}`;
 }

@@ -135,6 +135,21 @@ describe('the prompt writer', () => {
     expect((fake.calls[0]!.messages as any)[0].content.some((part: { type: string }) => part.type === 'image')).toBe(true)
   })
 
+  it('passes the canvas\'s direction lines to the writer\'s system prompt, and refuses malformed ones (C13)', async () => {
+    const fake = fakeServices()
+    const router = createStudioRouter({ text: () => fake.services })
+    const move = '运镜：镜头缓慢地向后拉远，主体变小，周围环境逐渐显露。'
+    const response = await call(router, '/api/canvas/assist/prompt', { surface: 'video', purpose: 'shot', draft: '雨夜', direction: { cameraMove: move } })
+    expect(response.status).toBe(200)
+    const system = String(fake.calls[0]!.system)
+    expect(system).toContain(`appended when the prompt is sent:\n${move}\nDo not describe camera movement`)
+    expect(system).not.toContain('how the camera moves')
+    const refused = await call(router, '/api/canvas/assist/prompt', { surface: 'image', direction: { cameraMove: move } })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ code: 'CANVAS_ASSIST_DIRECTION_INVALID' })
+    expect(fake.calls).toHaveLength(1)
+  })
+
   it('uses the writer the canvas picked and refuses empty or invalid requests', async () => {
     const fake = fakeServices([{ type: 'finish', reason: { kind: 'stop' } }])
     const router = createStudioRouter({ text: () => fake.services })
