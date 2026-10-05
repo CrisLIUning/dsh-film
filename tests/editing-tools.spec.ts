@@ -582,8 +582,9 @@ describe('video_set_subtitles and video_get_subtitles', () => {
     expect(cues).toHaveLength(5000)
     expect(cues[1].text).toHaveLength(2000)
     expect(cues.at(-1).text).toBe('第4998句')
-    // Cues past the video's end are kept but named.
-    const late = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 6_000_000, endMs: 6_001_000, text: '片尾之后' }] })
+    // Cues past the video's end are kept but named (replacing the 5000 needs replaceAll: none of them is in the new list).
+    const late = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 6_000_000, endMs: 6_001_000, text: '片尾之后' }], replaceAll: true })
+    expect(late).toMatchObject({ scope: 'all', count: 1, kept: 0, removed: 5000 })
     expect(late.warnings).toEqual([expect.stringContaining('after the end of the video (6000000 ms)')])
     // Nothing usable, nothing given, or more than one source: refused, and the cues stay.
     const kept = (await savedNode('shot')).metadata.subtitleEntries
@@ -616,14 +617,123 @@ describe('video_set_subtitles and video_get_subtitles', () => {
     const clipped = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })
     expect(clipped).toMatchObject({ timeBase: 'clip', clip: { inMs: 2000, outMs: 5000 }, total: 2 })
     expect(clipped.entries.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([[0, 500, '一'], [2800, 3000, '二']])
-    // In the file's time, cues outside the mark are kept and named: this node does not show them.
-    const outside = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 100, endMs: 900, text: '片头' }, { startMs: 2500, endMs: 3000, text: '中间' }] })
+    // In the file's time, cues outside the mark are kept and named: this node does not show them. (The new list has neither
+    // stored cue, at its time or by its id: replacing them is said with replaceAll.)
+    const outside = await run('video_set_subtitles', {
+      nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 100, endMs: 900, text: '片头' }, { startMs: 2500, endMs: 3000, text: '中间' }], replaceAll: true,
+    })
+    expect(outside).toMatchObject({ scope: 'all', count: 2, kept: 0, removed: 2 })
     expect(outside.warnings).toEqual([expect.stringContaining('outside the node\'s in/out mark (2000–5000 ms of the file)')])
     expect((await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })).entries.map((cue: any) => cue.text)).toEqual(['中间'])
     // Without a mark, clip time is the file's time.
     const whole = await run('video_set_subtitles', { nodeId: 'whole', expectedContent: url('src.mp4'), timeBase: 'clip', entries: [{ startMs: 100, endMs: 900, text: '全片' }] })
     expect(whole.warnings).toEqual([expect.stringContaining('no in/out mark')])
     expect(await run('video_get_subtitles', { nodeId: 'whole', timeBase: 'clip' })).toMatchObject({ clip: null, total: 1, note: expect.stringContaining('no in/out mark') })
+  })
+
+  it('writes the clip view back over the cues of the mark only: those outside it stay, and cues crossing its edges keep their outside part', async () => {
+    const cues = [
+      { id: 'cueA000001', startMs: 100, endMs: 900, text: '片头' },
+      { id: 'cueB000001', startMs: 1800, endMs: 2600, text: '跨入点' },
+      { id: 'cueC000001', startMs: 3000, endMs: 3500, text: '错別字' },
+      { id: 'cueD000001', startMs: 4800, endMs: 5600, text: '跨出点' },
+      { id: 'cueE000001', startMs: 5700, endMs: 5900, text: '片尾' },
+    ]
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000, clip: { inMs: 2000, outMs: 5000 }, subtitleEntries: cues }))
+    const read = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })
+    expect(read).toMatchObject({ total: 3, outsideClip: 2, note: expect.stringContaining('2 cues outside the mark (or touching it for less than 100 ms) are not listed') })
+    expect(read.entries).toEqual([
+      { id: 'cueB000001', startMs: 0, endMs: 600, text: '跨入点' }, { id: 'cueC000001', startMs: 1000, endMs: 1500, text: '错別字' }, { id: 'cueD000001', startMs: 2800, endMs: 3000, text: '跨出点' },
+    ])
+    // A typo fixed in the clip view and written back as it was read: nothing outside the mark is lost or cut.
+    const fixed = read.entries.map((cue: any) => cue.id === 'cueC000001' ? { ...cue, text: '错别字' } : cue)
+    const written = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip', entries: fixed, contentDigest: read.contentDigest })
+    expect(written).toMatchObject({ changed: true, scope: 'clip', count: 5, kept: 2, removed: 0, dropped: 0, warnings: [] })
+    expect((await savedNode('shot')).metadata.subtitleEntries).toEqual([cues[0], cues[1], { ...cues[2], text: '错别字' }, cues[3], cues[4]])
+
+    // The same view as SubRip, whose cues carry no ids: matched by the times the view showed, the crossing cues keep their outside parts and ids.
+    const srt = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip', format: 'srt' })
+    const again = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip', srt: srt.srt.replace('错别字', '错别字。'), contentDigest: srt.contentDigest })
+    expect(again).toMatchObject({ scope: 'clip', count: 5, kept: 2, removed: 0 })
+    let stored = (await savedNode('shot')).metadata.subtitleEntries
+    expect(stored.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([[100, 900, '片头'], [1800, 2600, '跨入点'], [3000, 3500, '错别字。'], [4800, 5600, '跨出点'], [5700, 5900, '片尾']])
+    expect(stored.map((cue: any) => cue.id)).toEqual(['cueA000001', 'cueB000001', expect.stringMatching(CUE_ID), 'cueD000001', 'cueE000001'])
+
+    // Moved off the edge, a crossing cue takes the time given.
+    const view = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })
+    const moved = view.entries.map((cue: any) => cue.id === 'cueB000001' ? { ...cue, startMs: 100 } : cue)
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip', entries: moved, contentDigest: view.contentDigest })).toMatchObject({ kept: 2, removed: 0 })
+    stored = (await savedNode('shot')).metadata.subtitleEntries
+    expect(stored.find((cue: any) => cue.id === 'cueB000001')).toMatchObject({ startMs: 2100, endMs: 2600 })
+    expect(stored.find((cue: any) => cue.id === 'cueD000001')).toMatchObject({ startMs: 4800, endMs: 5600 })
+
+    // A cue of the mark left out is deleted only with replaceAll; the cues outside the mark stay either way.
+    const last = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })
+    const without = last.entries.filter((cue: any) => cue.id !== 'cueB000001')
+    const refusal = await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip', entries: without, contentDigest: last.contentDigest })
+    expect(refusal.code).toBe('CANVAS_SUBTITLE_WOULD_REMOVE')
+    expect(refusal.message).toMatch(/^CANVAS_SUBTITLE_WOULD_REMOVE: This write would remove 1 stored cue of the mark \(2000–5000 ms of the file\): your list has no cue with its id or at its time \(cueB000001 2100–2600 ms "跨入点"\)\. To delete them, pass replaceAll: true\. Nothing was changed\.$/u)
+    expect((await savedNode('shot')).metadata.subtitleEntries).toEqual(stored)
+    const deleted = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip', entries: without, contentDigest: last.contentDigest, replaceAll: true })
+    expect(deleted).toMatchObject({ changed: true, scope: 'clip', count: 4, kept: 2, removed: 1 })
+    expect((await savedNode('shot')).metadata.subtitleEntries.map((cue: any) => cue.text)).toEqual(['片头', '错别字。', '跨出点', '片尾'])
+  })
+
+  it('replaces one page of a long list written back with that read\'s offset and limit, and refuses a page written back as the whole list', async () => {
+    const cues = Array.from({ length: 250 }, (_, index) => ({ id: `cue${String(index).padStart(7, '0')}`, startMs: index * 1000, endMs: index * 1000 + 800, text: `第${index}句` }))
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 300_000, subtitleEntries: cues }))
+    const first = await run('video_get_subtitles', { nodeId: 'shot' })
+    expect(first).toMatchObject({ total: 250, offset: 0, nextOffset: 200 })
+    const edited = first.entries.map((cue: any, index: number) => index === 3 ? { ...cue, text: '改过的第3句' } : cue)
+    // The first page written back as the whole list would delete the 50 cues after it: refused, naming them, and nothing changes.
+    const refusal = await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: edited, contentDigest: first.contentDigest })
+    expect(refusal.code).toBe('CANVAS_SUBTITLE_WOULD_REMOVE')
+    expect(refusal.message).toMatch(/would remove 50 stored cues of the list: your list has no cue with their id or at their time \(cue0000200 200000–200800 ms "第200句"; .*; and 45 more\)\. This list replaces every cue: if you read only part of the list/u)
+    expect((await savedNode('shot')).metadata.subtitleEntries).toEqual(cues)
+    // A page needs the digest of its read.
+    expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: edited, offset: 0 })).code).toBe('CANVAS_SUBTITLE_INVALID')
+
+    // With the page's offset and limit only that page is replaced.
+    const page = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: edited, offset: 0, limit: 200, contentDigest: first.contentDigest })
+    expect(page).toMatchObject({ changed: true, scope: 'page', count: 250, kept: 50, removed: 0 })
+    let stored = (await savedNode('shot')).metadata.subtitleEntries
+    expect(stored).toHaveLength(250)
+    expect(stored[3]).toEqual({ ...cues[3], text: '改过的第3句' })
+    expect(stored.slice(200)).toEqual(cues.slice(200))
+
+    // The second page the same way: a cue of it left out is deleted only with replaceAll, and the first page stays.
+    const second = await run('video_get_subtitles', { nodeId: 'shot', offset: 200, contentDigest: page.contentDigest })
+    expect(second).toMatchObject({ total: 250, offset: 200, nextOffset: null })
+    const fewer = second.entries.filter((cue: any) => cue.id !== 'cue0000210').map((cue: any) => cue.id === 'cue0000220' ? { ...cue, endMs: cue.endMs + 100 } : cue)
+    const refused210 = await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: fewer, offset: 200, contentDigest: second.contentDigest })
+    expect(refused210.message).toMatch(/would remove 1 stored cue of the page you read: .*\(cue0000210 210000–210800 ms "第210句"\)\. To delete them, pass replaceAll: true/u)
+    const done = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: fewer, offset: 200, contentDigest: second.contentDigest, replaceAll: true })
+    expect(done).toMatchObject({ scope: 'page', count: 249, kept: 200, removed: 1 })
+    stored = (await savedNode('shot')).metadata.subtitleEntries
+    expect(stored.slice(0, 200).map((cue: any) => cue.id)).toEqual(cues.slice(0, 200).map(cue => cue.id))
+    expect(stored.find((cue: any) => cue.id === 'cue0000210')).toBeUndefined()
+    expect(stored.find((cue: any) => cue.id === 'cue0000220')).toMatchObject({ endMs: 220_900 })
+  })
+
+  it('deletes a cue left out of a whole list only with replaceAll, and takes an edited cue — new times or text — for the one it replaces', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 9000 }))
+    await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: SRT })
+    const read = await run('video_get_subtitles', { nodeId: 'shot' })
+    const two = read.entries.filter((_: unknown, index: number) => index !== 1)
+    expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: two, contentDigest: read.contentDigest })).message)
+      .toMatch(/^CANVAS_SUBTITLE_WOULD_REMOVE: This write would remove 1 stored cue of the list: your list has no cue with its id or at its time \([A-Za-z0-9_-]{10} 3000–4000 ms "谁"\)\./u)
+    const done = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: two, contentDigest: read.contentDigest, replaceAll: true })
+    expect(done).toMatchObject({ changed: true, scope: 'all', count: 2, kept: 0, removed: 1 })
+    // Every cue moved by 200 ms, without ids: each still stands for the cue it overlaps, so nothing needs confirming.
+    const now = await run('video_get_subtitles', { nodeId: 'shot' })
+    const retimed = now.entries.map((cue: any) => ({ startMs: cue.startMs + 200, endMs: cue.endMs + 200, text: cue.text }))
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: retimed, contentDigest: now.contentDigest })).toMatchObject({ count: 2, removed: 0 })
+    // A clear says how many cues it removed; replaceAll, offset and limit go only with srt or entries.
+    const shot = { nodeId: 'shot', expectedContent: url('src.mp4') }
+    for (const args of [{ clear: true, replaceAll: true }, { style: { position: 'top' }, replaceAll: true }, { style: { position: 'top' }, offset: 0 }, { srt: SRT, limit: 501, contentDigest: now.contentDigest }]) {
+      expect((await refused('video_set_subtitles', { ...shot, ...args })).code, JSON.stringify(args)).toBe('CANVAS_SUBTITLE_INVALID')
+    }
+    expect(await run('video_set_subtitles', { ...shot, clear: true })).toMatchObject({ changed: true, count: 0, removed: 2 })
   })
 
   it('clears the cues with null, keeping the style, and clearing again changes nothing', async () => {

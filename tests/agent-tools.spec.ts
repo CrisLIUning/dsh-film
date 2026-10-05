@@ -182,7 +182,12 @@ describe('the tool set', () => {
     expect(tools.get('video_get_subtitles')!.isConcurrencySafe?.({ nodeId: 'shot' } as never)).toBe(true)
     expect(tools.get('video_set_subtitles')!.isConcurrencySafe).toBeUndefined()
     const set = schema('video_set_subtitles')
-    expect(Object.keys(set.properties)).toEqual(['target', 'nodeId', 'expectedContent', 'srt', 'entries', 'timeBase', 'resegment', 'style', 'clear', 'contentDigest'])
+    expect(Object.keys(set.properties)).toEqual(['target', 'nodeId', 'expectedContent', 'srt', 'entries', 'timeBase', 'offset', 'limit', 'resegment', 'style', 'clear', 'contentDigest', 'replaceAll'])
+    // What a list replaces, and that dropping cues needs replaceAll, is said in both tools.
+    for (const name of ['video_get_subtitles', 'video_set_subtitles']) expect(tools.get(name)!.description).toMatch(/same timeBase|timeBase clip/u)
+    expect(tools.get('video_get_subtitles')!.description).toContain('only those cues are replaced and the rest stay')
+    expect(tools.get('video_set_subtitles')!.description).toContain('unless replaceAll is true: writing back part of a list never deletes the rest')
+    expect(FILM_GUIDANCE).toContain('CANVAS_SUBTITLE_WOULD_REMOVE')
     expect(set.required).toEqual(['nodeId', 'expectedContent'])
     expect(set.properties.entries.items.required).toEqual(['startMs', 'endMs', 'text'])
     expect(Object.keys(set.properties.style.properties)).toEqual(['fontScale', 'color', 'position', 'backdrop', 'maxCharsPerEntry', 'autoResegment'])

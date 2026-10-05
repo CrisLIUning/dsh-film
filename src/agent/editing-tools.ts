@@ -26,7 +26,11 @@
  * `update_node` of the four fields, the page's 保存 — through the page's own
  * rules (canvas/subtitles.ts): SubRip and WebVTT read as its 导入 reads them,
  * cues cleaned and long ones split as it does, and keyed to the node's current
- * video so the page does not flag them; `null` clears them.
+ * video so the page does not flag them; `null` clears them. A list written
+ * replaces only the cues of the view it was read in (the clip view's cues of
+ * the mark, or one page), and a write that would drop cues of that view is
+ * refused unless the agent says so (`replaceAll`): reading part of a list
+ * and writing it back never deletes the rest.
  * @module dsh-film/agent/editing-tools
  */
 
@@ -241,13 +245,95 @@ function overlapCount(entries: readonly SubtitleEntry[]): number {
   return count
 }
 
+/**
+ * Which stored cues a written list replaces — the view video_get_subtitles
+ * listed them in: every cue, the cues of the node's mark (timeBase clip), or
+ * one page of either (offset/limit).
+ */
+type SubtitleScope = 'all' | 'clip' | 'page'
+
+/**
+ * A clip view shows a cue that crosses an edge of the mark cut at that edge.
+ * Written back with its edge still on the mark's edge, the cue keeps the part
+ * outside the mark it had; moved off the edge, it takes the time given.
+ * @param cues - the written cues, moved into file time.
+ * @param shown - the cues of the clip view the write replaces (clip time, stored ids).
+ * @param stored - the node's cues (file time).
+ * @param inMs - the mark's in point.
+ * @returns the cues, edges restored.
+ */
+function restoreEdges<T extends { id?: string; startMs: number; endMs: number }>(cues: readonly T[], shown: readonly SubtitleEntry[], stored: readonly SubtitleEntry[], inMs: number): T[] {
+  const original = new Map(stored.map(cue => [cue.id, cue]))
+  const byId = new Map<string, SubtitleEntry>()
+  const byTimes = new Map<string, SubtitleEntry[]>()
+  for (const cue of shown) {
+    const view = { ...cue, startMs: cue.startMs + inMs, endMs: cue.endMs + inMs }
+    byId.set(view.id, view)
+    const times = `${view.startMs}|${view.endMs}`
+    byTimes.set(times, [...byTimes.get(times) ?? [], view])
+  }
+  const used = new Set<string>()
+  return cues.map((cue) => {
+    const id = typeof cue.id === 'string' && SUBTITLE_ID_PATTERN.test(cue.id) ? cue.id : undefined
+    // By its id, or — a cue without one, as SubRip gives them — by the times the view showed.
+    const view = id !== undefined ? byId.get(id) : byTimes.get(`${cue.startMs}|${cue.endMs}`)?.find(entry => !used.has(entry.id))
+    const before = view === undefined ? undefined : original.get(view.id)
+    if (view === undefined || before === undefined || used.has(view.id)) return cue
+    used.add(view.id)
+    const startMs = cue.startMs === view.startMs && before.startMs < view.startMs ? before.startMs : cue.startMs
+    const endMs = cue.endMs === view.endMs && before.endMs > view.endMs ? before.endMs : cue.endMs
+    return startMs === cue.startMs && endMs === cue.endMs ? cue : { ...cue, startMs, endMs }
+  })
+}
+
+/**
+ * The stored cues a written list does not stand for: none of its cues carries
+ * their id or overlaps their time (an edited cue keeps one or the other).
+ * @param stored - the cues the list replaces.
+ * @param written - the list, sorted by start.
+ * @returns the cues it would remove.
+ */
+function uncoveredCues(stored: readonly SubtitleEntry[], written: readonly SubtitleEntry[]): SubtitleEntry[] {
+  const ids = new Set(written.map(cue => cue.id))
+  // The latest end among the written cues up to each one (they are sorted by start).
+  const reach: number[] = []
+  let far = Number.NEGATIVE_INFINITY
+  for (const cue of written) reach.push(far = Math.max(far, cue.endMs))
+  return stored.filter((cue) => {
+    if (ids.has(cue.id)) return false
+    // How many written cues start before this one ends; one of them reaching past its start overlaps it.
+    let low = 0
+    let high = written.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (written[middle]!.startMs < cue.endMs) low = middle + 1
+      else high = middle
+    }
+    return !(low > 0 && reach[low - 1]! > cue.startMs)
+  })
+}
+
+/** A cue as a refusal names it: id, times and the start of its text. */
+function cueLine(cue: SubtitleEntry): string {
+  const characters = Array.from(cue.text.replace(/\n/gu, ' '))
+  return `${cue.id} ${cue.startMs}–${cue.endMs} ms "${characters.length > 20 ? `${characters.slice(0, 20).join('')}…` : characters.join('')}"`
+}
+
 /** What video_set_subtitles stores on a node, and what it says about it. */
 interface SubtitlePlan {
   /** The node's new subtitle fields: one `update_node`, like the page's 保存. */
   patch: Record<string, unknown>
   /** The node already holds exactly this. */
   unchanged: boolean
+  /** The cues the node holds after the write. */
   count: number
+  /** Which stored cues the written list replaced (omitted for a restyle or a clear). */
+  scope?: SubtitleScope
+  /** Stored cues outside the part replaced, left as they were. */
+  kept: number
+  /** Stored cues the write deleted: a clear's, or those of the part replaced the list no longer has (replaceAll). */
+  removed: number
+  /** Cues (or SubRip blocks) of the input that could not be stored. */
   dropped: number
   warnings: string[]
   resegmented?: { from: number; to: number; maxCharsPerEntry: number }
@@ -538,9 +624,11 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
       name: 'video_get_subtitles',
       description: 'Read a video node\'s subtitles: its cues (id, startMs, endMs, text) in ms of the node\'s whole file, as stored and whatever its in/out mark '
         + '(timeBase clip counts from the mark and lists only the cues inside it), as JSON or as SubRip text (format srt), in pages: follow nextOffset with the '
-        + 'same contentDigest. Also returns the style the 分镜 page draws them in, and mediaChanged: true when the node\'s video is no longer the one they were '
-        + 'saved against (another file, size, or a length more than 250 ms off), so their timing may be off. Reads the open page\'s board, or the saved board '
-        + 'when the 分镜 tab is closed. Free; nothing changes.',
+        + 'same contentDigest. A page, or the clip view (outsideClip counts the cues it leaves out), is only part of the list: to edit what you read, write it '
+        + 'back with video_set_subtitles in the same view — the same timeBase, and offset/limit for a page — so only those cues are replaced and the rest stay. '
+        + 'Also returns the style the 分镜 page draws them in, and mediaChanged: true when the node\'s video is no longer the one they were saved against '
+        + '(another file, size, or a length more than 250 ms off), so their timing may be off. Reads the open page\'s board, or the saved board when the 分镜 '
+        + 'tab is closed. Free; nothing changes.',
       parameters: {
         target,
         nodeId: { type: 'string', required: true, description: 'A video node with a file, from canvas_get_state.' },
@@ -570,16 +658,22 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         const shown = listed.slice(offset, offset + limit)
         const end = offset + shown.length
         const mediaChanged = subtitleMediaChanged(metadata)
+        // The clip view leaves out the cues outside the mark (and those touching it for less than 100 ms): say so, they still exist.
+        const outsideClip = clipTime && clip !== undefined ? entries.length - listed.length : 0
         const notes = [
           ...(mediaChanged ? [MEDIA_CHANGED_NOTE] : []),
           ...(clipTime && clip === undefined ? ['The node has no in/out mark, so clip time is the file\'s time.'] : []),
+          ...(outsideClip > 0
+            ? [`${counted(outsideClip, 'cue')} outside the mark (or touching it for less than 100 ms) ${agree(outsideClip, 'is', 'are')} not listed; `
+              + `video_set_subtitles with timeBase clip keeps ${agree(outsideClip, 'it', 'them')}.`]
+            : []),
         ]
         const key = metadata.subtitleMediaKey
         return plain({
           ...(page !== undefined ? { source: 'live', target: page.target } : { source: 'persisted' }),
           nodeId: node.id,
           timeBase: clipTime ? 'clip' : 'source',
-          ...(clipTime ? { clip: clip ?? null } : {}),
+          ...(clipTime ? { clip: clip ?? null, outsideClip } : {}),
           ...(positive(metadata.durationMs) ? { durationMs: Math.round(metadata.durationMs) } : {}),
           total: listed.length,
           offset,
@@ -596,22 +690,30 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'video_set_subtitles',
-      description: 'Write a video node\'s subtitles: replace every cue with SubRip or WebVTT text (srt) or a cue list (entries), restyle them (style, alone or with '
-        + 'either), or remove them (clear:true, stored as null). Times are whole ms of the node\'s whole file, or from its in point with timeBase clip. Cues are '
-        + 'cleaned as the 分镜 page cleans an import — sorted, end after start, text up to 2000 characters, at most 5000; what cannot be used is counted in '
-        + 'dropped and explained in warnings — long ones are split at punctuation when resegment is on (by default for srt, when the style\'s autoResegment is '
-        + 'on), and they are saved against the node\'s current video, so the page does not flag them. When you edit a list you read, pass its contentDigest: a '
-        + 'list changed meanwhile is refused, not overwritten. With the 分镜 tab open the edit runs in the page (live, undoable); with it closed it is saved to '
-        + 'the board. Nothing is generated.',
+      description: 'Write a video node\'s subtitles: replace cues with SubRip or WebVTT text (srt) or a cue list (entries), restyle them (style, alone or with '
+        + 'either), or remove them all (clear:true, stored as null). A list replaces the cues of the view it was read in: by default every cue (times in whole '
+        + 'ms of the node\'s whole file); with timeBase clip only the cues inside the node\'s in/out mark, timed from its in point — cues outside the mark stay, '
+        + 'and a cue crossing an edge of the mark, written back with that edge, keeps its part outside; with offset/limit (and the read\'s contentDigest) only '
+        + 'that page of the view. A list that no longer has a cue of the part it replaces — none with its id or at its time — is refused, naming the cues, '
+        + 'unless replaceAll is true: writing back part of a list never deletes the rest. Cues are cleaned as the 分镜 page cleans an import — sorted, end '
+        + 'after start, text up to 2000 characters, at most 5000; what cannot be used is counted in dropped and explained in warnings — long ones are split '
+        + 'at punctuation when resegment is on (by default for srt, when the style\'s autoResegment is on), and they are saved against the node\'s current '
+        + 'video, so the page does not flag them. Answers count (cues the node holds now), kept (cues outside the part written, left as they were), removed '
+        + 'and dropped. When you edit a list you read, pass its contentDigest: a list changed meanwhile is refused, not overwritten. With the 分镜 tab open the '
+        + 'edit runs in the page (live, undoable); with it closed it is saved to the board. Nothing is generated.',
       parameters: {
         target,
         nodeId: { type: 'string', required: true, description: 'A video node with a file, from canvas_get_state.' },
         expectedContent,
-        srt: { type: 'string', description: 'SubRip (.srt) or WebVTT (.vtt) text; replaces every cue. Tags are dropped; blocks that cannot be read are skipped and counted.' },
+        srt: {
+          type: 'string',
+          description: 'SubRip (.srt) or WebVTT (.vtt) text; replaces the cues of the view (every cue, the mark\'s with timeBase clip, one page with offset/limit). '
+            + 'Tags are dropped; blocks that cannot be read are skipped and counted.',
+        },
         entries: {
           type: 'array',
-          description: `The cues, replacing every cue: whole ms with endMs after startMs, text up to ${MAX_SUBTITLE_TEXT} characters (a line break makes two lines), at most `
-            + `${MAX_SUBTITLE_ENTRIES}; they are sorted for you.`,
+          description: `The cues, replacing those of the view (as srt): whole ms with endMs after startMs, text up to ${MAX_SUBTITLE_TEXT} characters (a line break makes `
+            + `two lines), at most ${MAX_SUBTITLE_ENTRIES}; they are sorted for you.`,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -629,7 +731,18 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
             },
           },
         },
-        timeBase: { type: 'string', enum: ['source', 'clip'], description: 'How srt or entries are timed: source (default), ms of the node\'s whole file; clip, ms from its in point (moved into the file\'s time; cues past the file\'s end are left out).' },
+        timeBase: {
+          type: 'string',
+          enum: ['source', 'clip'],
+          description: 'How srt or entries are timed, and what they replace: source (default), ms of the node\'s whole file, replacing every cue; clip, ms from its '
+            + 'in point, replacing only the cues inside its mark (cues past the file\'s end are left out; cues outside the mark stay).',
+        },
+        offset: {
+          type: 'integer',
+          description: 'With srt or entries, the page you read: the offset you gave video_get_subtitles (same timeBase), with that read\'s contentDigest. Only '
+            + 'that page\'s cues are replaced; the cues before and after it stay.',
+        },
+        limit: { type: 'integer', description: `The limit that page was read with (1–${SUBTITLE_PAGE.max}, default ${SUBTITLE_PAGE.default}).` },
         resegment: { type: 'boolean', description: 'Split cues longer than the style\'s maxCharsPerEntry (35 unless set) at punctuation, as the page\'s 自动断句. Default: on for srt when the style\'s autoResegment is on; off for entries.' },
         style: {
           type: 'object',
@@ -646,6 +759,11 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         },
         clear: { type: 'boolean', description: 'true removes every cue (stored as null), instead of srt or entries.' },
         contentDigest: { type: 'string', description: 'The contentDigest video_get_subtitles returned: when the cues changed since, the call is refused instead of overwriting them.' },
+        replaceAll: {
+          type: 'boolean',
+          description: 'With srt or entries: true deletes the cues of the part replaced that your list no longer has (none with their id or at their time). '
+            + 'Without it such a write is refused (CANVAS_SUBTITLE_WOULD_REMOVE, naming them). Pass it only when those cues should go.',
+        },
       },
       output: jsonOutput,
       execute: (args, exec) => guarded(async () => {
@@ -653,8 +771,19 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         const sources = [args.srt !== undefined, args.entries !== undefined, clear].filter(Boolean).length
         if (sources > 1) throw subtitleInvalid('Pass one of srt, entries or clear:true (style may come with any of them, or alone).')
         if (sources === 0 && args.style === undefined) throw subtitleInvalid('Pass srt or entries to replace the cues, clear:true to remove them, or style to restyle them.')
-        if (args.srt === undefined && args.entries === undefined && (args.timeBase !== undefined || args.resegment !== undefined)) {
-          throw subtitleInvalid('timeBase and resegment go with srt or entries.')
+        const paged = args.offset !== undefined || args.limit !== undefined
+        if (args.srt === undefined && args.entries === undefined && (args.timeBase !== undefined || args.resegment !== undefined || paged || args.replaceAll === true)) {
+          throw subtitleInvalid('timeBase, offset, limit, resegment and replaceAll go with srt or entries (clear:true removes every cue).')
+        }
+        /** The page of the view the list was read in, when it replaces one. */
+        let readPage: { offset: number; limit: number } | undefined
+        if (paged) {
+          const offset = args.offset ?? 0
+          const limit = args.limit ?? SUBTITLE_PAGE.default
+          if (offset < 0) throw subtitleInvalid('offset counts cues from 0, as the page you read did.')
+          if (limit < 1 || limit > SUBTITLE_PAGE.max) throw subtitleInvalid(`limit is 1–${SUBTITLE_PAGE.max} cues per page; ${limit} is not.`)
+          if (args.contentDigest === undefined) throw subtitleInvalid('offset and limit name a page of the list as you read it: pass that read\'s contentDigest too, so it is the same page.')
+          readPage = { offset, limit }
         }
         const styleChanges = checkStyle(args.style)
         /** The cues given, before anything is cleaned, and the srt blocks that could not be read. */
@@ -684,19 +813,29 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
           const style = sanitizeSubtitleStyle({ ...(isRecord(storedStyle) ? storedStyle : {}), ...styleChanges })
           const sameStyle = isDeepStrictEqual(storedStyle, style)
           if (given === undefined && !clear) {
-            return { patch: { subtitleStyle: style, subtitleUpdatedAt: now }, unchanged: sameStyle, count: current.length, dropped: 0, warnings: [], contentDigest: subtitleDigest(current) }
+            return {
+              patch: { subtitleStyle: style, subtitleUpdatedAt: now }, unchanged: sameStyle, count: current.length, kept: current.length, removed: 0, dropped: 0, warnings: [],
+              contentDigest: subtitleDigest(current),
+            }
           }
           if (given === undefined) {
             const none = (metadata.subtitleEntries ?? null) === null && (metadata.subtitleMediaKey ?? null) === null
             return {
               patch: { subtitleEntries: null, subtitleStyle: style, subtitleUpdatedAt: now, subtitleMediaKey: null },
-              unchanged: none && (Object.keys(styleChanges).length === 0 || sameStyle), count: 0, dropped: 0, warnings: [], contentDigest: subtitleDigest([]),
+              unchanged: none && (Object.keys(styleChanges).length === 0 || sameStyle), count: 0, kept: 0, removed: current.length, dropped: 0, warnings: [],
+              contentDigest: subtitleDigest([]),
             }
           }
           const warnings: string[] = []
           if (skipped > 0) warnings.push(`${counted(skipped, 'block')} of srt could not be read (no usable timing, end <= start, or no text) and ${was(skipped)} skipped.`)
           const durationMs = positive(metadata.durationMs) ? Math.round(metadata.durationMs) : undefined
           const clip = readClip(metadata, durationMs)
+          const clipView = args.timeBase === 'clip' && clip !== undefined
+          // What the list replaces: the cues video_get_subtitles listed in the view it was read in — the clip view
+          // (the cues of the mark, in clip time) with timeBase clip, one page of the view with offset/limit — else every cue.
+          const view = clipView ? cuesInClipTime(current, clip) : current
+          const shown = readPage !== undefined ? view.slice(readPage.offset, readPage.offset + readPage.limit) : view
+          const scope: SubtitleScope = readPage !== undefined ? 'page' : clipView ? 'clip' : 'all'
           let cues = given
           let pastEnd = 0
           if (args.timeBase === 'clip') {
@@ -705,6 +844,8 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
             pastEnd = durationMs === undefined ? 0 : cues.filter(cue => cue.startMs + inMs >= durationMs).length
             cues = cuesFromClipTime(cues, { inMs }, durationMs)
             if (pastEnd > 0) warnings.push(`${counted(pastEnd, 'cue')} started past the end of the file (${durationMs} ms) from the in point and ${was(pastEnd)} left out.`)
+            // The clip view cut cues crossing the mark's edges at the edge: written back so, they keep what lies outside.
+            if (clipView) cues = restoreEdges(cues, shown, current, inMs)
           }
           // A cue without a usable id gets a new one — or, below, the id of a stored cue with the same times and text.
           const fresh = new Set<string>()
@@ -721,10 +862,14 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
             if (split.length !== entries.length) resegmented = { from: entries.length, to: split.length, maxCharsPerEntry: style.maxCharsPerEntry }
             entries = split
           }
+          // A cue the list names by its id is replaced wherever it was; the cues outside the view that it does not name stay as they are.
+          const named = new Set(entries.filter(entry => !fresh.has(entry.id)).map(entry => entry.id))
+          const shownIds = new Set(shown.map(entry => entry.id))
+          const replaced = current.filter(entry => shownIds.has(entry.id) || named.has(entry.id))
+          const kept = current.filter(entry => !shownIds.has(entry.id) && !named.has(entry.id))
           // The cues a rewrite keeps keep their ids (and highlights), so writing the same cues twice changes nothing.
-          const taken = new Set(entries.filter(entry => !fresh.has(entry.id)).map(entry => entry.id))
           const reusable = new Map<string, SubtitleEntry[]>()
-          for (const entry of current) if (!taken.has(entry.id)) reusable.set(cueKey(entry), [...reusable.get(cueKey(entry)) ?? [], entry])
+          for (const entry of replaced) if (!named.has(entry.id)) reusable.set(cueKey(entry), [...reusable.get(cueKey(entry)) ?? [], entry])
           entries = entries.map((entry) => {
             const match = fresh.has(entry.id) ? reusable.get(cueKey(entry))?.shift() : undefined
             return match === undefined ? entry : { ...entry, id: match.id, ...(entry.highlight === undefined && match.highlight !== undefined ? { highlight: match.highlight } : {}) }
@@ -736,32 +881,54 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
           if (notCues > 0) warnings.push(`${counted(notCues, 'cue')} had no usable times or text (endMs must be after startMs) and ${was(notCues)} left out.`)
           if (report.truncated > 0) warnings.push(`${counted(report.truncated, 'text')} ran past ${MAX_SUBTITLE_TEXT} characters and ${was(report.truncated)} cut there.`)
           if (overLimit > 0) warnings.push(`${counted(overLimit, 'cue')} past the limit of ${MAX_SUBTITLE_ENTRIES} ${was(overLimit)} left out.`)
-          const kept = final.entries
-          if (kept.length === 0) throw subtitleInvalid(`None of the cues can be stored, so nothing was changed. ${warnings.join(' ')}`)
-          const beyond = durationMs === undefined ? 0 : kept.filter(entry => entry.startMs >= durationMs).length
+          const written = final.entries
+          if (written.length === 0) throw subtitleInvalid(`None of the cues can be stored, so nothing was changed. ${warnings.join(' ')}`)
+          const part = scope === 'page' ? 'the page you read' : scope === 'clip' ? `the mark (${clip!.inMs}–${clip!.outMs} ms of the file)` : 'the list'
+          if (kept.length + written.length > MAX_SUBTITLE_ENTRIES) {
+            throw subtitleInvalid(`With the ${counted(kept.length, 'cue')} outside ${part}, which stay, the node would hold ${kept.length + written.length} cues, more than `
+              + `${MAX_SUBTITLE_ENTRIES}; nothing was changed.`)
+          }
+          // Never a silent deletion: a stored cue of the part replaced that the list no longer stands for goes only when asked.
+          const removed = uncoveredCues(replaced, written)
+          if (removed.length > 0 && args.replaceAll !== true) {
+            throw new CanvasToolError('CANVAS_SUBTITLE_WOULD_REMOVE', `This write would remove ${counted(removed.length, 'stored cue')} of ${part}: your list has no cue with `
+              + `${agree(removed.length, 'its', 'their')} id or at ${agree(removed.length, 'its', 'their')} time (${removed.slice(0, 5).map(cueLine).join('; ')}`
+              + `${removed.length > 5 ? `; and ${removed.length - 5} more` : ''}). `
+              + (scope === 'all'
+                ? 'This list replaces every cue: if you read only part of the list (a page, or the clip view of a marked node), write it back the same way '
+                  + '(offset/limit with the contentDigest, or timeBase clip), and only that part is replaced. '
+                : '')
+              + 'To delete them, pass replaceAll: true. Nothing was changed.')
+          }
+          const merged = kept.length === 0 ? written : sanitizeSubtitleEntries([...kept, ...written]).entries
+          const beyond = durationMs === undefined ? 0 : written.filter(entry => entry.startMs >= durationMs).length
           if (beyond > 0) warnings.push(`${counted(beyond, 'cue')} ${agree(beyond, 'starts', 'start')} at or after the end of the video (${durationMs} ms) and will never show.`)
-          const outside = clip === undefined ? 0 : kept.filter(entry => entry.endMs <= clip.inMs || entry.startMs >= clip.outMs).length
+          const outside = clip === undefined ? 0 : written.filter(entry => entry.endMs <= clip.inMs || entry.startMs >= clip.outMs).length
           if (clip !== undefined && outside > 0) {
             warnings.push(`${counted(outside, 'cue')} ${agree(outside, 'lies', 'lie')} outside the node's in/out mark (${clip.inMs}–${clip.outMs} ms of the file): `
               + `${agree(outside, 'it is', 'they are')} kept with the file's subtitles, but this node plays only its mark, so ${agree(outside, 'it does', 'they do')} not show on it.`)
           }
-          const overlaps = overlapCount(kept)
+          const overlaps = overlapCount(merged)
           if (overlaps > 0) warnings.push(`${counted(overlaps, 'cue')} ${agree(overlaps, 'starts', 'start')} before an earlier cue ends; the page shows overlapping cues together.`)
           const key = subtitleMediaKeyOf(metadata)
           return {
-            patch: { subtitleEntries: kept, subtitleStyle: style, subtitleUpdatedAt: now, subtitleMediaKey: key },
-            unchanged: isDeepStrictEqual(metadata.subtitleEntries, kept) && sameStyle && metadata.subtitleMediaKey === key,
-            count: kept.length,
+            patch: { subtitleEntries: merged, subtitleStyle: style, subtitleUpdatedAt: now, subtitleMediaKey: key },
+            unchanged: isDeepStrictEqual(metadata.subtitleEntries, merged) && sameStyle && metadata.subtitleMediaKey === key,
+            count: merged.length,
+            scope,
+            kept: kept.length,
+            removed: removed.length,
             dropped: skipped + pastEnd + notCues + overLimit,
             warnings,
             ...(resegmented !== undefined ? { resegmented } : {}),
-            contentDigest: subtitleDigest(kept),
+            contentDigest: subtitleDigest(merged),
           }
         }
         let planned = plan(node)
         const facts = (): Record<string, unknown> => ({
-          nodeId: node.id, count: planned.count, dropped: planned.dropped, warnings: planned.warnings,
-          ...(planned.resegmented !== undefined ? { resegmented: planned.resegmented } : {}), contentDigest: planned.contentDigest,
+          nodeId: node.id, count: planned.count, ...(planned.scope !== undefined ? { scope: planned.scope } : {}), kept: planned.kept, removed: planned.removed,
+          dropped: planned.dropped, warnings: planned.warnings, ...(planned.resegmented !== undefined ? { resegmented: planned.resegmented } : {}),
+          contentDigest: planned.contentDigest,
         })
         if (planned.unchanged) return plain({ ...where(page), changed: false, ...facts() })
         const receipt = await applyEdit(film, page, snapshot!, (current) => {
