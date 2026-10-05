@@ -122,7 +122,7 @@ describe('the tool set', () => {
     expect(set.properties.clear.items.enum).toEqual(['cameraMove', 'cameraControl'])
     expect(Object.keys(schema('canvas_create_generation_flow').properties)).toEqual(expect.arrayContaining(['cameraMove', 'cameraControl', 'preset']))
     expect(schema('canvas_generation_options').properties.kind.enum).toEqual(['camera_moves', 'camera', 'presets'])
-    for (const text of ['canvas_generation_options', 'canvas_set_generation_options', 'never write them into prompt text']) expect(FILM_GUIDANCE).toContain(text)
+    for (const text of ['canvas_generation_options', 'canvas_set_generation_options', 'never write them into prompt text', 'CANVAS_PROMPT_OVER_LIMIT']) expect(FILM_GUIDANCE).toContain(text)
     expect(tools.get('canvas_set_generation_options')!.description).toContain('never write them into prompt text')
   })
 
@@ -713,6 +713,16 @@ describe('generation options (C11)', () => {
     expect((await savedNode('shot')).metadata.cameraControl).toEqual({ v: 1, enabled: true, look: 'digital-cinema', lens: 'spherical-prime', focalLength: 50, aperture: 8 })
   })
 
+  it('warns when the new settings push a node\'s prompt past the 4000 characters the storyboard sends', async () => {
+    await startFilm()
+    await run('canvas_apply_ops', { ops: [{ type: 'add_node', id: 'shot', nodeType: 'video', metadata: { prompt: '雨'.repeat(3985) } }] })
+    const set = await run('canvas_set_generation_options', { nodeIds: ['shot'], cameraMove: { moves: [{ id: 'push-in' }] } })
+    // 3985 + a blank line + '运镜：镜头平稳地向前推进，逐渐靠近主体。' (20).
+    expect(set.warnings).toEqual([{ code: 'CANVAS_PROMPT_OVER_LIMIT', nodeId: 'shot', length: 4007, limit: 4000, certain: true, note: expect.stringContaining('generating it is refused') }])
+    expect((await savedNode('shot')).metadata.cameraMove).toEqual({ v: 1, moves: [{ id: 'push-in' }], combine: 'sequence' })
+    expect(await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })).not.toHaveProperty('warnings')
+  })
+
   it('skips what a node does not take, and refuses unknown ids, wrong targets and settings no node takes before writing', async () => {
     await startFilm()
     await run('canvas_apply_ops', { ops: [
@@ -891,6 +901,44 @@ describe('storyboard tools with a page open', () => {
     const calls = page.calls().length
     expect(await run('canvas_set_generation_options', { nodeIds: ['shot'], clear: ['cameraMove'] })).toMatchObject({ source: 'live', changed: false })
     expect(page.calls()).toHaveLength(calls)
+  })
+
+  it('refuses a run whose camera lines would push the prompt past 4000 characters, before the page gets it (C2)', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    // A generation node whose prompt mentions a wired text: the page sends 【文本1】 and the text as its block.
+    const flow = await run('canvas_create_generation_flow', { prompt: '雨'.repeat(3975), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] } })
+    const config = flow.nodes.find((node: any) => node.type === 'config').id as string
+    const calls = page.calls().length
+    const over = await run('canvas_run_generation', { nodeId: config }).then(() => undefined, (error: unknown) => error as Error & { code: string })
+    expect(over?.code).toBe('CANVAS_PROMPT_OVER_LIMIT')
+    expect(over?.message).toMatch(new RegExp(`^CANVAS_PROMPT_OVER_LIMIT: With its camera move and camera lines, the prompt of ${config} would be 40\\d\\d characters, over the 4000`, 'u'))
+    expect(page.calls()).toHaveLength(calls)
+    expect(page.runs).toEqual([])
+    // The same flow started at once is refused whole: nothing is built.
+    const nodes = page.board().nodes!.length
+    await expect(run('canvas_create_generation_flow', { prompt: '雨'.repeat(3975), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] }, autoRun: true })).rejects.toThrow(/CANVAS_PROMPT_OVER_LIMIT/u)
+    expect(page.board().nodes).toHaveLength(nodes)
+    // Without the camera move it goes; so does a prompt the person made longer than the limit by itself.
+    await run('canvas_set_generation_options', { nodeIds: [config], clear: ['cameraMove'] })
+    // A raw batch that sets the move again and runs is judged on the board it leaves.
+    await expect(run('canvas_apply_ops', { ops: [
+      { type: 'update_node', id: config, metadata: { cameraMove: { v: 1, moves: [{ id: 'push-in' }] } } }, { type: 'run_generation', nodeId: config },
+    ] })).rejects.toThrow(/CANVAS_PROMPT_OVER_LIMIT/u)
+    expect(page.board().nodes!.find(node => node.id === config)!.metadata!.cameraMove).toBeNull()
+    await run('canvas_run_generation', { nodeId: config })
+    const long = await run('canvas_create_generation_flow', { prompt: '雨'.repeat(4100), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] }, autoRun: true })
+    expect(long).not.toHaveProperty('warnings')
+    expect(page.runs.map(op => op.type)).toEqual(['run_generation', 'run_generation'])
+  })
+
+  it('lets a run go with a warning when only some page setups would refuse it', async () => {
+    const film = await startFilm()
+    const page = openPage(film.id)
+    // 3985 characters: within the limit with the Chinese labels the page shows by default, over it with the English ones.
+    const flow = await run('canvas_create_generation_flow', { prompt: '雨'.repeat(3985), mode: 'video', cameraMove: { moves: [{ id: 'push-in' }] }, autoRun: true })
+    expect(flow.warnings).toEqual([expect.objectContaining({ code: 'CANVAS_PROMPT_OVER_LIMIT', limit: 4000, note: expect.stringContaining('canvas_get_generation_status') })])
+    expect(page.runs).toHaveLength(1)
   })
 })
 

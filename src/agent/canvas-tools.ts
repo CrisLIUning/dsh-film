@@ -21,7 +21,7 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { BoardAgentError } from '../canvas/board-agent.js'
 import type { BoardPage } from '../canvas/board-agent.js'
 import { BoardOpError, applyBoardOps } from '../canvas/board-ops.js'
-import type { BoardOp, BoardSnapshot } from '../canvas/board-ops.js'
+import type { BoardNode, BoardOp, BoardSnapshot } from '../canvas/board-ops.js'
 import {
   CanvasToolError, buildBoardOps, compactSnapshot, generationStatusPage, mutationReceipt, readNodeContent, savedCanvasPage, snapshotOfDocument,
 } from '../canvas/board-tools.js'
@@ -29,8 +29,11 @@ import type { CanvasWriteTool } from '../canvas/board-tools.js'
 import { CAMERA_ANGLES, CAMERA_SHOT_SIZES, CanvasCatalogError, readCanvasCatalog } from '../canvas/catalog.js'
 import type { CanvasCatalogFiles, CanvasCatalogName } from '../canvas/catalog.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError, emptyFilmBoard } from '../canvas/documents.js'
-import { checkCameraControlInput, checkCameraMoveInput, findPreset, mergeCameraControl, planGenerationOptions, presetSettings } from '../canvas/generation-options.js'
-import type { CameraControlInput, CameraMoveInput, CameraMoveSetting, ClearableOption, OptionCatalogs, PresetSettings } from '../canvas/generation-options.js'
+import {
+  PROMPT_LIMIT_LENGTH, checkCameraControlInput, checkCameraMoveInput, findPreset, mergeCameraControl, nodeGenerationMode, planGenerationOptions, presetSettings,
+  promptLimitCheck,
+} from '../canvas/generation-options.js'
+import type { CameraControlInput, CameraMoveInput, CameraMoveSetting, ClearableOption, OptionCatalogs, PresetSettings, PromptLimitCheck } from '../canvas/generation-options.js'
 import { FilmToolError, callStudio } from './studio-client.js'
 import { filmPathFor, filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices, FilmWorkspace } from './context.js'
@@ -168,6 +171,51 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
   /** A canvas catalogue (C3) from the canvas build. */
   const catalog = <N extends CanvasCatalogName>(name: N): Promise<CanvasCatalogFiles[N]> => readCanvasCatalog(name, services.catalogRoot)
 
+  /** A catalogue when the build has it; for checks that must never stop a generation. */
+  const optionalCatalog = <N extends CanvasCatalogName>(name: N): Promise<CanvasCatalogFiles[N] | undefined> => catalog(name).catch(() => undefined)
+
+  /**
+   * The generations in a batch the page would refuse for length (C2): the
+   * page answers a batch before it starts its runs, so its own refusal never
+   * reaches the agent. Estimated on the board the batch leaves.
+   */
+  const lengthChecks = async (snapshot: BoardSnapshot | null, ops: readonly BoardOp[]): Promise<PromptLimitCheck[]> => {
+    const runs = ops.filter(op => op.type === 'run_generation' && typeof op.nodeId === 'string')
+    if (runs.length === 0 || snapshot === null) return []
+    let after: BoardSnapshot
+    try {
+      after = applyBoardOps(snapshot, ops.filter(op => op.type !== 'run_generation'))
+    } catch {
+      // A batch only the page can replay (a node type of a plugin): the page judges it.
+      return []
+    }
+    const targets = runs.map(op => after.nodes?.find(node => node.id === op.nodeId)).filter((node): node is BoardNode => node !== undefined)
+    const catalogs: OptionCatalogs = {
+      ...(targets.some(node => isRecord(node.metadata?.cameraMove)) ? { moves: await optionalCatalog('camera-moves') } : {}),
+      ...(targets.some(node => isRecord(node.metadata?.cameraControl)) ? { camera: await optionalCatalog('camera-control') } : {}),
+    }
+    return runs.flatMap((op) => {
+      const check = promptLimitCheck(after, { nodeId: op.nodeId as string, mode: op.mode, prompt: op.prompt }, catalogs)
+      return check === undefined ? [] : [check]
+    })
+  }
+
+  const overLimit = (checks: readonly PromptLimitCheck[]): FilmToolError => new FilmToolError('CANVAS_PROMPT_OVER_LIMIT',
+    `With its camera move and camera lines, the prompt of ${checks.map(check => `${check.nodeId} would be ${check.length} characters`).join(' and ')}, over the `
+    + `${PROMPT_LIMIT_LENGTH} the storyboard sends: the page would refuse to generate, so nothing was sent or changed. Shorten the prompt or the text wired into `
+    + 'it, or clear a setting with canvas_set_generation_options (only the added lines are refused: a prompt the person wrote past the limit is sent as it is).')
+
+  const lengthWarnings = (checks: readonly PromptLimitCheck[]): Record<string, unknown> => {
+    const possible = checks.filter(check => check.refused === 'possible')
+    return possible.length === 0 ? {} : {
+      warnings: possible.map(check => ({
+        code: 'CANVAS_PROMPT_OVER_LIMIT', nodeId: check.nodeId, length: check.length, limit: check.limit,
+        note: 'With its camera lines this prompt may run past the limit, depending on the page\'s language and on whether a saved screenplay compilation still '
+          + 'matches; the page then does not start the generation. If canvas_get_generation_status shows it never started, shorten the prompt or clear a setting.',
+      })),
+    }
+  }
+
   /**
    * Run a write: on the open page as ops, or on the saved board under its lock.
    * `compile` turns the board as it is into the ops, plus what the answer
@@ -180,9 +228,12 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
     if (page !== undefined) {
       const { ops, report } = compile(snapshot)
       if (ops.length === 0) return plain({ ...where(page), changed: false, ...report })
+      const checks = await lengthChecks(snapshot, ops)
+      const refused = checks.filter(check => check.refused === 'certain')
+      if (refused.length > 0) throw overLimit(refused)
       const result = await services.boardAgent.call(page.target, 'canvas_apply_ops', { ops, boardId: film.boardId, project: film.projectId }, { signal: exec.signal })
       const receipt = mutationReceipt(snapshot, result)
-      return plain({ ...where(page), ...(isRecord(receipt) ? receipt : { result: receipt }), ...report })
+      return plain({ ...where(page), ...(isRecord(receipt) ? receipt : { result: receipt }), ...report, ...lengthWarnings(checks) })
     }
     if (tool === 'canvas_run_generation' || (tool === 'canvas_create_generation_flow' && args.autoRun === true)) {
       throw new FilmToolError('CANVAS_BOARD_NOT_OPEN', 'Running a generation needs the storyboard page open (the 分镜 tab of the film workbench). '
@@ -526,14 +577,33 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
           clear,
           catalogs: checked.catalogs,
         }
+        // Both catalogues where the build has them: a node keeps settings this call does not touch.
+        const lengthCatalogs: OptionCatalogs = {
+          moves: checked.catalogs.moves ?? await optionalCatalog('camera-moves'),
+          camera: checked.catalogs.camera ?? await optionalCatalog('camera-control'),
+        }
         return write('canvas_set_generation_options', exec, args, (snapshot) => {
           const plan = planGenerationOptions(options, snapshot)
+          // Whether the settings now push a changed node's prompt past the limit, generated from its own panel.
+          const after = snapshot !== null && plan.ops.length > 0 ? applyBoardOps(snapshot, plan.ops) : null
+          const limits = after === null ? [] : plan.ops.flatMap((op) => {
+            const node = after.nodes?.find(item => item.id === op.id)
+            const check = node === undefined ? undefined : promptLimitCheck(after, { nodeId: node.id, mode: nodeGenerationMode(node) }, lengthCatalogs)
+            return check === undefined ? [] : [check]
+          })
           return {
             ops: plan.ops,
             report: {
               applied: plan.applied,
               ...(checked.adjusted.length > 0 ? { adjusted: checked.adjusted } : {}),
               ...(checked.preset !== undefined ? { note: 'The page fits a preset\'s duration, ratio, resolution and count to each node\'s model when it generates.' } : {}),
+              ...(limits.length > 0 ? {
+                warnings: limits.map(check => ({
+                  code: 'CANVAS_PROMPT_OVER_LIMIT', nodeId: check.nodeId, length: check.length, limit: check.limit, certain: check.refused === 'certain',
+                  note: `With the added lines this node's prompt would be ${check.length} characters, over the ${check.limit} the storyboard sends, so generating it `
+                    + `${check.refused === 'certain' ? 'is' : 'may be'} refused. Shorten the prompt or clear a setting.`,
+                })),
+              } : {}),
             },
           }
         })

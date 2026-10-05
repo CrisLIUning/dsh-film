@@ -1,7 +1,8 @@
 /**
  * Generation settings on storyboard nodes (spec C1/C11): the canvas's readers
  * ported with the catalogue passed in, the agent's values checked strictly,
- * the per-node plan of canvas_set_generation_options, and presets.
+ * the per-node plan of canvas_set_generation_options, presets, and the
+ * estimate of the 4000-character rule (C2) the run tools refuse by.
  *
  * The catalogues are the canvas's own files (tests/fixtures/catalog, copied
  * from canvas feat/dsh-host 267893c web/src/lib/canvas/catalog/); the
@@ -15,8 +16,8 @@ import { describe, expect, it } from 'vitest'
 import type { BoardNode, BoardSnapshot } from '../src/canvas/board-ops.js'
 import type { CameraControlCatalog, CameraMoveCatalog, GenerationPresetCatalog } from '../src/canvas/catalog.js'
 import {
-  cameraControlRefusal, cameraMoveRefusal, checkCameraControlInput, checkCameraMoveInput, findPreset, mergeCameraControl, nearestStop,
-  planGenerationOptions, presetSettings, renderCameraDirection, renderCameraMove, sanitizeCameraControl, sanitizeCameraMove,
+  PROMPT_LIMIT_LENGTH, cameraControlRefusal, cameraMoveRefusal, checkCameraControlInput, checkCameraMoveInput, findPreset, mergeCameraControl, nearestStop,
+  planGenerationOptions, presetSettings, promptLimitCheck, renderCameraDirection, renderCameraMove, sanitizeCameraControl, sanitizeCameraMove,
 } from '../src/canvas/generation-options.js'
 import type { CheckedGenerationOptions } from '../src/canvas/generation-options.js'
 
@@ -187,5 +188,58 @@ describe('planGenerationOptions', () => {
     expect(plan.ops[0]).toEqual({ type: 'update_node', id: 'shot', metadata: { size: '9:16', vquality: '720', seconds: '5', generateAudio: 'true', cameraControl: expect.objectContaining({ focalLength: 85 }) } })
     expect(plan.applied[1]).toMatchObject({ nodeId: 'still', set: ['cameraControl'], skipped: [{ field: 'preset', reason: 'p.vertical-drama is a video preset; this is an image node' }] })
     expect(() => planGenerationOptions(options({ nodeIds: ['still'], preset }), snapshot)).toThrow(/None of these nodes takes preset/u)
+  })
+})
+
+describe('promptLimitCheck (C2)', () => {
+  /** A generation node in video mode whose prompt mentions a wired text node holding `length` characters. */
+  const composerBoard = (length: number, metadata: Record<string, unknown> = { cameraMove: { v: 1, moves: [{ id: 'push-in' }] } }): BoardSnapshot => board([
+    node('note', 'text', { content: '雨'.repeat(length) }),
+    node('gen', 'config', { generationMode: 'video', composerContent: '@[node:note]', prompt: '@[node:note]', ...metadata }),
+  ], [['note', 'gen']])
+  // The page renders '【文本1】' (zh) or '【Text 1】' (en) twice around the text: the base is length + 13 or + 19, and the line adds 2 + its length.
+  const lineLength = PUSH_IN_ZH.length + 2
+
+  it('refuses for certain when the added line pushes the prompt over the limit however the page is set up', () => {
+    const length = PROMPT_LIMIT_LENGTH - 19 - 1
+    const check = promptLimitCheck(composerBoard(length), { nodeId: 'gen' }, catalogs)
+    expect(check).toEqual({ nodeId: 'gen', refused: 'certain', length: length + 19 + lineLength, limit: PROMPT_LIMIT_LENGTH, lines: [PUSH_IN_ZH] })
+  })
+
+  it('says possible when only one of the page\'s setups refuses, and nothing when the prompt fits or is long by itself', () => {
+    // Over the limit with the English labels already, within it with the Chinese ones.
+    expect(promptLimitCheck(composerBoard(PROMPT_LIMIT_LENGTH - 15), { nodeId: 'gen' }, catalogs)).toMatchObject({ refused: 'possible' })
+    // Within it with the Chinese labels and the line, over it with the English ones.
+    expect(promptLimitCheck(composerBoard(PROMPT_LIMIT_LENGTH - 13 - lineLength), { nodeId: 'gen' }, catalogs)).toMatchObject({ refused: 'possible' })
+    expect(promptLimitCheck(composerBoard(PROMPT_LIMIT_LENGTH - 19 - lineLength), { nodeId: 'gen' }, catalogs)).toBeUndefined()
+    expect(promptLimitCheck(composerBoard(PROMPT_LIMIT_LENGTH + 50), { nodeId: 'gen' }, catalogs)).toBeUndefined()
+  })
+
+  it('reads the run\'s prompt and mode as the page does, adds a line only once, and cannot estimate without the catalogue', () => {
+    const near = PROMPT_LIMIT_LENGTH - 19 - 1
+    // An image run takes no camera move; a text run takes nothing.
+    expect(promptLimitCheck(composerBoard(near), { nodeId: 'gen', mode: 'image' }, catalogs)).toBeUndefined()
+    expect(promptLimitCheck(composerBoard(near), { nodeId: 'gen', mode: 'text' }, catalogs)).toBeUndefined()
+    expect(promptLimitCheck(composerBoard(near), { nodeId: 'gen' }, { camera })).toBeUndefined()
+    expect(promptLimitCheck(composerBoard(near, {}), { nodeId: 'gen' }, catalogs)).toBeUndefined()
+    // A prompt that already holds the line gets no second one.
+    const holding = board([node('shot', 'video', { prompt: `${'雨'.repeat(PROMPT_LIMIT_LENGTH - 30)}\n${PUSH_IN_ZH}`, cameraMove: { moves: [{ id: 'push-in' }] } })])
+    expect(promptLimitCheck(holding, { nodeId: 'shot', mode: 'video' }, catalogs)).toBeUndefined()
+    // The run's own prompt replaces the node's.
+    expect(promptLimitCheck(holding, { nodeId: 'shot', mode: 'video', prompt: '雨'.repeat(PROMPT_LIMIT_LENGTH - 10) }, catalogs)).toMatchObject({ refused: 'certain' })
+    // A video prompt mentioning a node it cannot find is refused by the page for that reason instead.
+    expect(promptLimitCheck(board([node('gen', 'config', { generationMode: 'video', composerContent: '@[node:gone]', cameraMove: { moves: [{ id: 'push-in' }] } })]), { nodeId: 'gen' }, catalogs)).toBeUndefined()
+  })
+
+  it('counts wired texts as blocks on the ordinary path, and allows for a saved screenplay compilation that leaves them out', () => {
+    const wired = (metadata: Record<string, unknown>): BoardSnapshot => board([
+      node('note', 'text', { content: '雨'.repeat(2000) }),
+      node('shot', 'video', { prompt: '雨'.repeat(1985), cameraControl: { v: 1 }, ...metadata }),
+    ], [['note', 'shot']])
+    // 1985 + 2 + '【文本1】\n' + 2000 = 3993 within (3996 with '【Text 1】'); the camera line, in the texts' language, pushes it over either way.
+    expect(promptLimitCheck(wired({}), { nodeId: 'shot', mode: 'video' }, catalogs)).toMatchObject({ refused: 'certain' })
+    expect(promptLimitCheck(wired({}), { nodeId: 'shot', mode: 'image' }, catalogs)).toMatchObject({ refused: 'certain', lines: [DEFAULT_CAMERA_ZH] })
+    // A matching compilation already holds the wired text, so the page leaves the block out and the prompt fits: refused only if it does not match.
+    expect(promptLimitCheck(wired({ videoPromptCompilation: { prompt: 'x' } }), { nodeId: 'shot', mode: 'video' }, catalogs)).toMatchObject({ refused: 'possible' })
   })
 })

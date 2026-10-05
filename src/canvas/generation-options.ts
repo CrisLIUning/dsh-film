@@ -14,11 +14,18 @@
  * length or aperture snaps to the nearest catalogue stop as the canvas does,
  * and `null` means cleared (update_node merges metadata and cannot delete a
  * key; every canvas reader treats null as absent, amendments C.8).
+ *
+ * It also renders the lines composition appends — the motion line, then the
+ * camera line — and estimates the prompt a generation would send, so a run the
+ * page would refuse because composed settings push the prompt over 4000
+ * characters (C2) is refused here as an error the agent reads: the page starts
+ * an agent's generation only after it has answered, so its own refusal never
+ * comes back.
  * @module dsh-film/canvas/generation-options
  */
 
 import { isDeepStrictEqual } from 'node:util'
-import type { BoardNode, BoardOp, BoardSnapshot } from './board-ops.js'
+import type { BoardConnection, BoardNode, BoardOp, BoardSnapshot } from './board-ops.js'
 import { CAMERA_ANGLES, CAMERA_MOVE_SPEEDS, CAMERA_SHOT_SIZES } from './catalog.js'
 import type { CameraAngle, CameraControlCatalog, CameraMoveCatalog, CameraMoveSpeed, CameraShotSize, GenerationPreset, GenerationPresetCatalog } from './catalog.js'
 import { CanvasToolError } from './tool-error.js'
@@ -55,12 +62,16 @@ export interface OptionCatalogs {
 
 /** At most this many moves on a node (C1). */
 export const CAMERA_MOVE_LIMIT = 3
+/** C2: a prompt that composition (not the person's own text) pushes past this is not sent. */
+export const PROMPT_LIMIT_LENGTH = 4000
 /** The settings canvas_set_generation_options can clear. */
 export const CLEARABLE_OPTIONS = ['cameraMove', 'cameraControl'] as const
 export type ClearableOption = (typeof CLEARABLE_OPTIONS)[number]
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const record = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {})
 
 const isSpeed = (value: unknown): value is CameraMoveSpeed => typeof value === 'string' && (CAMERA_MOVE_SPEEDS as readonly string[]).includes(value)
 
@@ -523,4 +534,218 @@ export function planGenerationOptions(options: CheckedGenerationOptions, snapsho
     }
   }
   return { ops, applied }
+}
+
+// ---------------------------------------------------------------------------
+// The prompt a generation would send (C2's 4000-character rule)
+// ---------------------------------------------------------------------------
+
+/** One input of a generation, as the canvas reads it (canvas-node-generation.ts readNodeGenerationResource). */
+interface Resource {
+  nodeId: string
+  kind: 'text' | 'image' | 'video' | 'audio'
+  text?: string
+  /** A screenplay scene's text, which the canvas wraps in a source-context frame. */
+  scene?: boolean
+}
+
+type GenerationInput = Resource | { nodeId: string; kind: 'group'; children: Resource[] }
+
+/** The canvas's frame around a screenplay scene's text (canvas-node-generation.ts generationTextBlock). */
+const SCENE_CONTEXT = ['【剧本来源上下文】以下整场资料用于人物、空间和剧情溯源，不代表本次全部演出。仅执行本次制作脚本指定的时间范围、动作和对白，不补入范围外情节或台词。', '【剧本来源上下文结束】'] as const
+
+function storySnapshot(node: BoardNode): Record<string, unknown> | undefined {
+  const snapshot = record(node.metadata?.storySource).snapshot
+  return isRecord(snapshot) ? snapshot : undefined
+}
+
+/** A node's kind as a reference (canvas-resource-references.ts resourceKind; plugin node definitions other than the screenplay source are not known here). */
+function resourceKind(node: BoardNode): Resource['kind'] | null {
+  const metadata = node.metadata ?? {}
+  if (node.type === 'image' && Boolean(metadata.content)) return 'image'
+  if (node.type === 'video' && Boolean(metadata.content)) return 'video'
+  if (node.type === 'audio' && Boolean(metadata.content)) return 'audio'
+  if (node.type === 'text' && Boolean(metadata.content || metadata.prompt)) return 'text'
+  if (node.type === 'story-source' && storySnapshot(node) !== undefined) return 'text'
+  return null
+}
+
+function readResource(node: BoardNode): Resource[] {
+  const snapshot = storySnapshot(node)
+  if (snapshot !== undefined) {
+    const references = Array.isArray(snapshot.references) ? snapshot.references.filter(isRecord) : []
+    return [
+      { nodeId: node.id, kind: 'text', text: String(snapshot.productionText ?? snapshot.markdown ?? ''), scene: record(node.metadata?.storySource).objectKind === 'scene' },
+      ...references.filter(reference => Boolean(reference.url) && ['available', 'relocated'].includes(String(reference.status)))
+        .map((reference): Resource => ({ nodeId: `${node.id}:asset:${String(reference.assetId)}:${String(reference.assetVersionId)}`, kind: 'image' })),
+    ]
+  }
+  const kind = resourceKind(node)
+  if (kind === 'image' || kind === 'video' || kind === 'audio') return [{ nodeId: node.id, kind }]
+  const text = String(node.metadata?.content || node.metadata?.prompt || '')
+  return kind === 'text' && text !== '' ? [{ nodeId: node.id, kind: 'text', text }] : []
+}
+
+/** The inputs of a generation node (buildNodeGenerationInputs with getGenerationResourceNodes). */
+function generationInputs(target: BoardNode, nodes: readonly BoardNode[], connections: readonly BoardConnection[]): GenerationInput[] {
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  const groupResources = (groupId: string): BoardNode[] => nodes.filter(node => node.metadata?.groupId === groupId && resourceKind(node) !== null)
+  const isReference = (node: BoardNode): boolean => resourceKind(node) !== null || (node.type === 'group' && groupResources(node.id).length > 0)
+  const contextInputs = (id: string): BoardNode[] => connections.filter(link => link.toNodeId === id)
+    .map(link => byId.get(link.fromNodeId)).filter((node): node is BoardNode => node !== undefined && isReference(node))
+  let sources: BoardNode[]
+  if (target.type === 'video' && Boolean(target.metadata?.videoInputsInitialized)) sources = contextInputs(target.id)
+  else {
+    // An output used in a downstream config takes that config's other inputs.
+    const toConfig = connections.find(link => link.fromNodeId === target.id && byId.get(link.toNodeId)?.type === 'config')
+    const configInputs = toConfig !== undefined ? contextInputs(toConfig.toNodeId).filter(node => node.id !== target.id) : []
+    sources = configInputs.length > 0 ? configInputs : contextInputs(target.id)
+  }
+  return sources.flatMap((node): GenerationInput[] => {
+    if (node.type === 'group') {
+      const children = groupResources(node.id).flatMap(readResource)
+      return children.length > 0 ? [{ nodeId: node.id, kind: 'group', children }] : []
+    }
+    const resources = readResource(node)
+    return storySnapshot(node) !== undefined && resources.length > 1 ? [{ nodeId: node.id, kind: 'group', children: resources }] : resources
+  })
+}
+
+function flatten(inputs: readonly GenerationInput[]): Resource[] {
+  const resources = inputs.flatMap(input => (input.kind === 'group' ? input.children : [input]))
+  return [...new Map(resources.map(resource => [resource.nodeId, resource])).values()]
+}
+
+/** A reference's label in the generated prompt, in the page's UI language (its i18n strings). */
+function label(kind: Resource['kind'], index: number, isVideo: boolean, ui: PromptLanguage): string {
+  const n = index + 1
+  if (isVideo && kind !== 'text') return `@${kind === 'image' ? 'Image' : kind === 'video' ? 'Video' : 'Audio'}${n}`
+  if (kind === 'image') return ui === 'zh' ? `图片${n}` : `Image ${n}`
+  if (kind === 'video') return ui === 'zh' ? `参考视频 ${n}` : `Reference videos ${n}`
+  if (kind === 'audio') return ui === 'zh' ? `参考音频 ${n}` : `Reference audio ${n}`
+  return ui === 'zh' ? `文本${n}` : `Text ${n}`
+}
+
+function textBlock(name: string, resource: Resource): string {
+  const text = resource.text ?? ''
+  return `【${name}】\n${resource.scene === true ? `${SCENE_CONTEXT[0]}\n${text}\n${SCENE_CONTEXT[1]}` : text}`
+}
+
+/** Node references and their rendered labels carry no language (prompt-composition.ts stripReferenceLabels). */
+function detectLanguage(texts: readonly string[]): PromptLanguage | undefined {
+  for (const text of texts) {
+    const plain = text.replace(/@\[node:[^\]]+\]/gu, ' ').replace(/@(?:Image|Video|Audio)\d+/giu, ' ').replace(/【[^】\n]*】/gu, ' ')
+    if (/\p{Script=Han}/u.test(plain)) return 'zh'
+    if (/\p{L}/u.test(plain)) return 'en'
+  }
+  return undefined
+}
+
+/** The base prompt (before composition) and the texts its language is read from, or undefined when the page would refuse the run for another reason. */
+function basePrompt(target: BoardNode, prompt: string, inputs: readonly GenerationInput[], isVideo: boolean, compiled: boolean, ui: PromptLanguage): { base: string; languageText: string[] } | undefined {
+  const metadata = target.metadata ?? {}
+  const composer = !compiled && target.type === 'config' && String(metadata.composerContent ?? '').trim() !== ''
+    && (!metadata.videoPromptCompilation || /@\[node:[^\]]+\]/u.test(prompt))
+  if (composer) {
+    // buildComposerGenerationContext: each mention becomes its label, the mentioned texts follow as blocks.
+    const byId = new Map(inputs.map(input => [input.nodeId, input]))
+    const counts = { image: 0, video: 0, audio: 0, text: 0 }
+    const labels = new Map<string, string>()
+    const used: Resource[] = []
+    const blocks: string[] = []
+    let hasToken = false
+    let last = 0
+    let next = ''
+    for (const match of prompt.matchAll(/@\[node:([^\]]+)\]/gu)) {
+      hasToken = true
+      next += prompt.slice(last, match.index)
+      const input = byId.get(match[1]!)
+      if (input !== undefined) {
+        next += flatten([input]).map((resource) => {
+          let name = labels.get(resource.nodeId)
+          if (name === undefined) {
+            name = label(resource.kind, counts[resource.kind]++, isVideo, ui)
+            labels.set(resource.nodeId, name)
+            used.push(resource)
+            if (resource.kind === 'text') blocks.push(textBlock(name, resource))
+          }
+          return resource.kind === 'text' ? `【${name}】` : name
+        }).join('、')
+      } else if (isVideo) return undefined // The page refuses a video prompt that mentions a node it cannot find.
+      last = match.index + match[0].length
+    }
+    next += prompt.slice(last)
+    if (blocks.length > 0) next = `${next.trim()}\n\n${blocks.join('\n\n')}`
+    return { base: hasToken ? next : prompt, languageText: [prompt, ...used.map(resource => resource.text ?? '')] }
+  }
+  const resources = flatten(inputs)
+  const upstream = compiled ? '' : resources.filter(resource => resource.text).map((resource, index) => textBlock(label('text', index, isVideo, ui), resource)).join('\n\n')
+  return { base: upstream !== '' ? `${prompt}\n\n${upstream}` : prompt, languageText: [prompt, ...(compiled ? [] : resources.map(resource => resource.text ?? ''))] }
+}
+
+/** A generation the page would refuse for length. */
+export interface PromptLimitCheck {
+  nodeId: string
+  /** certain: refused however the page is set up; possible: refused in some (the UI language, a saved screenplay compilation). */
+  refused: 'certain' | 'possible'
+  /** The composed prompt's length (the largest that is refused). */
+  length: number
+  limit: number
+  /** The lines composition would append. */
+  lines: string[]
+}
+
+/**
+ * Whether the page would refuse to run a generation because its camera move
+ * and camera lines push the prompt over the limit while the prompt without
+ * them is within it (C2; the person's own longer text is still sent). The page
+ * answers an agent's run_generation before it starts the generation, so this
+ * is the agent's only way to hear of that refusal. The estimate follows the
+ * page — the prompt and mode run_generation resolves, the mentions rendered as
+ * labels, the wired texts as blocks, the lines added once — over the setups
+ * it cannot see: the page's UI language (labels) and whether a saved
+ * screenplay compilation still matches (wired texts left out).
+ * @param snapshot - the board as the run will find it.
+ * @param run - the run: node, and the mode and prompt run_generation passes, if any.
+ * @param catalogs - the camera catalogues; without the one a setting needs, there is no estimate.
+ * @returns the refusal, or undefined when the run would go (or cannot be estimated).
+ */
+export function promptLimitCheck(snapshot: BoardSnapshot, run: { nodeId: string; mode?: unknown; prompt?: unknown }, catalogs: OptionCatalogs): PromptLimitCheck | undefined {
+  const nodes = snapshot.nodes ?? []
+  const target = nodes.find(node => node.id === run.nodeId)
+  if (target === undefined) return undefined
+  const metadata = target.metadata ?? {}
+  // As the page's agent bridge resolves a run (use-agent-bridge.ts).
+  const mode = (typeof run.mode === 'string' && run.mode !== '' ? run.mode : typeof metadata.generationMode === 'string' && metadata.generationMode !== '' ? metadata.generationMode : 'image') as GenerationMode
+  if (mode !== 'image' && mode !== 'video') return undefined
+  const prompt = typeof run.prompt === 'string' && run.prompt.trim() !== '' ? run.prompt : String(metadata.composerContent ?? metadata.prompt ?? '')
+  const wantsMove = cameraMoveRefusal(target, mode) === undefined && isRecord(metadata.cameraMove)
+  const wantsCamera = cameraControlRefusal(target, mode) === undefined && isRecord(metadata.cameraControl)
+  if ((wantsMove && catalogs.moves === undefined) || (wantsCamera && catalogs.camera === undefined)) return undefined
+  const move = wantsMove ? sanitizeCameraMove(metadata.cameraMove, catalogs.moves!) : null
+  const camera = wantsCamera ? sanitizeCameraControl(metadata.cameraControl, catalogs.camera!) : null
+  if (move === null && (camera === null || !camera.enabled)) return undefined
+  const isVideo = mode === 'video'
+  const inputs = generationInputs(target, nodes, snapshot.connections ?? [])
+  const outcomes: Array<{ refused: boolean; length: number; lines: string[] }> = []
+  for (const ui of ['zh', 'en'] as const) {
+    for (const compiled of isVideo && isRecord(metadata.videoPromptCompilation) ? [false, true] : [false]) {
+      const assembled = basePrompt(target, prompt, inputs, isVideo, compiled, ui)
+      if (assembled === undefined) return undefined
+      const { base } = assembled
+      const language = detectLanguage(assembled.languageText) ?? ui
+      const lines: string[] = []
+      const hasLine = (line: string): boolean => base.split(/\r?\n/u).some(existing => existing.trim() === line)
+      for (const line of [move !== null ? renderCameraMove(move, catalogs.moves!, language) : '', camera !== null ? renderCameraDirection(camera, catalogs.camera!, language) : '']) {
+        if (line !== '' && !hasLine(line) && !lines.includes(line)) lines.push(line)
+      }
+      const composed = lines.length === 0 ? base : base.trim() !== '' ? `${base.replace(/\s+$/u, '')}\n\n${lines.join('\n')}` : lines.join('\n')
+      const length = composed.trim().length
+      outcomes.push({ refused: length > PROMPT_LIMIT_LENGTH && base.trim().length <= PROMPT_LIMIT_LENGTH, length, lines })
+    }
+  }
+  const refusing = outcomes.filter(outcome => outcome.refused)
+  if (refusing.length === 0) return undefined
+  const longest = refusing.reduce((best, outcome) => (outcome.length > best.length ? outcome : best))
+  return { nodeId: target.id, refused: refusing.length === outcomes.length ? 'certain' : 'possible', length: longest.length, limit: PROMPT_LIMIT_LENGTH, lines: longest.lines }
 }
