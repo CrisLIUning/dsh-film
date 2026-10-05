@@ -64,4 +64,23 @@ describe('clip marks', () => {
     expect(bare).not.toHaveProperty('subtitleEntries')
     expect(bare).not.toHaveProperty('directorSequence')
   })
+
+  it('gives a sibling the cues\' style, save time and media key, since it shows the same file', () => {
+    const metadata = {
+      content: '/api/projects/p/raw/canvas/media/shot.mp4', bytes: 10, durationMs: 5000,
+      subtitleEntries: [...cues, { startMs: 3600, endMs: 3900, text: '  无 id  ' }], subtitleStyle: { v: 1, position: 'top', color: '#abc' },
+      subtitleUpdatedAt: '2026-10-01T00:00:00.000Z', subtitleMediaKey: '/api/projects/p/raw/canvas/media/shot.mp4|10|5000',
+    }
+    const sibling = siblingMetadata(metadata, { inMs: 2500, outMs: 5000 })
+    expect(sibling).toMatchObject({
+      subtitleStyle: { v: 1, fontScale: 5, color: '#AABBCC', position: 'top', backdrop: 'shadow', maxCharsPerEntry: 35, autoResegment: true },
+      subtitleUpdatedAt: metadata.subtitleUpdatedAt, subtitleMediaKey: metadata.subtitleMediaKey,
+    })
+    // Cleaned as the page reads them: a cue without an id gets the page's derived one.
+    expect((sibling.subtitleEntries as Array<{ id: string; text: string }>).map(cue => cue.text)).toEqual(['跨过入点', '片段中间', '无 id', '跨过出点'])
+    expect((sibling.subtitleEntries as Array<{ id: string }>)[2]!.id).toMatch(/^[A-Za-z0-9_-]{10}$/u)
+    // Cues saved without a style or key (a split from before 0.3) stay without one.
+    const plain = siblingMetadata({ ...metadata, subtitleStyle: undefined, subtitleUpdatedAt: undefined, subtitleMediaKey: undefined }, { inMs: 2500, outMs: 5000 })
+    expect(Object.keys(plain).filter(key => key.startsWith('subtitle'))).toEqual(['subtitleEntries'])
+  })
 })

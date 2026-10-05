@@ -22,8 +22,10 @@
  * `connectFrom` and `metadata.derivedFrom` (C1), and — like the page's own
  * landing — what it carries over from its sources as the board holds them: a
  * cut its source's prompt, a cut or a join their subtitle cues and director
- * shots moved to the result's time (canvas/media-time.ts); without `land` the
- * page lands it itself (the agent's video_* tools ask for `land`).
+ * shots moved to the result's time (canvas/media-time.ts), the cues with their
+ * style and a media key for the new file (canvas/subtitles.ts), so the page
+ * does not flag them as mismatched; without `land` the page lands it itself
+ * (the agent's video_* tools ask for `land`).
  * `derivedFrom.sources` (also on the task's file) give the range of each
  * source the result really holds and `atMs`, where it starts in the result,
  * for remapping subtitles and director cues. A path is the file
@@ -37,9 +39,10 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { landFileOnBoard, mediaKindOfPath } from '../canvas/board-media.js'
-import type { BoardMediaKind } from '../canvas/board-media.js'
+import type { BoardMediaKind, LandedMedia } from '../canvas/board-media.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
-import { cutCues, cutShots, joinCues, joinShots } from '../canvas/media-time.js'
+import { cutShots, joinShots } from '../canvas/media-time.js'
+import { derivedSubtitleFields, joinedSubtitleFields } from '../canvas/subtitles.js'
 import { mediaTypeOf } from '../media.js'
 import { MediaEditError, checkRange, copyProblem, copyTarget, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed, sweepEditTemporaries } from '../media/edit.js'
 import type { EditProbe, EditResult } from '../media/edit.js'
@@ -198,27 +201,33 @@ function metadataOf(nodes: readonly unknown[], nodeId: string): Body | undefined
 
 /**
  * What a landed cut carries over from its source, as the page's 出片 does:
- * the prompt, and the cues and director shots of the range, in the result's time.
+ * the prompt, the cues of the range in the result's time with their style and
+ * a media key for the new file, and the director shots of the range.
  */
-function carriedByCut(nodes: readonly unknown[], sources: readonly DerivedSource[]): Body {
+function carriedByCut(nodes: readonly unknown[], sources: readonly DerivedSource[], media: LandedMedia): Body {
   const source = sources[0]
   const metadata = source === undefined ? undefined : metadataOf(nodes, source.nodeId)
   if (source === undefined || metadata === undefined) return {}
-  const cues = cutCues(metadata.subtitleEntries, source)
   const shots = cutShots(metadata.directorSequence, source)
   return {
     ...(typeof metadata.prompt === 'string' && metadata.prompt !== '' ? { prompt: metadata.prompt } : {}),
-    ...(cues.length > 0 ? { subtitleEntries: cues } : {}),
+    ...derivedSubtitleFields(metadata, { kind: 'cut', inMs: source.inMs, outMs: source.outMs, atMs: source.atMs }, media),
     ...(shots !== undefined ? { directorSequence: shots } : {}),
   }
 }
 
-/** What a landed join carries over, as the page's 拼接 does: every clip's cues and director shots, placed where the clip starts. */
-function carriedByJoin(nodes: readonly unknown[], sources: readonly DerivedSource[]): Body {
+/**
+ * What a landed join carries over, as the page's 拼接 does: every clip's cues
+ * and director shots, placed where the clip starts, the cues with the first
+ * styled clip's style and a media key for the new file.
+ */
+function carriedByJoin(nodes: readonly unknown[], sources: readonly DerivedSource[], media: LandedMedia): Body {
   const segments = sources.map(source => ({ ...source, metadata: metadataOf(nodes, source.nodeId) }))
-  const cues = joinCues(segments.map(({ metadata, ...range }) => ({ ...range, items: metadata?.subtitleEntries })))
   const shots = joinShots(segments.map(({ metadata, ...range }) => ({ ...range, sequence: metadata?.directorSequence })))
-  return { ...(cues.length > 0 ? { subtitleEntries: cues } : {}), ...(shots !== undefined ? { directorSequence: shots } : {}) }
+  return {
+    ...joinedSubtitleFields(segments.map(({ inMs, outMs, atMs, metadata }) => ({ inMs, outMs, atMs, metadata })), media),
+    ...(shots !== undefined ? { directorSequence: shots } : {}),
+  }
 }
 
 /**
@@ -270,8 +279,8 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       sources: (result: EditResult) => DerivedSource[]
       land: Landing | undefined
       metadata?: Body
-      /** What a landed result carries over from its sources, read from the board under its lock. */
-      carry?: (nodes: readonly unknown[], sources: readonly DerivedSource[]) => Body
+      /** What a landed result carries over from its sources, read from the board under its lock; `media` is the result's file as the node records it. */
+      carry?: (nodes: readonly unknown[], sources: readonly DerivedSource[], media: LandedMedia) => Body
       run: (absolute: string, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => Promise<EditResult>
     },
   ): Promise<Response> => {
@@ -309,7 +318,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
             metadata: { derivedFrom, ...edit.metadata },
             nearNodeId: edit.land.nearNodeId,
             connectFrom: edit.land.connectFrom,
-            ...(edit.carry !== undefined ? { carry: (nodes: readonly unknown[]) => edit.carry!(nodes, derivedFrom.sources) } : {}),
+            ...(edit.carry !== undefined ? { carry: (nodes: readonly unknown[], media: LandedMedia) => edit.carry!(nodes, derivedFrom.sources, media) } : {}),
           })
         } catch (error) {
           // The file is made; a board that cannot be written leaves it for the page to land.

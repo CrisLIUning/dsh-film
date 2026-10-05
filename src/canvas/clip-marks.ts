@@ -11,7 +11,8 @@
  * @module dsh-film/canvas/clip-marks
  */
 
-import { siblingCues, siblingShots } from './media-time.js'
+import { siblingShots } from './media-time.js'
+import { derivedSubtitleFields } from './subtitles.js'
 
 /** The shortest clip, and the closest a split may come to either edge. */
 export const MIN_CLIP_MS = 100
@@ -96,18 +97,19 @@ export function mediaFacts(metadata: Record<string, unknown> | undefined): Recor
 
 /**
  * A split sibling's metadata: the same file with its own mark, and the cues
- * and director shots that overlap it (still in the file's time).
+ * and director shots that overlap it (still in the file's time). The same
+ * file, so the cues keep their style, save time and media key (canvas
+ * `derivedSubtitleFields`).
  * @param metadata - the source node's metadata (with its file's length).
  * @param clip - the sibling's mark.
  * @returns the metadata.
  */
 export function siblingMetadata(metadata: Record<string, unknown> | undefined, clip: ClipMark): Record<string, unknown> {
-  const cues = siblingCues(metadata?.subtitleEntries, clip)
   const shots = siblingShots(metadata?.directorSequence, clip)
   return {
     ...mediaFacts(metadata),
     clip,
-    ...(cues.length > 0 ? { subtitleEntries: cues } : {}),
+    ...derivedSubtitleFields(metadata, { kind: 'sibling', ...clip }),
     ...(shots !== undefined ? { directorSequence: shots } : {}),
   }
 }
