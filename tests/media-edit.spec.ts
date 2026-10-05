@@ -426,24 +426,28 @@ describe('FilmMediaTasks.startLocal', () => {
       runs++
       return file
     }
-    const [one, two] = await Promise.allSettled([
-      tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-1000' }, run),
-      tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-2000' }, run),
-    ])
-    expect(one).toMatchObject({ status: 'fulfilled', value: { existing: false } })
-    expect(two).toMatchObject({ status: 'rejected', reason: { status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
-    const first = (one as PromiseFulfilledResult<{ taskId: string }>).value
+    const fingerprints = ['range-0-1000', 'range-0-2000']
+    const results = await Promise.allSettled(fingerprints.map(fingerprint => tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint }, run)))
+    // Whichever arrives first starts the edit; the other is another edit under the same id.
+    const winner = results.findIndex(result => result.status === 'fulfilled')
+    expect(winner).toBeGreaterThanOrEqual(0)
+    expect(results[winner]).toMatchObject({ status: 'fulfilled', value: { existing: false } })
+    expect(results[1 - winner]).toMatchObject({ status: 'rejected', reason: { status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
+    const first = (results[winner] as PromiseFulfilledResult<{ taskId: string }>).value
+    const started = fingerprints[winner]!
+    const other = fingerprints[1 - winner]!
     await settle(tasks, first.taskId)
     // The same fingerprint again is a repeat; without one (an older caller), only the capability is compared.
-    expect(await tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: 'range-0-1000' }, run)).toMatchObject({ taskId: first.taskId, existing: true })
+    expect(await tasks.startLocal(cwd, 'film', { ...request('44444444-dddd'), fingerprint: started }, run)).toMatchObject({ taskId: first.taskId, existing: true })
     expect(await tasks.findLocal(cwd, '44444444-dddd', 'video.cut')).toEqual({ taskId: first.taskId, status: 'done' })
     expect(runs).toBe(1)
     await tasks.settled()
     // A Host restarted since reads the fingerprint from the record.
     const later = new FilmMediaTasks(() => undefined)
-    expect(await tasks.record(cwd, first.taskId)).toMatchObject({ request: { fingerprint: 'range-0-1000' } })
-    await expect(later.findLocal(cwd, '44444444-dddd', 'video.cut', 'range-0-2000')).rejects.toMatchObject({ status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' })
-    expect(await later.findLocal(cwd, '44444444-dddd', 'video.cut', 'range-0-1000')).toEqual({ taskId: first.taskId, status: 'done' })
+    expect(await tasks.record(cwd, first.taskId)).toMatchObject({ request: { fingerprint: started } })
+    await expect(later.findLocal(cwd, '44444444-dddd', 'video.cut', other)).rejects.toMatchObject({ status: 409, code: 'MEDIA_EDIT_REQUEST_CONFLICT' })
+    expect(await later.findLocal(cwd, '44444444-dddd', 'video.cut', started)).toEqual({ taskId: first.taskId, status: 'done' })
+    await later.settled()
   })
 
   it('cancels a running edit: the work is aborted and the task ends interrupted with its cancellation', async () => {
