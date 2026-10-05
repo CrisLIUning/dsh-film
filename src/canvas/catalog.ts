@@ -1,10 +1,11 @@
 /**
  * The storyboard canvas's catalogues (spec C3): the static JSON the canvas
  * composes generation prompts from — camera moves (运镜), camera settings
- * (相机) and generation presets. The canvas bundles them, and its DSH build
- * copies them to `apps/canvas/catalog/<name>.json`, so the agent's tools read
- * the very files the page uses: a move the Agent lists or sets is one the
- * page renders, by the same id.
+ * (相机), prompt skills (提示词技能) and generation presets. The canvas
+ * bundles them, and its DSH build copies them to
+ * `apps/canvas/catalog/<name>.json`, so the agent's tools read the very files
+ * the page uses: a move or skill the Agent lists or sets is one the page
+ * renders, by the same id.
  *
  * Each file is read once per folder and checked against schema 1 before use.
  * A missing or broken file is a clear CANVAS_CATALOG_MISSING or
@@ -17,6 +18,8 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STORY_PRODUCTION_PURPOSES } from '../screenwriter/contracts/production.js'
+import type { StoryProductionPurpose } from '../screenwriter/contracts/production.js'
 
 /** Where the packaged canvas build keeps its catalogues. */
 export const PACKAGED_CATALOG_ROOT = fileURLToPath(new URL('../../apps/canvas/catalog/', import.meta.url))
@@ -100,11 +103,70 @@ export interface GenerationPresetCatalog {
   presets: GenerationPreset[]
 }
 
+/** How a prompt skill takes part in a prompt: a wrap skill holds the person's text ({{prompt}}), an append skill adds lines after it. */
+export type PromptSkillKind = 'wrap' | 'append'
+export type PromptSkillTarget = 'image' | 'video' | 'text'
+/** What a skill does to the camera move and camera lines: fills its {{motion}} / {{camera}} slot, leaves the line appended, or drops it. */
+export type PromptSkillCompose = 'slot' | 'append' | 'drop'
+export const PROMPT_SKILL_KINDS: readonly PromptSkillKind[] = ['wrap', 'append']
+export const PROMPT_SKILL_TARGETS: readonly PromptSkillTarget[] = ['image', 'video', 'text']
+export const PROMPT_SKILL_COMPOSES: readonly PromptSkillCompose[] = ['slot', 'append', 'drop']
+export const PROMPT_SKILL_CATEGORIES = ['storyboard', 'design-sheet', 'performance', 'camera', 'style', 'sound', 'commerce', 'continuity', 'utility'] as const
+export type PromptSkillCategory = (typeof PROMPT_SKILL_CATEGORIES)[number]
+/** The canvas's video modes a skill can be limited to (videoModes). */
+export const VIDEO_MODES = ['reference', 'image-to-video', 'first-last-frame', 'video-edit', 'text-to-video'] as const
+export type VideoMode = (typeof VIDEO_MODES)[number]
+/** Placeholders composition fills rather than a variable. */
+export const PROMPT_SKILL_RESERVED: readonly string[] = ['prompt', 'motion', 'camera']
+/** The longest template a skill may have (the canvas's own limit). */
+export const PROMPT_SKILL_TEMPLATE_LIMIT = 4000
+
+/** A skill variable: typed by the person or the agent, else its default, else (auto) the duration the request sends. */
+export interface PromptSkillVariable {
+  key: string
+  label: Bilingual
+  default?: string
+  required?: boolean
+  auto?: 'video.seconds'
+}
+
+/** One prompt skill of the catalogue (C3): VibeDev's own prompt template, Chinese in v1. */
+export interface PromptSkillEntry {
+  id: string
+  /** Bumped on any text change; a node keeps the version it attached. */
+  version: number
+  name: Bilingual
+  summary: Bilingual
+  category: PromptSkillCategory
+  appliesTo: PromptSkillTarget[]
+  /** Video skills limited to these video modes; every mode when absent. */
+  videoModes?: string[]
+  kind: PromptSkillKind
+  /** The node's 制作类型 (promptPurpose) the skill sets when attached. */
+  purpose?: StoryProductionPurpose
+  variables: PromptSkillVariable[]
+  /** {{prompt}} only in wrap skills; {{motion}} / {{camera}} are reserved slots. */
+  template: string
+  /** The avoid terms, without the '避免：' prefix. */
+  negative?: string
+  /** Shown in the canvas's picker only, never sent. */
+  notes?: Bilingual
+  composes: { motion: PromptSkillCompose; camera: PromptSkillCompose }
+  tags: string[]
+}
+
+export interface PromptSkillCatalog {
+  schema: 1
+  catalogVersion: string
+  skills: PromptSkillEntry[]
+}
+
 /** The catalogues by file name. */
 export interface CanvasCatalogFiles {
   'camera-moves': CameraMoveCatalog
   'camera-control': CameraControlCatalog
   'generation-presets': GenerationPresetCatalog
+  'vibedev-skills': PromptSkillCatalog
 }
 
 export type CanvasCatalogName = keyof CanvasCatalogFiles
@@ -209,6 +271,53 @@ function checkPresets(value: Record<string, unknown>, problems: string[]): void 
   }
 }
 
+const VARIABLE_KEY = /^[a-z][a-z0-9_]*$/u
+const PLACEHOLDER = /\{\{([a-z][a-z0-9_]*)\}\}/gu
+
+function checkSkills(value: Record<string, unknown>, problems: string[]): void {
+  for (const skill of entries(value.skills, 'skills', problems, /^vd\.[a-z0-9]+(?:-[a-z0-9]+)*$/u)) {
+    const at = `skill ${String(skill.id)}`
+    if (!Number.isSafeInteger(skill.version) || (skill.version as number) < 1) problems.push(`${at} needs a version (a positive integer)`)
+    for (const field of ['name', 'summary']) if (!bilingual(skill[field])) problems.push(`${at} needs ${field}.zh and ${field}.en`)
+    if (!(PROMPT_SKILL_CATEGORIES as readonly unknown[]).includes(skill.category)) problems.push(`${at} has an unknown category`)
+    const appliesTo = Array.isArray(skill.appliesTo) ? skill.appliesTo : []
+    if (appliesTo.length === 0 || appliesTo.some(target => !(PROMPT_SKILL_TARGETS as readonly unknown[]).includes(target)) || new Set(appliesTo).size !== appliesTo.length) {
+      problems.push(`${at} appliesTo must list image, video or text`)
+    }
+    if (skill.videoModes !== undefined && (!Array.isArray(skill.videoModes) || skill.videoModes.length === 0 || skill.videoModes.some(mode => !(VIDEO_MODES as readonly unknown[]).includes(mode)))) {
+      problems.push(`${at} videoModes must list the canvas's video modes`)
+    }
+    if (!(PROMPT_SKILL_KINDS as readonly unknown[]).includes(skill.kind)) problems.push(`${at} kind must be wrap or append`)
+    if (skill.purpose !== undefined && !(STORY_PRODUCTION_PURPOSES as readonly unknown[]).includes(skill.purpose)) problems.push(`${at} has an unknown purpose`)
+    const keys = new Set<string>()
+    if (!Array.isArray(skill.variables)) problems.push(`${at} needs a variables list`)
+    for (const variable of Array.isArray(skill.variables) ? skill.variables : []) {
+      if (!isRecord(variable) || typeof variable.key !== 'string' || !VARIABLE_KEY.test(variable.key) || PROMPT_SKILL_RESERVED.includes(variable.key) || keys.has(variable.key)) {
+        problems.push(`${at} has a variable without an unused ASCII key (${isRecord(variable) ? String(variable.key) : typeof variable})`)
+        continue
+      }
+      keys.add(variable.key)
+      if (!bilingual(variable.label)) problems.push(`${at} variable ${variable.key} needs label.zh and label.en`)
+      if (variable.default !== undefined && typeof variable.default !== 'string') problems.push(`${at} variable ${variable.key} default must be text`)
+      if (variable.required !== undefined && typeof variable.required !== 'boolean') problems.push(`${at} variable ${variable.key} required must be true or false`)
+      if (variable.auto !== undefined && variable.auto !== 'video.seconds') problems.push(`${at} variable ${variable.key} auto must be video.seconds`)
+    }
+    if (!text(skill.template) || skill.template.length > PROMPT_SKILL_TEMPLATE_LIMIT) {
+      problems.push(`${at} needs a template of at most ${PROMPT_SKILL_TEMPLATE_LIMIT} characters`)
+    } else {
+      const used = [...skill.template.matchAll(PLACEHOLDER)].map(match => match[1]!)
+      const prompts = used.filter(key => key === 'prompt').length
+      if (skill.kind === 'wrap' && prompts !== 1) problems.push(`${at} is a wrap skill and needs exactly one {{prompt}}`)
+      if (skill.kind === 'append' && prompts > 0) problems.push(`${at} is an append skill and must not hold {{prompt}}`)
+      for (const key of used) if (!PROMPT_SKILL_RESERVED.includes(key) && !keys.has(key)) problems.push(`${at} template uses {{${key}}} without declaring it`)
+    }
+    if (skill.negative !== undefined && !text(skill.negative)) problems.push(`${at} negative must be text`)
+    const composes = isRecord(skill.composes) ? skill.composes : {}
+    for (const slot of ['motion', 'camera']) if (!(PROMPT_SKILL_COMPOSES as readonly unknown[]).includes(composes[slot])) problems.push(`${at} composes.${slot} must be slot, append or drop`)
+    if (!Array.isArray(skill.tags) || !skill.tags.every(text)) problems.push(`${at} tags must list text`)
+  }
+}
+
 /**
  * Problems with a catalogue, empty when the tools can use it: schema 1, a
  * catalogVersion, and the fields the tools read in the C3 shapes. The canvas
@@ -224,6 +333,7 @@ export function checkCanvasCatalog(name: CanvasCatalogName, value: unknown): str
   if (typeof value.catalogVersion !== 'string' || !VERSION.test(value.catalogVersion)) problems.push('catalogVersion must look like YYYY-MM-DD.n')
   if (name === 'camera-moves') checkCameraMoves(value, problems)
   else if (name === 'camera-control') checkCameraControl(value, problems)
+  else if (name === 'vibedev-skills') checkSkills(value, problems)
   else checkPresets(value, problems)
   return problems
 }

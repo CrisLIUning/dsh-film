@@ -38,6 +38,10 @@ describe('readCanvasCatalog', () => {
     expect(moves.categories.map(category => category.id)).toEqual(['fixed', 'push', 'pull', 'pan', 'truck', 'follow', 'crane', 'orbit', 'handheld', 'zoom', 'aerial', 'special'])
     expect((await readCanvasCatalog('camera-control', fixtures)).defaults).toEqual({ look: 'digital-cinema', lens: 'spherical-prime', focalLength: 50, aperture: 2.8 })
     expect((await readCanvasCatalog('generation-presets', fixtures)).presets).toHaveLength(6)
+    const skills = await readCanvasCatalog('vibedev-skills', fixtures)
+    expect(skills).toMatchObject({ schema: 1, catalogVersion: '2026-10-05.1' })
+    expect(skills.skills).toHaveLength(23)
+    expect(skills.skills.filter(skill => skill.kind === 'append').map(skill => skill.id)).toEqual(['vd.style-lock', 'vd.lighting-mood', 'vd.identity-lock', 'vd.sound-bed'])
     // The same folder answers from what it read.
     expect(readCanvasCatalog('camera-moves', fixtures)).toBe(readCanvasCatalog('camera-moves', fixtures))
   })
@@ -67,8 +71,32 @@ describe('readCanvasCatalog', () => {
 })
 
 describe('checkCanvasCatalog', () => {
-  it('passes the canvas\'s files and the presets of the spec', async () => {
-    for (const name of ['camera-moves', 'camera-control', 'generation-presets'] as const) expect(checkCanvasCatalog(name, await fixture(name)), name).toEqual([])
+  it('passes the canvas\'s files', async () => {
+    for (const name of ['camera-moves', 'camera-control', 'generation-presets', 'vibedev-skills'] as const) expect(checkCanvasCatalog(name, await fixture(name)), name).toEqual([])
+  })
+
+  it('names what the skill tools could not use', async () => {
+    const skills = await fixture('vibedev-skills')
+    skills.skills[0].template = `${skills.skills[0].template}\n{{prompt}}`
+    skills.skills[1].category = 'misc'
+    skills.skills[2].variables.push({ key: 'prompt', label: { zh: '提示词', en: 'Prompt' } })
+    skills.skills[3].template += '{{palette}}'
+    skills.skills[4].composes.camera = 'keep'
+    skills.skills[5].appliesTo = ['audio']
+    skills.skills[8].videoModes = ['frames']
+    skills.skills[10].template = `{{prompt}}${skills.skills[10].template}`
+    skills.skills.push({ ...skills.skills[0], id: 'storyboard' })
+    expect(checkCanvasCatalog('vibedev-skills', skills)).toEqual([
+      'skills has an entry without a valid id (storyboard)',
+      'skill vd.storyboard-frame is a wrap skill and needs exactly one {{prompt}}',
+      'skill vd.character-sheet has an unknown category',
+      'skill vd.scene-sheet has a variable without an unused ASCII key (prompt)',
+      'skill vd.prop-sheet template uses {{palette}} without declaring it',
+      'skill vd.turnaround composes.camera must be slot, append or drop',
+      'skill vd.expression-sheet appliesTo must list image, video or text',
+      'skill vd.first-last-bridge videoModes must list the canvas\'s video modes',
+      'skill vd.style-lock is an append skill and must not hold {{prompt}}',
+    ])
   })
 
   it('names what the tools could not use', async () => {

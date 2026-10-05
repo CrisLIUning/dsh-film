@@ -1,0 +1,414 @@
+{
+  "schema": 1,
+  "catalogVersion": "2026-10-05.1",
+  "skills": [
+    {
+      "id": "vd.storyboard-frame",
+      "version": 1,
+      "name": { "zh": "分镜画面描述", "en": "Storyboard Frame" },
+      "summary": { "zh": "把一镜写成单幅电影剧照：景别、主体位置、场景和人物连续", "en": "One shot as a single film still: framing, placement, setting and character continuity" },
+      "category": "storyboard",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "shot",
+      "variables": [
+        { "key": "shot_size", "label": { "zh": "景别", "en": "Shot size" }, "default": "中景" },
+        { "key": "placement", "label": { "zh": "主体位置", "en": "Subject placement" }, "default": "画面三分线处" },
+        { "key": "setting", "label": { "zh": "场景", "en": "Setting" } },
+        { "key": "time", "label": { "zh": "时间与天气", "en": "Time and weather" } }
+      ],
+      "template": "分镜画面：{{prompt}}\n景别：{{shot_size}}；主体位于{{placement}}；前景、中景、背景层次清楚，视线方向明确。\n场景：{{setting}}；时间与天气：{{time}}。\n人物沿用所连参考的脸型、发型、服装和年龄感，动作定格在这一镜最有张力的瞬间。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。\n单幅电影剧照质感，不分格，不加文字或字幕。",
+      "negative": "分格拼贴、设定卡排版、文字标签、水印、多余人物",
+      "composes": { "motion": "drop", "camera": "slot" },
+      "tags": ["分镜", "静帧", "剧照", "镜头"]
+    },
+    {
+      "id": "vd.character-sheet",
+      "version": 1,
+      "name": { "zh": "角色设定卡", "en": "Character Sheet" },
+      "summary": { "zh": "同一角色的正、侧、背全身和表情、服装细节排成一张设定卡", "en": "Front, side and back views, expressions and costume details of one character on one sheet" },
+      "category": "design-sheet",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "character-sheet",
+      "variables": [
+        { "key": "name", "label": { "zh": "角色名", "en": "Character name" }, "required": true },
+        { "key": "style", "label": { "zh": "画风", "en": "Style" }, "default": "写实电影美术" },
+        { "key": "states", "label": { "zh": "本次状态", "en": "Current state" } }
+      ],
+      "template": "角色设定卡：{{name}}。{{prompt}}\n横向设定集版式：左侧为同一角色的正面、侧面、背面全身站姿，三者等高等比例；右侧为头肩近景、三种代表性表情、服装与配饰细节、主色色板。\n本次状态：{{states}}。\n所有视图的脸型、五官比例、发型、体型、服装剪裁与颜色完全一致，画面中只有这一个角色。\n画风：{{style}}；柔和均匀的棚拍光，浅灰纯色背景，线条干净，留白充足；顶部只写角色名，不写其他小字。",
+      "negative": "不同角色混入、肢体缺失、透视变形、乱码小字、水印、复杂背景",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["设定卡", "角色", "人设", "三视图"]
+    },
+    {
+      "id": "vd.scene-sheet",
+      "version": 1,
+      "name": { "zh": "场景设定卡", "en": "Location Sheet" },
+      "summary": { "zh": "同一地点的建立镜头、多个观察方向和平面布局，空间可复用", "en": "Establishing view, other angles and floor plan of one location, reusable for staging" },
+      "category": "design-sheet",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "scene-sheet",
+      "variables": [
+        { "key": "name", "label": { "zh": "场景名", "en": "Location name" }, "required": true },
+        { "key": "era", "label": { "zh": "年代与地域", "en": "Era and region" } },
+        { "key": "time", "label": { "zh": "时间与光线", "en": "Time and light" } }
+      ],
+      "template": "场景设定卡：{{name}}。{{prompt}}\n版面：左上为最大的建立镜头；其余格为同一空间的另外两个观察方向、平面布局示意、关键陈设与材质特写。\n年代与地域：{{era}}；时间与光线：{{time}}。\n出入口、门窗、固定陈设和视觉地标在各格中位置一致，空间拓扑可被复用拍摄。\n电影美术设定集风格，标题只写场景名，不出现人物。",
+      "negative": "多个不同地点、人物、空间结构矛盾、乱码文字、水印",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["设定卡", "场景", "空间", "美术"]
+    },
+    {
+      "id": "vd.prop-sheet",
+      "version": 1,
+      "name": { "zh": "道具设定卡", "en": "Prop Sheet" },
+      "summary": { "zh": "同一道具的多视角、结构与材质特写和尺寸参照", "en": "Several views, structure and material close-ups and the scale of one prop" },
+      "category": "design-sheet",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "prop-sheet",
+      "variables": [
+        { "key": "name", "label": { "zh": "道具名", "en": "Prop name" }, "required": true },
+        { "key": "scale_ref", "label": { "zh": "尺寸参照", "en": "Scale reference" }, "default": "与手掌的大小关系" },
+        { "key": "states", "label": { "zh": "剧情使用状态", "en": "Story states" } }
+      ],
+      "template": "道具设定卡：{{name}}。{{prompt}}\n同一道具的正视、侧视、俯视和四分之三视角，配结构细节特写、材质与磨损特写、主色色板。\n尺寸参照：{{scale_ref}}；剧情使用状态：{{states}}。\n各视角形状、比例、标志细节完全一致；纯色背景，产品摄影式柔光。",
+      "negative": "多个不同道具、比例不一致、文字标签、水印",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["设定卡", "道具", "物件"]
+    },
+    {
+      "id": "vd.turnaround",
+      "version": 1,
+      "name": { "zh": "多角度三视图", "en": "Turnaround Views" },
+      "summary": { "zh": "正面、侧面、背面、四分之三侧面四格，像正交参考图", "en": "Front, side, back and three-quarter views in four equal panels, like an orthographic reference" },
+      "category": "design-sheet",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "character-sheet",
+      "variables": [
+        { "key": "style", "label": { "zh": "画风", "en": "Style" }, "default": "写实" }
+      ],
+      "template": "多角度三视图：{{prompt}}\n横向排列四格等宽：正面、正侧面、背面、四分之三侧面，均为全身或完整主体，同一高度基线、同一比例。\n类似正交参考图：机位平视、无透视夸张、无景深虚化，中性站姿或静置姿态。\n四格中造型、颜色、配件与比例完全一致；浅灰纯色背景，均匀柔光。\n画风：{{style}}；不加任何文字、编号或标注。",
+      "negative": "透视畸变、姿势各异、配件丢失、文字、水印",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["三视图", "转面", "设定", "角色"]
+    },
+    {
+      "id": "vd.expression-sheet",
+      "version": 1,
+      "name": { "zh": "表情/表演参考", "en": "Expression & Performance Sheet" },
+      "summary": { "zh": "同一角色九种表情排成九宫格，像演员试镜定妆照", "en": "A 3×3 grid of one character's expressions, like audition stills" },
+      "category": "performance",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "image",
+      "variables": [
+        { "key": "name", "label": { "zh": "角色名", "en": "Character name" } },
+        { "key": "emotions", "label": { "zh": "情绪列表", "en": "Emotions" }, "default": "平静、微笑、大笑、惊讶、愤怒、委屈、恐惧、决绝、心碎" },
+        { "key": "framing", "label": { "zh": "景别", "en": "Framing" }, "default": "头肩近景" }
+      ],
+      "template": "表情参考表：{{name}}。{{prompt}}\n三行三列九宫格，每格是同一角色；景别：{{framing}}；依次表现：{{emotions}}。\n每格保持同一张脸、同一发型和服装，只改变表情、眼神和细微的头部角度；情绪真实克制，像演员试镜定妆照。\n统一的柔和正面光和纯色背景，格与格之间细白边分隔，不写文字。",
+      "negative": "不同人物、夸张卡通变形、文字标签、水印",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["表情", "表演", "九宫格", "角色"]
+    },
+    {
+      "id": "vd.drama-emotion-closeup",
+      "version": 1,
+      "name": { "zh": "短剧情绪特写", "en": "Short-drama Emotion Close-up" },
+      "summary": { "zh": "近景到特写，用眼神和细节表达情绪的短剧镜头", "en": "A close-up drama shot that carries the emotion through the eyes and small details" },
+      "category": "performance",
+      "appliesTo": ["image", "video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "emotion", "label": { "zh": "情绪", "en": "Emotion" }, "required": true },
+        { "key": "trigger", "label": { "zh": "情绪来由", "en": "Trigger" } }
+      ],
+      "template": "短剧情绪特写：{{prompt}}\n情绪：{{emotion}}；来由：{{trigger}}。\n近景到特写，人物面部占画面大半，眼神是焦点；用细节表达情绪：泛红的眼眶、紧咬的下唇、颤动的睫毛、握紧的手。\n背景简洁、压暗，主光从侧前方打来，留出明暗对比。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。\n短剧质感，表演真实不过火。",
+      "negative": "夸张鬼脸、表情僵硬、面部变形、多余人物、字幕",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["短剧", "情绪", "特写", "表演"]
+    },
+    {
+      "id": "vd.product-ad-shot",
+      "version": 1,
+      "name": { "zh": "产品广告镜头", "en": "Product Ad Shot" },
+      "summary": { "zh": "产品是唯一主角、造型与参考一致的高端广告镜头", "en": "A premium ad shot where the product is the only hero and matches the reference" },
+      "category": "commerce",
+      "appliesTo": ["image", "video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "product", "label": { "zh": "产品名", "en": "Product" }, "required": true },
+        { "key": "selling_point", "label": { "zh": "卖点", "en": "Selling point" } },
+        { "key": "surface", "label": { "zh": "陈设台面", "en": "Surface" }, "default": "深色哑光台面" },
+        { "key": "palette", "label": { "zh": "主色调", "en": "Palette" } }
+      ],
+      "template": "产品广告镜头：{{product}}。{{prompt}}\n卖点呈现：{{selling_point}}。\n产品是画面唯一主角，造型、颜色、标识位置和材质与所连参考图保持一致，不改变产品结构。\n陈设：{{surface}}；主色调：{{palette}}；轮廓光勾出边缘，高光和反射干净可控。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。\n高端商业广告质感，画面简洁，留出文案空间，但不生成任何文字。",
+      "negative": "产品变形、多余产品、杂乱背景、错误标识、乱码文字",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["广告", "产品", "电商"]
+    },
+    {
+      "id": "vd.first-last-bridge",
+      "version": 1,
+      "name": { "zh": "首尾帧衔接", "en": "First-to-Last Frame Bridge" },
+      "summary": { "zh": "从首帧自然过渡到尾帧，人物和场景不变、不跳切", "en": "A continuous move from the first frame to the last: same people and place, no jump cuts" },
+      "category": "continuity",
+      "appliesTo": ["video"],
+      "videoModes": ["first-last-frame"],
+      "kind": "wrap",
+      "variables": [],
+      "template": "首尾帧衔接：{{prompt}}\n从首帧画面出发，自然连续地过渡到尾帧画面：人物、服装、场景和光线保持不变。\n中间过程按时间推进：起始状态 → 动作或变化的经过 → 抵达尾帧的姿态与构图。\n镜头运动：{{motion}}。\n动作速度均匀，不跳切、不闪烁、不新增尾帧中没有的人物或物体。",
+      "negative": "跳切、画面闪烁、身份突变、凭空出现的物体",
+      "notes": { "zh": "只在首尾帧模式下套用。", "en": "Applied only in first-to-last-frame mode." },
+      "composes": { "motion": "slot", "camera": "append" },
+      "tags": ["首尾帧", "衔接", "连续性"]
+    },
+    {
+      "id": "vd.next-shot",
+      "version": 1,
+      "name": { "zh": "下一镜推演", "en": "Next Shot" },
+      "summary": { "zh": "承接参考画面的上一刻推演下一镜，遵守轴线", "en": "Continue from the referenced moment into the next shot, keeping the axis" },
+      "category": "continuity",
+      "appliesTo": ["image", "video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "shot_change", "label": { "zh": "镜头变化", "en": "Shot change" }, "default": "景别切换为近景" }
+      ],
+      "template": "下一镜：承接所连参考画面的上一刻，{{prompt}}\n保持同一角色、服装、道具、场景和光线方向；时间只向前推进几秒，动作自然延续。\n镜头变化：{{shot_change}}；遵守轴线，人物左右关系与视线方向不颠倒。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。",
+      "negative": "换装、换场景、跳轴、身份变化",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["下一镜", "轴线", "连续性"]
+    },
+    {
+      "id": "vd.style-lock",
+      "version": 1,
+      "name": { "zh": "风格统一", "en": "Style Lock" },
+      "summary": { "zh": "给同一组镜头锁定统一的风格、色调和质感", "en": "Lock one style, palette and texture across a group of shots" },
+      "category": "style",
+      "appliesTo": ["image", "video"],
+      "kind": "append",
+      "variables": [
+        { "key": "style", "label": { "zh": "风格关键词", "en": "Style keywords" }, "required": true },
+        { "key": "palette", "label": { "zh": "色调", "en": "Palette" } },
+        { "key": "texture", "label": { "zh": "质感", "en": "Texture" } },
+        { "key": "era", "label": { "zh": "时代感", "en": "Era" } }
+      ],
+      "template": "统一风格：{{style}}。\n色调：{{palette}}；画面质感：{{texture}}；时代感：{{era}}。\n与同组其他镜头保持一致的色彩倾向、光比和颗粒感，不因单镜头内容改变整体风格。",
+      "negative": "风格漂移、色调突变",
+      "composes": { "motion": "append", "camera": "append" },
+      "tags": ["风格", "统一", "色调"]
+    },
+    {
+      "id": "vd.camera-move-detail",
+      "version": 1,
+      "name": { "zh": "运镜描述增强", "en": "Camera Move Detailing" },
+      "summary": { "zh": "把运镜按起幅、运动、落幅展开，配合所选运镜", "en": "Spell the move out as start frame, motion and end frame, with the chosen camera move" },
+      "category": "camera",
+      "appliesTo": ["video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "speed", "label": { "zh": "速度", "en": "Speed" }, "default": "平稳" },
+        { "key": "duration", "label": { "zh": "总时长（秒）", "en": "Duration (s)" }, "auto": "video.seconds" }
+      ],
+      "template": "运镜分段：{{prompt}}\n镜头运动：{{motion}}。\n总时长约{{duration}}秒。\n镜头运动按时间展开：起幅画面（开头构图）→ 运动过程（方向、速度、与主体距离的变化）→ 落幅画面（结束时的构图与焦点）；运动速度：{{speed}}。\n运动由主体动作或视线牵引，起落自然，不急停、不抖动；全程主体在画面内且对焦清晰。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。",
+      "negative": "镜头抖动、突然急停、主体出画、失焦",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["运镜", "镜头运动", "起幅落幅"]
+    },
+    {
+      "id": "vd.lighting-mood",
+      "version": 1,
+      "name": { "zh": "光影氛围", "en": "Lighting & Mood" },
+      "summary": { "zh": "写清主光方向、光比和时段，营造氛围", "en": "Set the key light, contrast and time of day for the mood" },
+      "category": "style",
+      "appliesTo": ["image", "video"],
+      "kind": "append",
+      "variables": [
+        { "key": "mood", "label": { "zh": "氛围", "en": "Mood" }, "required": true },
+        { "key": "key_light", "label": { "zh": "主光", "en": "Key light" } },
+        { "key": "time", "label": { "zh": "时段", "en": "Time of day" } }
+      ],
+      "template": "光影氛围：{{mood}}。\n主光：{{key_light}}；时段：{{time}}。\n明确主光方向和光比，用阴影和反光塑造立体感；环境光色温与氛围一致，暗部保留细节，不过曝不死黑。",
+      "negative": "平光、过曝、死黑、塑料感皮肤",
+      "composes": { "motion": "append", "camera": "append" },
+      "tags": ["光影", "氛围", "布光"]
+    },
+    {
+      "id": "vd.timed-video",
+      "version": 1,
+      "name": { "zh": "视频时序脚本", "en": "Timed Video Prompt" },
+      "summary": { "zh": "按开场、发展、结尾三段组织动作、镜头和声音", "en": "Organise action, camera and sound in three timed beats" },
+      "category": "storyboard",
+      "appliesTo": ["video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "duration", "label": { "zh": "总时长（秒）", "en": "Duration (s)" }, "auto": "video.seconds" },
+        { "key": "ending", "label": { "zh": "结尾画面", "en": "Ending" }, "default": "主体与画面的最终状态" }
+      ],
+      "template": "按时间推进的视频：{{prompt}}\n总时长约{{duration}}秒。\n画面分三段推进：开场交代画面与主体状态 → 发展呈现主要动作、表情与环境变化 → 结尾收住；结尾画面：{{ending}}。\n每段里主体的动作、镜头的变化和声音前后连贯，不出现互相矛盾的指令。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。",
+      "negative": "指令冲突、动作超出时长、无关字幕",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["时序", "分段", "节奏"]
+    },
+    {
+      "id": "vd.dialogue-shot",
+      "version": 1,
+      "name": { "zh": "对白镜头", "en": "Dialogue Shot" },
+      "summary": { "zh": "台词原文、说话人与表演，口型和节奏对齐", "en": "Verbatim lines, speaker and delivery, with lip sync and timing" },
+      "category": "performance",
+      "appliesTo": ["video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "speaker", "label": { "zh": "说话人", "en": "Speaker" }, "required": true },
+        { "key": "lines", "label": { "zh": "台词原文", "en": "Lines (verbatim)" }, "required": true },
+        { "key": "delivery", "label": { "zh": "语气与表演", "en": "Delivery" } },
+        { "key": "offscreen", "label": { "zh": "画外说话人", "en": "Off-screen speaker" } }
+      ],
+      "template": "对白镜头：{{prompt}}\n{{speaker}}说（原文，不改写）：“{{lines}}”\n语气与表演：{{delivery}}；画外说话人：{{offscreen}}（画外者不出现口型）。\n口型与台词节奏对齐，说话前后留出呼吸与反应，听者有自然的反应。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。\n声音只包含对白和必要的环境声，不加背景音乐和字幕。",
+      "negative": "改写台词、多余旁白、字幕、背景音乐",
+      "notes": { "zh": "需要模型支持原生音频并开启声音；关闭声音时只作为表演参考。", "en": "Needs a model with native audio and sound switched on; with sound off it only guides the performance." },
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["对白", "台词", "口型", "表演"]
+    },
+    {
+      "id": "vd.establishing-shot",
+      "version": 1,
+      "name": { "zh": "建立镜头", "en": "Establishing Shot" },
+      "summary": { "zh": "远景交代地点的地理特征、规模和时代感", "en": "A wide shot that establishes the place, its scale and its era" },
+      "category": "storyboard",
+      "appliesTo": ["image", "video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "place", "label": { "zh": "地点", "en": "Place" }, "required": true },
+        { "key": "time", "label": { "zh": "时间", "en": "Time" } },
+        { "key": "weather", "label": { "zh": "天气", "en": "Weather" } }
+      ],
+      "template": "建立镜头：{{place}}。{{prompt}}\n远景或大全景，交代地点的地理特征、规模和时代感；时间：{{time}}；天气：{{weather}}。\n画面有清楚的前景、中景、远景纵深，人物如出现只占很小比例。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。",
+      "negative": "主体不清、空间杂乱、招牌乱码",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["建立镜头", "远景", "场景"]
+    },
+    {
+      "id": "vd.action-beat",
+      "version": 1,
+      "name": { "zh": "动作戏节拍", "en": "Action Beat" },
+      "summary": { "zh": "按节拍推进的动作戏，力度、重心和方向清楚", "en": "Action in beats, with weight, balance and a clear direction" },
+      "category": "performance",
+      "appliesTo": ["video"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "beats", "label": { "zh": "动作节拍", "en": "Beats" }, "required": true },
+        { "key": "impact", "label": { "zh": "力度", "en": "Impact" }, "default": "有重量感" }
+      ],
+      "template": "动作戏：{{prompt}}\n动作节拍：{{beats}}；每个动作有预备、发力和收势，重心与惯性可信；力度：{{impact}}。\n动作方向和人物左右位置清楚，不跳轴；环境对动作有反应（扬尘、碎屑、衣摆）。\n镜头运动：{{motion}}。\n成像方式（只描述画面效果，不出现相机或摄影器材）：{{camera}}。",
+      "negative": "肢体扭曲、动作漂浮无重量、人物穿模、画面糊成一片",
+      "composes": { "motion": "slot", "camera": "slot" },
+      "tags": ["动作", "打斗", "节拍"]
+    },
+    {
+      "id": "vd.storyboard-grid",
+      "version": 1,
+      "name": { "zh": "分镜预演图", "en": "Storyboard Grid" },
+      "summary": { "zh": "把一段戏画成多格分镜预演，景别交替、造型一致", "en": "A multi-panel storyboard of one scene: varied framing, consistent characters" },
+      "category": "storyboard",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "count", "label": { "zh": "格数", "en": "Panels" }, "default": "6 格，两行三列" },
+        { "key": "style", "label": { "zh": "画风", "en": "Style" }, "default": "黑白铅笔速写" }
+      ],
+      "template": "分镜预演图：{{prompt}}\n按阅读顺序排列的多格分镜；格数：{{count}}；每格是这段戏里相邻的一个镜头，景别和机位有变化（远、中、近、特写交替）。\n所有格中的角色造型与场景保持一致，构图清楚，用姿势暗示运动方向。\n画风：{{style}}；格与格之间留白分隔，不写文字和编号。",
+      "negative": "角色前后不一致、格子大小混乱、文字乱码",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["分镜", "预演", "多格"]
+    },
+    {
+      "id": "vd.state-variant",
+      "version": 1,
+      "name": { "zh": "换装/状态变体", "en": "Costume & State Variant" },
+      "summary": { "zh": "以参考里的角色为准，只改变指定的服装或状态", "en": "Keep the referenced character and change only the outfit or state you name" },
+      "category": "design-sheet",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "purpose": "image",
+      "variables": [
+        { "key": "change", "label": { "zh": "变化内容", "en": "Change" }, "required": true }
+      ],
+      "template": "状态变体：以所连参考图中的角色为准，只改变：{{change}}。{{prompt}}\n脸型、五官、发型、体型、年龄感和其余服饰保持不变，姿势与构图尽量与参考一致。\n变化符合剧情逻辑与物理质感（例如湿透时布料贴身、受伤时伤口位置固定）。",
+      "negative": "换脸、年龄变化、额外改动、风格变化",
+      "composes": { "motion": "drop", "camera": "append" },
+      "tags": ["换装", "变体", "角色", "连续性"]
+    },
+    {
+      "id": "vd.cover-poster",
+      "version": 1,
+      "name": { "zh": "短剧封面海报", "en": "Short-drama Cover Poster" },
+      "summary": { "zh": "竖版短剧封面：主角点题、冲突背景和醒目的剧名", "en": "A vertical short-drama cover: the lead, a conflict backdrop and a bold title" },
+      "category": "commerce",
+      "appliesTo": ["image"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "title", "label": { "zh": "剧名", "en": "Title" }, "required": true },
+        { "key": "genre", "label": { "zh": "题材", "en": "Genre" } },
+        { "key": "leads", "label": { "zh": "主角", "en": "Leads" } }
+      ],
+      "template": "短剧封面海报：{{prompt}}\n题材：{{genre}}；主角：{{leads}}。\n竖版构图，主角居中偏上、表情点题，背景用象征剧情冲突的元素；明暗与色彩对比强烈，一眼可读。\n剧名《{{title}}》用醒目的中文标题字放在画面下方三分之一处，字形完整清晰，除剧名外不出现其他文字。",
+      "negative": "错字、乱码、多余文字、人物变形、水印",
+      "composes": { "motion": "drop", "camera": "append" },
+      "tags": ["封面", "海报", "短剧", "标题"]
+    },
+    {
+      "id": "vd.identity-lock",
+      "version": 1,
+      "name": { "zh": "参考身份锁定", "en": "Identity Lock" },
+      "summary": { "zh": "人物以所连参考为准：不换脸、不美化、不带入设定卡版式", "en": "Keep people true to the wired reference: no face swap, no beautifying, no sheet layout" },
+      "category": "continuity",
+      "appliesTo": ["image", "video"],
+      "kind": "append",
+      "variables": [
+        { "key": "ref_label", "label": { "zh": "身份依据", "en": "Reference" }, "default": "所连角色参考图" }
+      ],
+      "template": "身份锁定：画面中的人物保持脸型、五官比例、发型、肤色、体型和服装一致，不美化、不年轻化、不换成相似的另一个人；身份依据：{{ref_label}}。\n参考图中的版式、多视角拼图和文字不带入画面。",
+      "negative": "换脸、身份漂移、照搬设定卡排版",
+      "composes": { "motion": "append", "camera": "append" },
+      "tags": ["身份", "一致性", "参考"]
+    },
+    {
+      "id": "vd.sound-bed",
+      "version": 1,
+      "name": { "zh": "环境声设计", "en": "Sound Bed" },
+      "summary": { "zh": "环境声和音乐的层次与空间位置", "en": "The layers and placement of ambience and music" },
+      "category": "sound",
+      "appliesTo": ["video"],
+      "kind": "append",
+      "variables": [
+        { "key": "ambience", "label": { "zh": "环境声", "en": "Ambience" }, "required": true },
+        { "key": "music", "label": { "zh": "音乐", "en": "Music" }, "default": "不要音乐" }
+      ],
+      "template": "声音设计：声音来源与画面中的位置一致，随镜头远近变化强弱；环境声：{{ambience}}。\n音乐：{{music}}；对白（如有）清晰在前，环境声在后，不加画外旁白。",
+      "notes": { "zh": "需要模型支持原生音频并开启声音。", "en": "Needs a model with native audio and sound switched on." },
+      "composes": { "motion": "append", "camera": "append" },
+      "tags": ["声音", "环境声", "音乐"]
+    },
+    {
+      "id": "vd.script-to-shots",
+      "version": 1,
+      "name": { "zh": "剧本拆镜表", "en": "Script to Shot List" },
+      "summary": { "zh": "把剧情拆成可直接生成的镜头表（文本生成）", "en": "Break a story into a ready-to-generate shot list (text generation)" },
+      "category": "utility",
+      "appliesTo": ["text"],
+      "kind": "wrap",
+      "variables": [
+        { "key": "shot_count", "label": { "zh": "目标镜头数", "en": "Target shots" } },
+        { "key": "duration", "label": { "zh": "总时长", "en": "Total duration" } }
+      ],
+      "template": "把下面的剧情拆成可直接生成的镜头表：{{prompt}}\n目标镜头数：{{shot_count}}；总时长：{{duration}}。\n用表格输出，列为：镜号、景别、画面内容（人物、动作、场景）、运镜、对白或声音、时长（秒）。\n每个镜头只写一个动作重点，角色称呼和造型前后一致；对白保留原文，不添加剧情。\n只输出表格，不要解释。",
+      "composes": { "motion": "drop", "camera": "drop" },
+      "tags": ["拆镜", "镜头表", "剧本"]
+    }
+  ]
+}
