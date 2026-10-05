@@ -7,6 +7,8 @@ const PNG = `data:image/png;base64,${'A'.repeat(64)}`
 /** Lines as the canvas renders them (camera-moves.ts, camera-direction.ts). */
 const MOVE = '运镜：镜头平稳地向前推进，逐渐靠近主体。'
 const CAMERA = '拍摄方式（只描述成像，不要在画面里出现相机或摄影器材）：35mm 电影胶片质感，颗粒细腻、色彩温润、对比柔和；球面定焦镜头，成像锐利、畸变小；85mm，人像焦距，背景压缩；光圈 f/2，浅景深，背景柔和虚化。'
+/** A skill template as the canvas sends it to the writer (renderSkillForWriter): the values filled in, {{prompt}} and the empty variables left to fill. */
+const FRAME = '分镜画面：{{prompt}}\n景别：中景；主体位于画面三分线处；前景、中景、背景层次清楚，视线方向明确。\n场景：{{setting}}；时间与天气：{{time}}。'
 
 describe('prompt writer requests', () => {
   it('accepts an image or video request and drops what it cannot read', () => {
@@ -44,6 +46,31 @@ describe('prompt writer requests', () => {
     expect(code({ surface: 'video', direction: { camera: 'x'.repeat(600) } })).toBeUndefined()
     // A camera move is a video setting, like the video settings themselves.
     expect(code({ surface: 'image', direction: { cameraMove: MOVE } })).toBe('CANVAS_ASSIST_DIRECTION_INVALID')
+  })
+
+  it('takes up to three prompt skills within 4000 characters (C13), and refuses malformed ones', () => {
+    const frame = { name: '分镜画面描述', template: FRAME, negative: ' 分格拼贴、水印 ' }
+    expect(parseAssistRequest({ surface: 'image', skills: [frame, { name: ' 风格统一 ', template: '统一风格：水墨。' }] })).toEqual({
+      surface: 'image', skills: [{ name: '分镜画面描述', template: FRAME, negative: '分格拼贴、水印' }, { name: '风格统一', template: '统一风格：水墨。' }],
+    })
+    // No skills is no skills.
+    expect(parseAssistRequest({ surface: 'video', skills: [] })).toEqual({ surface: 'video' })
+    const code = (skills: unknown): string | undefined => {
+      try {
+        parseAssistRequest({ surface: 'image', skills })
+      } catch (error) {
+        return (error as AssistRequestError).code
+      }
+      return undefined
+    }
+    expect(code([frame, frame, frame, frame])).toBe('CANVAS_ASSIST_SKILLS_INVALID')
+    expect(code('frame')).toBe('CANVAS_ASSIST_SKILLS_INVALID')
+    expect(code([{ name: 'x'.repeat(61), template: 'x' }])).toBe('CANVAS_ASSIST_SKILLS_INVALID')
+    expect(code([{ name: 'x', template: '  ' }])).toBe('CANVAS_ASSIST_SKILLS_INVALID')
+    expect(code([{ name: 'x', template: 'x', negative: ['水印'] }])).toBe('CANVAS_ASSIST_SKILLS_INVALID')
+    // Counted as the canvas counts what it sends: each template with its avoid terms.
+    expect(code([{ name: 'a', template: 'x'.repeat(3000) }, { name: 'b', template: 'x'.repeat(990), negative: 'y'.repeat(10) }])).toBeUndefined()
+    expect(code([{ name: 'a', template: 'x'.repeat(3000) }, { name: 'b', template: 'x'.repeat(990), negative: 'y'.repeat(11) }])).toBe('CANVAS_ASSIST_SKILLS_INVALID')
   })
 })
 
@@ -92,6 +119,22 @@ describe('what the model is asked', () => {
     expect(video).toContain('Include the motion: what moves. A video prompt')
     // A camera move on an image request (which parsing refuses) is not passed on.
     expect(assistSystemPrompt({ surface: 'image', direction: { cameraMove: MOVE } })).not.toContain(MOVE)
+  })
+
+  it('asks for the structure of the node\'s skills, with their templates and one merged avoid line (C13)', () => {
+    const system = assistSystemPrompt({ surface: 'image', draft: '林推门而入', skills: [{ name: '分镜画面描述', template: FRAME, negative: '分格拼贴、水印' }, { name: '风格统一', template: '统一风格：水墨。' }] })
+    expect(system).toContain('Write the prompt in the structure of the template(s) below. Fill each line from the draft and the references, drop a line you cannot fill, '
+      + 'never output {{placeholders}}, and end with one line starting 避免： (Avoid: when you answer in English) that merges their avoid terms.')
+    expect(system).toContain(`Template 1 (分镜画面描述):\n${FRAME}\nAvoid terms: 分格拼贴、水印\nTemplate 2 (风格统一):\n统一风格：水墨。\n`)
+    expect(system).toContain('{{prompt}} marks where the draft\'s own description goes')
+    // The skills come before the model and language lines, and the answer stays bare.
+    expect(system.indexOf('Template 1')).toBeLessThan(system.indexOf('Answer in'))
+    expect(system).toContain('no preamble')
+    // Without avoid terms there is no avoid line to write; without skills, none of this.
+    const plain = assistSystemPrompt({ surface: 'image', skills: [{ name: '风格统一', template: '统一风格：水墨。' }] })
+    expect(plain).toContain('never output {{placeholders}}.')
+    expect(plain).not.toContain('避免')
+    expect(assistSystemPrompt({ surface: 'image' })).not.toContain('Template 1')
   })
 
   it('shows images, names the rest, and says so when an image cannot be shown', () => {

@@ -6,7 +6,9 @@
  * - `POST /api/canvas/chat` — a text node's answer, streamed as OpenAI-style
  *   SSE (`data: {"choices":[{"delta":{"content":…}}]}`), which the canvas reads.
  * - `POST /api/canvas/assist/prompt` — a prompt written for a node from what is
- *   wired into it.
+ *   wired into it, in the structure of the node's prompt skills when it sends
+ *   them (the answer's `appliedSkills` says how many the writer was given, so
+ *   the canvas marks them written and does not compose them again, C13).
  *
  * Errors answer `{ error: <text>, code }` like Studio's canvas routes; 401 means
  * sign in, which the canvas shows as such.
@@ -136,6 +138,8 @@ export function addTextRoutes(router: StudioRouter, models: CanvasTextModels, na
       source: sourceOf(selection.provider),
       providerId: selection.provider,
       usedReferences: usedImages,
+      // Every skill the request sent was in the writer's instructions (parsing refuses more than it takes): the canvas marks them only when this equals what it sent.
+      ...(assist.skills !== undefined ? { appliedSkills: assist.skills.length } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     }
   })

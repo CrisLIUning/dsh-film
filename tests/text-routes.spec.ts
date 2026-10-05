@@ -150,6 +150,22 @@ describe('the prompt writer', () => {
     expect(fake.calls).toHaveLength(1)
   })
 
+  it('writes in the structure of the node\'s skills and says how many it was given, so the canvas marks them written (C13)', async () => {
+    const fake = fakeServices()
+    const router = createStudioRouter({ text: () => fake.services })
+    const skills = [{ name: '分镜画面描述', template: '分镜画面：{{prompt}}\n场景：{{setting}}。', negative: '水印' }, { name: '风格统一', template: '统一风格：水墨。' }]
+    const response = await call(router, '/api/canvas/assist/prompt', { surface: 'image', draft: '雨夜', skills })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ prompt: '雨夜，客栈。', appliedSkills: 2 })
+    expect(String(fake.calls[0]!.system)).toContain('Template 1 (分镜画面描述):\n分镜画面：{{prompt}}\n场景：{{setting}}。\nAvoid terms: 水印')
+    // A request without skills is answered as before, without the count.
+    expect(await (await call(router, '/api/canvas/assist/prompt', { surface: 'image', draft: '雨夜' })).json()).not.toHaveProperty('appliedSkills')
+    const refused = await call(router, '/api/canvas/assist/prompt', { surface: 'image', skills: [...skills, ...skills] })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ code: 'CANVAS_ASSIST_SKILLS_INVALID' })
+    expect(fake.calls).toHaveLength(2)
+  })
+
   it('uses the writer the canvas picked and refuses empty or invalid requests', async () => {
     const fake = fakeServices([{ type: 'finish', reason: { kind: 'stop' } }])
     const router = createStudioRouter({ text: () => fake.services })
