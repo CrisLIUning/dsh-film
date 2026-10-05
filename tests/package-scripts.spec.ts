@@ -61,7 +61,7 @@ describe('check-package', () => {
       'package/apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt',
     ]
     for (const file of files) if (!leaveOut.includes(file)) put(file)
-    for (const name of ['camera-moves', 'camera-control']) {
+    for (const name of ['camera-moves', 'camera-control', 'vibedev-skills', 'generation-presets']) {
       const file = `package/apps/canvas/catalog/${name}.json`
       if (!leaveOut.includes(file)) put(file, JSON.stringify({ schema: 1, catalogVersion: '2026-10-05.1' }))
     }
@@ -94,24 +94,29 @@ describe('check-package', () => {
 
   it('refuses a NOTICE that still credits a source with no files ("(none yet)")', () => {
     packageWith()
-    put('package/apps/canvas/NOTICE', 'Open AI Canvas\n\nPortions adapted from Open AI Canvas. Files:\n\n  (none yet)\n\ntigerowo\n\nFiles:\n\n  (none yet)\n')
+    put('package/apps/canvas/NOTICE', 'tigerowo/infinite-canvas\n\nPortions adapted from tigerowo/infinite-canvas. Files:\n\n  (none yet)\n\n'
+      + 'Another source\n\nPortions adapted from another source. Files:\n\n  (none yet)\n')
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/NOTICE still has 2 "(none yet)" file list(s)')
   })
 
-  it('passes a NOTICE whose credited sources all list files', () => {
+  it('passes a NOTICE whose credited sources all list files, and a design reference acknowledged without a list', () => {
     packageWith()
-    put('package/apps/canvas/NOTICE', 'Open AI Canvas\n\nPortions adapted from Open AI Canvas. Files:\n\n  web/src/a.ts (abc1234)\n')
+    put('package/apps/canvas/NOTICE', 'tigerowo/infinite-canvas\n\nPortions adapted from tigerowo/infinite-canvas. Files:\n\n  web/src/a.ts (abc1234)\n\n'
+      + 'Open AI Canvas\n\nNo code from Open AI Canvas is included; only its interaction design served as a reference.\n')
     expect(runScript('check-package.mjs').status).toBe(0)
   })
 
   it('refuses a package without the canvas catalogues the agent\'s generation-option tools read', () => {
-    packageWith(['package/apps/canvas/catalog/camera-moves.json', 'package/apps/canvas/catalog/camera-control.json'])
+    const catalogues = ['camera-moves', 'camera-control', 'vibedev-skills', 'generation-presets']
+    packageWith(catalogues.map(name => `package/apps/canvas/catalog/${name}.json`))
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is missing: the agent could not list or set camera moves (运镜)')
     expect(result.output).toContain('apps/canvas/catalog/camera-control.json is missing: the agent could not list or set camera settings (相机)')
+    expect(result.output).toContain('apps/canvas/catalog/vibedev-skills.json is missing: the agent could not list or set prompt skills (提示词技能)')
+    expect(result.output).toContain('apps/canvas/catalog/generation-presets.json is missing: the agent could not list or set generation presets (生成预设)')
     expect(result.output).toContain('node scripts/build-apps.mjs canvas')
   })
 
@@ -119,10 +124,12 @@ describe('check-package', () => {
     packageWith()
     put('package/apps/canvas/catalog/camera-moves.json', '{"schema":1,')
     put('package/apps/canvas/catalog/camera-control.json', JSON.stringify({ schema: 2, catalogVersion: '2027-01-01.1' }))
+    put('package/apps/canvas/catalog/vibedev-skills.json', JSON.stringify({ skills: [] }))
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is not valid JSON')
     expect(result.output).toContain('apps/canvas/catalog/camera-control.json is not a schema-1 catalogue (schema 2)')
+    expect(result.output).toContain('apps/canvas/catalog/vibedev-skills.json is not a schema-1 catalogue (schema undefined)')
   })
 })
 
@@ -134,7 +141,7 @@ describe('build-apps notices', () => {
     put('package/apps/canvas/index.html', '<!doctype html>\n')
     const lockfile = JSON.stringify({ name: 'x', lockfileVersion: 3, packages: { '': { name: 'x' } } })
     put('canvas/LICENSE', 'MIT License\r\n\r\nCopyright (c) 2026 basketikun\r\n')
-    if (withNotice) put('canvas/NOTICE', 'Infinite Canvas\n\nPortions adapted from Open AI Canvas (MIT)\nPortions adapted from tigerowo/infinite-canvas\n\n')
+    if (withNotice) put('canvas/NOTICE', 'Infinite Canvas\n\nNo code from Open AI Canvas is included; only its interaction design served as a reference.\nPortions adapted from tigerowo/infinite-canvas\n\n')
     put('canvas/web/package-lock.json', lockfile)
     mkdirSync(join(scratch, 'canvas', 'web', 'node_modules'), { recursive: true })
     put('canvas/plugins/canvas/registry/package-lock.json', lockfile)
@@ -150,7 +157,7 @@ describe('build-apps notices', () => {
     expect(result.output).toContain('NOTICE → apps/canvas/NOTICE')
     expect(result.status).toBe(0)
     const app = join(scratch, 'package', 'apps', 'canvas')
-    expect(readFileSync(join(app, 'NOTICE'), 'utf8')).toBe('Infinite Canvas\n\nPortions adapted from Open AI Canvas (MIT)\nPortions adapted from tigerowo/infinite-canvas\n')
+    expect(readFileSync(join(app, 'NOTICE'), 'utf8')).toBe('Infinite Canvas\n\nNo code from Open AI Canvas is included; only its interaction design served as a reference.\nPortions adapted from tigerowo/infinite-canvas\n')
     expect(readFileSync(join(app, 'LICENSE'), 'utf8')).toBe('MIT License\n\nCopyright (c) 2026 basketikun\n')
     const notices = readFileSync(join(app, 'THIRD-PARTY-NOTICES.txt'), 'utf8')
     expect(notices).toContain('Infinite Canvas by basketikun (MIT)')

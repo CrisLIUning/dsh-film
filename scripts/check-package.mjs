@@ -17,8 +17,9 @@
  *   the canvas NOTICE lists files under every source it credits (no
  *   "(none yet)" placeholder).
  * - The canvas catalogues the agent's generation-option tools read
- *   (apps/canvas/catalog/*.json, spec C3), as JSON of schema 1: without them
- *   the tools answer CANVAS_CATALOG_MISSING.
+ *   (apps/canvas/catalog/*.json, spec C3: camera moves, camera settings,
+ *   prompt skills, generation presets), as JSON of schema 1: without them the
+ *   tools answer CANVAS_CATALOG_MISSING.
  * - None of the app files scripts/app-excludes.mjs removes is present.
  * - lib/ holds only output of a current src/ file (tsc never deletes stale
  *   output; a removed module once nearly shipped), and the entry files
@@ -58,6 +59,8 @@ const REQUIRED = [
 const CATALOGUES = [
   ['camera-moves', 'camera moves (运镜)'],
   ['camera-control', 'camera settings (相机)'],
+  ['vibedev-skills', 'prompt skills (提示词技能)'],
+  ['generation-presets', 'generation presets (生成预设)'],
 ]
 for (const [name, what] of CATALOGUES) {
   REQUIRED.push([`apps/canvas/catalog/${name}.json`, `the agent could not list or set ${what}`, REBUILD_APPS])
