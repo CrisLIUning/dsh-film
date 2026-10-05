@@ -715,9 +715,23 @@ export interface PresetSettings {
 }
 
 /**
+ * How the page reads a model the agent writes on a node (a preset's, or a
+ * flow's `model`): the bare catalogue id, as media_models and the preset
+ * catalogue name it, resolved when the node generates to the channel serving
+ * that model — the VibeDev gateway's channel first, else the first channel that
+ * serves it (canvas `resolveBareModel`, used by `resolveModelForCapability`).
+ * The agent never writes a channel selection (`gateway:<channel>::<id>`): which
+ * channels a person has is the page's to know.
+ */
+export const MODEL_RESOLUTION_NOTE = 'The node keeps the model\'s catalogue id, and when it generates the page uses the channel serving that model (the VibeDev '
+  + 'gateway\'s first, else the first that serves it); a model no configured channel serves shows as not configured until the person picks one.'
+
+/**
  * The node settings a preset fills, in the forms the canvas's panels write.
  * The page fits duration, ratio, resolution and count to the node's model
- * when it generates, so a value the model lacks is not sent.
+ * when it generates, so a value the model lacks is not sent; the model is
+ * written as the preset names it, the catalogue id, which the page resolves
+ * to the channel serving it ({@link MODEL_RESOLUTION_NOTE}).
  * @param preset - the preset.
  * @param catalogs - the camera and skill catalogues, for a preset that names a camera move, camera or skills.
  * @returns the metadata and what was skipped.

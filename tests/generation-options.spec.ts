@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 import type { BoardNode, BoardSnapshot } from '../src/canvas/board-ops.js'
 import type { CameraControlCatalog, CameraMoveCatalog, GenerationPresetCatalog, PromptSkillCatalog } from '../src/canvas/catalog.js'
 import {
-  PROMPT_LIMIT_LENGTH, cameraControlRefusal, cameraMoveRefusal, checkCameraControlInput, checkCameraMoveInput, checkFrameRolesInput, checkSkillInputs, composeGenerationText,
+  MODEL_RESOLUTION_NOTE, PROMPT_LIMIT_LENGTH, cameraControlRefusal, cameraMoveRefusal, checkCameraControlInput, checkCameraMoveInput, checkFrameRolesInput, checkSkillInputs, composeGenerationText,
   findPreset, flowFrameRoles, flowSkills, frameImageIds, frameOrder, mergeCameraControl, nearestStop, nodeRunMode, planGenerationOptions, presetSettings, promptLimitCheck,
   promptPartsForRun, readFrameRoles, renderCameraDirection, renderCameraMove, sanitizeCameraControl, sanitizeCameraMove,
 } from '../src/canvas/generation-options.js'
@@ -139,7 +139,15 @@ describe('the agent\'s values', () => {
     expect(presetSettings(findPreset('p.vertical-drama', presets), catalogs)).toMatchObject({
       metadata: { size: '9:16', vquality: '720', seconds: '5', generateAudio: 'true' }, skipped: [],
     })
+    // The model goes on the node as the catalogue id the preset names, never as a channel selection (gateway:<channel>::<id>):
+    // the page resolves a bare id to the channel serving that model when it generates (canvas resolveBareModel, gateway first).
     expect(presetSettings(findPreset('p.cheap-preview', presets), catalogs).metadata).toEqual({ model: 'seedance-2-0-official-mini', vquality: '480', seconds: '4' })
+    for (const preset of presets.presets.filter(entry => entry.model !== undefined)) {
+      const { model } = presetSettings(preset, catalogs).metadata
+      expect(model, preset.id).toBe(preset.model)
+      expect(String(model), preset.id).not.toMatch(/::|^gateway:/u)
+    }
+    expect(MODEL_RESOLUTION_NOTE).toMatch(/catalogue id, and when it generates the page uses the channel serving that model \(the VibeDev gateway's first/u)
     const card = presetSettings(findPreset('p.character-card', presets), catalogs)
     expect(card.metadata).toEqual({ size: '1536x1024', count: 1 })
     expect(card.skipped).toEqual([{ field: 'skills', reason: expect.stringContaining('vd.character-sheet') }])

@@ -32,8 +32,8 @@ import { CAMERA_ANGLES, CAMERA_SHOT_SIZES, CanvasCatalogError, PROMPT_SKILL_CATE
 import type { CanvasCatalogFiles, CanvasCatalogName } from '../canvas/catalog.js'
 import { CanvasDocumentStore, CanvasDocumentUpdateError, emptyFilmBoard } from '../canvas/documents.js'
 import {
-  PROMPT_LIMIT_LENGTH, checkCameraControlInput, checkCameraMoveInput, checkFrameRolesInput, checkSkillInputs, findPreset, flowFrameRoles, flowSkills, mergeCameraControl,
-  planGenerationOptions, presetSettings, promptLimitCheck, usesFrameRoles,
+  MODEL_RESOLUTION_NOTE, PROMPT_LIMIT_LENGTH, checkCameraControlInput, checkCameraMoveInput, checkFrameRolesInput, checkSkillInputs, findPreset, flowFrameRoles, flowSkills,
+  mergeCameraControl, planGenerationOptions, presetSettings, promptLimitCheck, usesFrameRoles,
 } from '../canvas/generation-options.js'
 import type {
   CameraControlInput, CameraMoveInput, CameraMoveSetting, CheckedSkill, ClearableOption, FrameRolesInput, OptionCatalogs, PresetSettings, PromptLimitCheck, SkillInput,
@@ -480,7 +480,10 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
         target,
         prompt: { type: 'string', required: true },
         mode: generationMode,
-        model: { type: 'string', description: 'A model id from media_models; omit for the board\'s default.' },
+        model: {
+          type: 'string',
+          description: `A model id as media_models lists it (the catalogue id, such as seedance-2-0-official-mini); omit for the board's default. ${MODEL_RESOLUTION_NOTE}`,
+        },
         title: { type: 'string' },
         referenceNodeIds: { type: 'array', items: { type: 'string' }, description: 'Existing nodes to wire in as references — a character sheet, a previous shot.' },
         autoRun: { type: 'boolean', description: 'Default false. True starts the generation at once; a direct request for this output is the authorization.' },
@@ -494,7 +497,11 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
         cameraControl: { ...cameraControlParameter, description: 'Image and video flows: the camera settings (相机); fields left out take the defaults.' },
         skills: { ...skillsParameter, description: `${skillsParameter.description} Only skills of the flow's mode.` },
         frameRoles: { ...frameRolesParameter, description: `Video flows only: ${frameRolesParameter.description} The ids are images among referenceNodeIds.` },
-        preset: { ...presetParameter, description: 'A preset id (canvas_generation_options kind presets): fills the mode and the settings it names that this call leaves out.' },
+        preset: {
+          ...presetParameter,
+          description: 'A preset id (canvas_generation_options kind presets): fills the mode and the settings it names that this call leaves out (its model as the '
+            + 'catalogue id, which the page resolves to the channel serving that model).',
+        },
       },
       output: jsonOutput,
       execute: (args, exec) => guarded(async () => {
@@ -669,7 +676,8 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
           kind: args.kind,
           items: presets.presets.filter(preset => args.mode === undefined || preset.mode === args.mode),
           note: 'Apply a preset with canvas_set_generation_options preset (to nodes of its mode) or canvas_create_generation_flow preset: it fills the settings it names '
-            + 'and attaches its prompt skills. The page fits duration, ratio, resolution and count to the node\'s model when it generates.',
+            + 'and attaches its prompt skills. The page fits duration, ratio, resolution and count to the node\'s model when it generates. A preset\'s model goes '
+            + `on the node as listed here. ${MODEL_RESOLUTION_NOTE}`,
         })
       }),
     }),
@@ -694,7 +702,11 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
             + 'version and takes the values given); a skill node is added once (one with the same skill and values is reused) and wired into the nodes it applies to.',
         },
         frameRoles: { ...frameRolesParameter, description: `${frameRolesParameter.description} Video nodes and video-mode generation nodes only.` },
-        preset: { ...presetParameter, description: 'A preset id (canvas_generation_options kind presets); applies to nodes of its mode.' },
+        preset: {
+          ...presetParameter,
+          description: 'A preset id (canvas_generation_options kind presets); applies to nodes of its mode. Its model is written as the catalogue id, which the page '
+            + 'resolves to the channel serving that model when the node generates.',
+        },
         clear: {
           type: 'array',
           items: { type: 'string', enum: ['cameraMove', 'cameraControl', 'skills', 'frameRoles'] },
@@ -746,7 +758,12 @@ export function canvasTools(services: FilmToolServices): ToolDefinition[] {
               applied: plan.applied,
               ...(plan.skillNodes.length > 0 ? { skillNodes: plan.skillNodes } : {}),
               ...(checked.adjusted.length > 0 ? { adjusted: checked.adjusted } : {}),
-              ...(checked.preset !== undefined ? { note: 'The page fits a preset\'s duration, ratio, resolution and count to each node\'s model when it generates.' } : {}),
+              ...(checked.preset !== undefined
+                ? {
+                    note: 'The page fits a preset\'s duration, ratio, resolution and count to each node\'s model when it generates.'
+                      + `${checked.preset.metadata.model !== undefined ? ` ${MODEL_RESOLUTION_NOTE}` : ''}`,
+                  }
+                : {}),
               ...(limits.length > 0 ? {
                 warnings: limits.map(check => ({
                   code: 'CANVAS_PROMPT_OVER_LIMIT', nodeId: check.nodeId, length: check.length, limit: check.limit, certain: check.refused === 'certain',

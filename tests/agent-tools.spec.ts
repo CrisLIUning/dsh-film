@@ -16,6 +16,7 @@ import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
 import type { BoardOp, BoardSnapshot } from '../src/canvas/board-ops.js'
+import { MODEL_RESOLUTION_NOTE } from '../src/canvas/generation-options.js'
 import { FilmMediaTasks } from '../src/media/tasks.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
@@ -908,7 +909,21 @@ describe('generation options (C11)', () => {
       { nodeId: 'still', set: [], cleared: [], skipped: [{ field: 'preset', reason: 'p.vertical-drama is a video preset; this is an image node' }], changed: false },
     ])
     expect(drama.note).toContain('fits a preset')
+    expect(drama.note).not.toContain('catalogue id')
     expect((await savedNode('shot')).metadata).toMatchObject({ size: '9:16', vquality: '720', seconds: '5', generateAudio: 'true' })
+    // A preset naming a model writes its catalogue id; the page resolves it to the channel serving that model (canvas resolveBareModel,
+    // the gateway's first) when the node generates, and the answer and the tool texts say so.
+    const cheap = await run('canvas_set_generation_options', { nodeIds: ['shot'], preset: 'p.cheap-preview' })
+    expect(cheap.applied[0].set).toContain('model')
+    expect(cheap.note).toContain(MODEL_RESOLUTION_NOTE)
+    expect((await savedNode('shot')).metadata.model).toBe('seedance-2-0-official-mini')
+    expect((await run('canvas_generation_options', { kind: 'presets' })).note).toContain(MODEL_RESOLUTION_NOTE)
+    expect((tools.get('canvas_create_generation_flow')!.parameters as any).properties.model.description).toContain(MODEL_RESOLUTION_NOTE)
+    for (const name of ['canvas_create_generation_flow', 'canvas_set_generation_options']) {
+      expect((tools.get(name)!.parameters as any).properties.preset.description, name).toMatch(/catalogue id, which the page resolves to the channel serving that model/u)
+    }
+    const flow = await run('canvas_create_generation_flow', { prompt: '试镜', preset: 'p.cheap-preview' })
+    expect(flow.nodes[1].metadata).toMatchObject({ generationMode: 'video', model: 'seedance-2-0-official-mini' })
     // As the canvas's presets: the sheet skill is attached without its required name, which the page leaves out until it is set.
     const card = await run('canvas_set_generation_options', { nodeIds: ['still'], preset: 'p.character-card', cameraControl: { focalLength: 85 } })
     expect(card.applied).toEqual([{
