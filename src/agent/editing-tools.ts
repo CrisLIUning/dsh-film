@@ -1,6 +1,7 @@
 /**
  * The storyboard's cutting tools — the `editing` tool group (C12): mark,
- * split, render, join and copy the sound of the board's video nodes.
+ * split, render, join and copy the sound of the board's video nodes, and read
+ * and write their subtitles.
  *
  * Marks and splits are board edits in the board's own vocabulary
  * (`update_node`, `add_node`, `connect_nodes`): with a storyboard page open
@@ -18,10 +19,19 @@
  * page open or not, since an open page merges the saved board in. Nothing
  * here re-encodes or generates: what the Host cannot copy needs the 分镜 tab,
  * which re-encodes in the page (VIDEO_JOIN_NEEDS_PAGE for a join).
+ *
+ * Subtitles are a video node's cues (C1 `subtitleEntries`, in ms of its whole
+ * file) with their style, save time and media key. They are read from the
+ * open page's board or the saved one, and written like marks — one
+ * `update_node` of the four fields, the page's 保存 — through the page's own
+ * rules (canvas/subtitles.ts): SubRip and WebVTT read as its 导入 reads them,
+ * cues cleaned and long ones split as it does, and keyed to the node's current
+ * video so the page does not flag them; `null` clears them.
  * @module dsh-film/agent/editing-tools
  */
 
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { BoardPage } from '../canvas/board-agent.js'
@@ -32,14 +42,23 @@ import { CanvasToolError, mutationReceipt, snapshotOfDocument } from '../canvas/
 import { MIN_CLIP_MS, readClip, siblingMetadata, splitClip, storedClip } from '../canvas/clip-marks.js'
 import type { ClipMark } from '../canvas/clip-marks.js'
 import { CanvasDocumentStore } from '../canvas/documents.js'
+import { MAX_CHARS_PER_ENTRY_LIMIT, MIN_CHARS_PER_ENTRY, resegmentEntries } from '../canvas/subtitle-resegment.js'
+import { MAX_SUBTITLE_FILE_BYTES, looksLikeTimedSubtitles, parseSubtitleText, serializeSrt } from '../canvas/subtitle-srt.js'
+import {
+  MAX_SUBTITLE_ENTRIES, MAX_SUBTITLE_TEXT, SUBTITLE_BACKDROPS, SUBTITLE_FONT_SCALE_RANGE, SUBTITLE_ID_PATTERN, SUBTITLE_POSITIONS, cuesFromClipTime, cuesInClipTime,
+  newSubtitleId, normalizeSubtitleColor, readSubtitleEntries, readSubtitleStyle, sanitizeSubtitleEntries, sanitizeSubtitleStyle, subtitleDigest, subtitleMediaChanged,
+  subtitleMediaKeyOf,
+} from '../canvas/subtitles.js'
+import type { SubtitleEntry } from '../canvas/subtitles.js'
 import { filmUrlOf } from '../media/tasks.js'
 import { guarded } from './canvas-tools.js'
 import { filmWorkspace, jsonOutput, plain, segment } from './context.js'
 import type { FilmToolServices, FilmWorkspace } from './context.js'
 import { FilmToolError, callStudio } from './studio-client.js'
 
-/** The group's line in film_tools (C12; the subtitle tools add theirs when they land). */
-export const EDITING_GROUP_DESCRIPTION = 'Cut, split, render, join and extract the sound of video nodes (video_*). Only cutting and joining: no transitions, music or effects.'
+/** The group's line in film_tools (C12). */
+export const EDITING_GROUP_DESCRIPTION = 'Cut, split, render, join and extract the sound of video nodes, and read or write their subtitles (video_*). Only cutting and joining: no '
+  + 'transitions, music or effects.'
 
 const PAGE_CLOSED_NOTE = 'No storyboard page is open: the edit is saved to the board and appears when the 分镜 tab opens.'
 
@@ -89,22 +108,23 @@ const sameClip = (left: ClipMark | null, right: ClipMark | null): boolean =>
  * @param snapshot - the board.
  * @param nodeId - the node.
  * @param kinds - the node types accepted.
+ * @param code - the refusal's code when the node is not one of them.
  * @returns the node.
  */
-function mediaNode(snapshot: BoardSnapshot | null, nodeId: string, kinds: readonly MediaKind[]): BoardNode {
+function mediaNode(snapshot: BoardSnapshot | null, nodeId: string, kinds: readonly MediaKind[], code = 'CANVAS_CLIP_TARGET'): BoardNode {
   const node = snapshot?.nodes?.find(item => item.id === nodeId)
   if (node === undefined) throw new CanvasToolError('CANVAS_NODE_NOT_FOUND', `The board has no node ${nodeId}. Re-read canvas_get_state.`)
   const content = node.metadata?.content
   if (!(kinds as readonly string[]).includes(node.type) || typeof content !== 'string' || content.trim() === '') {
-    throw new CanvasToolError('CANVAS_CLIP_TARGET', `${nodeId} is not a ${kinds.join(' or ')} node with a file (it is a ${node.type} node${typeof content === 'string' && content.trim() !== '' ? '' : ' without a file'}).`)
+    throw new CanvasToolError(code, `${nodeId} is not a ${kinds.join(' or ')} node with a file (it is a ${node.type} node${typeof content === 'string' && content.trim() !== '' ? '' : ' without a file'}).`)
   }
   return node
 }
 
 /** Refuse a node whose file changed since it was read, or that is generating. */
-function expectContent(node: BoardNode, expected: string): void {
+function expectContent(node: BoardNode, expected: string, code = 'CANVAS_CLIP_TARGET_CHANGED'): void {
   if (node.metadata?.content !== expected || node.metadata?.status === 'loading') {
-    throw new CanvasToolError('CANVAS_CLIP_TARGET_CHANGED', `${node.id} changed or is generating. Read it again (canvas_get_state, or canvas_read_node field content) and pass its current content as expectedContent.`)
+    throw new CanvasToolError(code, `${node.id} changed or is generating. Read it again (canvas_get_state, or canvas_read_node field content) and pass its current content as expectedContent.`)
   }
 }
 
@@ -135,6 +155,103 @@ function reasonsOf(error: FilmToolError): Array<{ index: number; reason: string;
     ? reasons.filter((entry): entry is { index: number; reason: string; detail: string } => isRecord(entry) && typeof entry.index === 'number' && typeof entry.reason === 'string')
       .map(entry => ({ index: entry.index, reason: entry.reason, detail: typeof entry.detail === 'string' ? entry.detail : '' }))
     : []
+}
+
+/** Cues per page of video_get_subtitles: by default, and at most. */
+const SUBTITLE_PAGE = { default: 200, max: 500 } as const
+
+const subtitleInvalid = (message: string): CanvasToolError => new CanvasToolError('CANVAS_SUBTITLE_INVALID', message)
+
+const subtitlesChanged = (nodeId: string): CanvasToolError => new CanvasToolError('CANVAS_SUBTITLE_TARGET_CHANGED',
+  `${nodeId}'s subtitles changed since they were read (their contentDigest is another now). Read them again with video_get_subtitles and work from what is there.`)
+
+const MEDIA_CHANGED_NOTE = 'mediaChanged: the node\'s video is not the one these cues were saved against (another file, size or length), so their timing may be '
+  + 'off: check it before relying on them. Writing them with video_set_subtitles saves them against the current video.'
+
+/** A cue as the agent passes one. */
+interface CueInput {
+  id?: string
+  startMs: number
+  endMs: number
+  text: string
+  highlight?: { start: number; end: number }
+}
+
+/** Style changes as the agent passes them. */
+interface StyleInput {
+  fontScale?: number
+  color?: string
+  position?: string
+  backdrop?: string
+  maxCharsPerEntry?: number
+  autoResegment?: boolean
+}
+
+/** `1 cue`, `3 cues`. */
+const counted = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+/** The verb for `count` things: `agree(1, 'starts', 'start')`. */
+const agree = (count: number, one: string, many: string): string => count === 1 ? one : many
+
+/** `was` or `were`. */
+const was = (count: number): string => agree(count, 'was', 'were')
+
+/**
+ * Style changes, checked: a value the page cannot draw is refused, never clamped behind the agent's back.
+ * @param style - the changes as passed.
+ * @returns the changes to lay over the node's style.
+ */
+function checkStyle(style: StyleInput | undefined): Record<string, unknown> {
+  const changes: Record<string, unknown> = {}
+  if (style === undefined) return changes
+  if (style.fontScale !== undefined) {
+    if (!(style.fontScale >= SUBTITLE_FONT_SCALE_RANGE.min && style.fontScale <= SUBTITLE_FONT_SCALE_RANGE.max)) {
+      throw subtitleInvalid(`style.fontScale is the text height as a % of the picture's, ${SUBTITLE_FONT_SCALE_RANGE.min}–${SUBTITLE_FONT_SCALE_RANGE.max}; ${style.fontScale} is not.`)
+    }
+    changes.fontScale = style.fontScale
+  }
+  if (style.color !== undefined) {
+    const color = normalizeSubtitleColor(style.color)
+    if (color === undefined) throw subtitleInvalid(`style.color is '#RRGGBB' (or '#RGB'); "${style.color}" is not.`)
+    changes.color = color
+  }
+  if (style.position !== undefined) changes.position = style.position
+  if (style.backdrop !== undefined) changes.backdrop = style.backdrop
+  if (style.maxCharsPerEntry !== undefined) {
+    if (style.maxCharsPerEntry < MIN_CHARS_PER_ENTRY || style.maxCharsPerEntry > MAX_CHARS_PER_ENTRY_LIMIT) {
+      throw subtitleInvalid(`style.maxCharsPerEntry is ${MIN_CHARS_PER_ENTRY}–${MAX_CHARS_PER_ENTRY_LIMIT} characters; ${style.maxCharsPerEntry} is not.`)
+    }
+    changes.maxCharsPerEntry = style.maxCharsPerEntry
+  }
+  if (style.autoResegment !== undefined) changes.autoResegment = style.autoResegment
+  return changes
+}
+
+/** The same cue: its times and text (how a rewritten list finds the ids of the cues it keeps). */
+const cueKey = (cue: { startMs: number; endMs: number; text: string }): string => `${cue.startMs}|${cue.endMs}|${cue.text}`
+
+/** How many cues start before an earlier one ends (the page shows overlapping cues together). */
+function overlapCount(entries: readonly SubtitleEntry[]): number {
+  let reach = Number.NEGATIVE_INFINITY
+  let count = 0
+  for (const entry of entries) {
+    if (entry.startMs < reach) count++
+    reach = Math.max(reach, entry.endMs)
+  }
+  return count
+}
+
+/** What video_set_subtitles stores on a node, and what it says about it. */
+interface SubtitlePlan {
+  /** The node's new subtitle fields: one `update_node`, like the page's 保存. */
+  patch: Record<string, unknown>
+  /** The node already holds exactly this. */
+  unchanged: boolean
+  count: number
+  dropped: number
+  warnings: string[]
+  resegmented?: { from: number; to: number; maxCharsPerEntry: number }
+  contentDigest: string
 }
 
 /**
@@ -415,6 +532,246 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
           land: { nearNodeId: node.id, connectFrom: [node.id], title: `${nameOf(node)} · 音频` },
         }, exec.signal)
         return plain({ ...started, nodeId: node.id, ...(clip !== undefined ? { clip } : {}), note: TASK_NOTE })
+      }),
+    }),
+    defineTool({
+      name: 'video_get_subtitles',
+      description: 'Read a video node\'s subtitles: its cues (id, startMs, endMs, text) in ms of the node\'s whole file, as stored and whatever its in/out mark '
+        + '(timeBase clip counts from the mark and lists only the cues inside it), as JSON or as SubRip text (format srt), in pages: follow nextOffset with the '
+        + 'same contentDigest. Also returns the style the 分镜 page draws them in, and mediaChanged: true when the node\'s video is no longer the one they were '
+        + 'saved against (another file, size, or a length more than 250 ms off), so their timing may be off. Reads the open page\'s board, or the saved board '
+        + 'when the 分镜 tab is closed. Free; nothing changes.',
+      parameters: {
+        target,
+        nodeId: { type: 'string', required: true, description: 'A video node with a file, from canvas_get_state.' },
+        format: { type: 'string', enum: ['json', 'srt'], description: 'json (default): entries [{ id, startMs, endMs, text, highlight? }]; srt: the page as SubRip text, numbered from offset + 1.' },
+        timeBase: { type: 'string', enum: ['source', 'clip'], description: 'source (default): ms of the node\'s whole file, as stored; clip: ms from its in point, only the cues inside its mark, clamped to it.' },
+        offset: { type: 'integer', description: 'The first cue of the page (0 first); then use nextOffset.' },
+        limit: { type: 'integer', description: `Cues per page, 1–${SUBTITLE_PAGE.max} (default ${SUBTITLE_PAGE.default}).` },
+        contentDigest: { type: 'string', description: 'From the second page on: the contentDigest the first page returned, so two versions are never stitched together.' },
+      },
+      output: jsonOutput,
+      isConcurrencySafe: () => true,
+      execute: (args, exec) => guarded(async () => {
+        const offset = args.offset ?? 0
+        const limit = args.limit ?? SUBTITLE_PAGE.default
+        if (offset < 0) throw subtitleInvalid('offset counts cues from 0; use the nextOffset a page returned.')
+        if (limit < 1 || limit > SUBTITLE_PAGE.max) throw subtitleInvalid(`limit is 1–${SUBTITLE_PAGE.max} cues per page; ${limit} is not.`)
+        const film = await filmWorkspace(exec)
+        const { page, snapshot } = await board(film, args.target)
+        const node = mediaNode(snapshot, args.nodeId, ['video'], 'CANVAS_SUBTITLE_TARGET')
+        const metadata = node.metadata ?? {}
+        const entries = readSubtitleEntries(metadata)
+        const contentDigest = subtitleDigest(entries)
+        if (args.contentDigest !== undefined && args.contentDigest !== contentDigest) throw subtitlesChanged(node.id)
+        const clipTime = args.timeBase === 'clip'
+        const clip = readClip(metadata)
+        const listed = clipTime && clip !== undefined ? cuesInClipTime(entries, clip) : entries
+        const shown = listed.slice(offset, offset + limit)
+        const end = offset + shown.length
+        const mediaChanged = subtitleMediaChanged(metadata)
+        const notes = [
+          ...(mediaChanged ? [MEDIA_CHANGED_NOTE] : []),
+          ...(clipTime && clip === undefined ? ['The node has no in/out mark, so clip time is the file\'s time.'] : []),
+        ]
+        const key = metadata.subtitleMediaKey
+        return plain({
+          ...(page !== undefined ? { source: 'live', target: page.target } : { source: 'persisted' }),
+          nodeId: node.id,
+          timeBase: clipTime ? 'clip' : 'source',
+          ...(clipTime ? { clip: clip ?? null } : {}),
+          ...(positive(metadata.durationMs) ? { durationMs: Math.round(metadata.durationMs) } : {}),
+          total: listed.length,
+          offset,
+          nextOffset: end < listed.length ? end : null,
+          ...(args.format === 'srt' ? { srt: serializeSrt(shown, offset + 1) } : { entries: shown }),
+          style: readSubtitleStyle(metadata),
+          ...(typeof key === 'string' && key !== '' ? { subtitleMediaKey: key } : {}),
+          ...(typeof metadata.subtitleUpdatedAt === 'string' ? { subtitleUpdatedAt: metadata.subtitleUpdatedAt } : {}),
+          mediaChanged,
+          contentDigest,
+          ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
+        })
+      }),
+    }),
+    defineTool({
+      name: 'video_set_subtitles',
+      description: 'Write a video node\'s subtitles: replace every cue with SubRip or WebVTT text (srt) or a cue list (entries), restyle them (style, alone or with '
+        + 'either), or remove them (clear:true, stored as null). Times are whole ms of the node\'s whole file, or from its in point with timeBase clip. Cues are '
+        + 'cleaned as the 分镜 page cleans an import — sorted, end after start, text up to 2000 characters, at most 5000; what cannot be used is counted in '
+        + 'dropped and explained in warnings — long ones are split at punctuation when resegment is on (by default for srt, when the style\'s autoResegment is '
+        + 'on), and they are saved against the node\'s current video, so the page does not flag them. When you edit a list you read, pass its contentDigest: a '
+        + 'list changed meanwhile is refused, not overwritten. With the 分镜 tab open the edit runs in the page (live, undoable); with it closed it is saved to '
+        + 'the board. Nothing is generated.',
+      parameters: {
+        target,
+        nodeId: { type: 'string', required: true, description: 'A video node with a file, from canvas_get_state.' },
+        expectedContent,
+        srt: { type: 'string', description: 'SubRip (.srt) or WebVTT (.vtt) text; replaces every cue. Tags are dropped; blocks that cannot be read are skipped and counted.' },
+        entries: {
+          type: 'array',
+          description: `The cues, replacing every cue: whole ms with endMs after startMs, text up to ${MAX_SUBTITLE_TEXT} characters (a line break makes two lines), at most `
+            + `${MAX_SUBTITLE_ENTRIES}; they are sorted for you.`,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', description: 'Keep a cue\'s id from video_get_subtitles when you change it; a new cue gets one.' },
+              startMs: { type: 'integer', required: true },
+              endMs: { type: 'integer', required: true },
+              text: { type: 'string', required: true },
+              highlight: {
+                type: 'object',
+                additionalProperties: false,
+                description: 'Keep a highlight video_get_subtitles returned: [start, end) in the text (UTF-16 units).',
+                properties: { start: { type: 'integer', required: true }, end: { type: 'integer', required: true } },
+              },
+            },
+          },
+        },
+        timeBase: { type: 'string', enum: ['source', 'clip'], description: 'How srt or entries are timed: source (default), ms of the node\'s whole file; clip, ms from its in point (moved into the file\'s time; cues past the file\'s end are left out).' },
+        resegment: { type: 'boolean', description: 'Split cues longer than the style\'s maxCharsPerEntry (35 unless set) at punctuation, as the page\'s 自动断句. Default: on for srt when the style\'s autoResegment is on; off for entries.' },
+        style: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'Changes over the node\'s current style (the page\'s defaults when it has none): only the fields given change.',
+          properties: {
+            fontScale: { type: 'number', description: `Text height as a % of the picture's, ${SUBTITLE_FONT_SCALE_RANGE.min}–${SUBTITLE_FONT_SCALE_RANGE.max} (default 5).` },
+            color: { type: 'string', description: '\'#RRGGBB\' (default #FFFFFF).' },
+            position: { type: 'string', enum: SUBTITLE_POSITIONS, description: 'Default bottom.' },
+            backdrop: { type: 'string', enum: SUBTITLE_BACKDROPS, description: 'Behind the text: none, shadow (default) or box.' },
+            maxCharsPerEntry: { type: 'integer', description: `The longest cue 自动断句 leaves whole, ${MIN_CHARS_PER_ENTRY}–${MAX_CHARS_PER_ENTRY_LIMIT} characters (default 35).` },
+            autoResegment: { type: 'boolean', description: 'Whether text the page imports is split by default (default true).' },
+          },
+        },
+        clear: { type: 'boolean', description: 'true removes every cue (stored as null), instead of srt or entries.' },
+        contentDigest: { type: 'string', description: 'The contentDigest video_get_subtitles returned: when the cues changed since, the call is refused instead of overwriting them.' },
+      },
+      output: jsonOutput,
+      execute: (args, exec) => guarded(async () => {
+        const clear = args.clear === true
+        const sources = [args.srt !== undefined, args.entries !== undefined, clear].filter(Boolean).length
+        if (sources > 1) throw subtitleInvalid('Pass one of srt, entries or clear:true (style may come with any of them, or alone).')
+        if (sources === 0 && args.style === undefined) throw subtitleInvalid('Pass srt or entries to replace the cues, clear:true to remove them, or style to restyle them.')
+        if (args.srt === undefined && args.entries === undefined && (args.timeBase !== undefined || args.resegment !== undefined)) {
+          throw subtitleInvalid('timeBase and resegment go with srt or entries.')
+        }
+        const styleChanges = checkStyle(args.style)
+        /** The cues given, before anything is cleaned, and the srt blocks that could not be read. */
+        const input = ((): { given?: CueInput[]; skipped: number } => {
+          if (args.srt !== undefined) {
+            if (Buffer.byteLength(args.srt) > MAX_SUBTITLE_FILE_BYTES) throw subtitleInvalid(`srt is larger than ${MAX_SUBTITLE_FILE_BYTES / 1024 / 1024} MB.`)
+            if (!looksLikeTimedSubtitles(args.srt)) throw subtitleInvalid('srt holds no SubRip or WebVTT timing line (00:00:01,000 --> 00:00:02,500). Time the cues, or pass entries.')
+            const parsed = parseSubtitleText(args.srt)
+            if (parsed.cues.length === 0) throw subtitleInvalid(`srt holds no cue that can be used (${counted(parsed.skipped, 'block')} without a readable timing, with end <= start or without text).`)
+            return { given: parsed.cues, skipped: parsed.skipped }
+          }
+          if (args.entries !== undefined && args.entries.length === 0) throw subtitleInvalid('entries lists at least one cue; clear:true removes every cue.')
+          return { ...(args.entries !== undefined ? { given: args.entries } : {}), skipped: 0 }
+        })()
+        const { given, skipped } = input
+        const film = await filmWorkspace(exec)
+        const { page, snapshot } = await board(film, args.target)
+        const node = mediaNode(snapshot, args.nodeId, ['video'], 'CANVAS_SUBTITLE_TARGET')
+        expectContent(node, args.expectedContent, 'CANVAS_SUBTITLE_TARGET_CHANGED')
+        const now = new Date().toISOString()
+        /** The node's new subtitle fields, worked out from the node as it is. */
+        const plan = (source: BoardNode): SubtitlePlan => {
+          const metadata = source.metadata ?? {}
+          const current = readSubtitleEntries(metadata)
+          if (args.contentDigest !== undefined && args.contentDigest !== subtitleDigest(current)) throw subtitlesChanged(source.id)
+          const storedStyle = metadata.subtitleStyle
+          const style = sanitizeSubtitleStyle({ ...(isRecord(storedStyle) ? storedStyle : {}), ...styleChanges })
+          const sameStyle = isDeepStrictEqual(storedStyle, style)
+          if (given === undefined && !clear) {
+            return { patch: { subtitleStyle: style, subtitleUpdatedAt: now }, unchanged: sameStyle, count: current.length, dropped: 0, warnings: [], contentDigest: subtitleDigest(current) }
+          }
+          if (given === undefined) {
+            const none = (metadata.subtitleEntries ?? null) === null && (metadata.subtitleMediaKey ?? null) === null
+            return {
+              patch: { subtitleEntries: null, subtitleStyle: style, subtitleUpdatedAt: now, subtitleMediaKey: null },
+              unchanged: none && (Object.keys(styleChanges).length === 0 || sameStyle), count: 0, dropped: 0, warnings: [], contentDigest: subtitleDigest([]),
+            }
+          }
+          const warnings: string[] = []
+          if (skipped > 0) warnings.push(`${counted(skipped, 'block')} of srt could not be read (no usable timing, end <= start, or no text) and ${was(skipped)} skipped.`)
+          const durationMs = positive(metadata.durationMs) ? Math.round(metadata.durationMs) : undefined
+          const clip = readClip(metadata, durationMs)
+          let cues = given
+          let pastEnd = 0
+          if (args.timeBase === 'clip') {
+            const inMs = clip?.inMs ?? 0
+            if (clip === undefined) warnings.push('The node has no in/out mark, so clip time is the file\'s time.')
+            pastEnd = durationMs === undefined ? 0 : cues.filter(cue => cue.startMs + inMs >= durationMs).length
+            cues = cuesFromClipTime(cues, { inMs }, durationMs)
+            if (pastEnd > 0) warnings.push(`${counted(pastEnd, 'cue')} started past the end of the file (${durationMs} ms) from the in point and ${was(pastEnd)} left out.`)
+          }
+          // A cue without a usable id gets a new one — or, below, the id of a stored cue with the same times and text.
+          const fresh = new Set<string>()
+          const freshId = (): string => {
+            const id = newSubtitleId()
+            fresh.add(id)
+            return id
+          }
+          const report = sanitizeSubtitleEntries(cues.map(cue => typeof cue.id === 'string' && SUBTITLE_ID_PATTERN.test(cue.id) ? cue : { ...cue, id: freshId() }))
+          let entries = report.entries
+          let resegmented: SubtitlePlan['resegmented']
+          if (args.resegment ?? (args.srt !== undefined && style.autoResegment)) {
+            const split = resegmentEntries(entries, style.maxCharsPerEntry, freshId)
+            if (split.length !== entries.length) resegmented = { from: entries.length, to: split.length, maxCharsPerEntry: style.maxCharsPerEntry }
+            entries = split
+          }
+          // The cues a rewrite keeps keep their ids (and highlights), so writing the same cues twice changes nothing.
+          const taken = new Set(entries.filter(entry => !fresh.has(entry.id)).map(entry => entry.id))
+          const reusable = new Map<string, SubtitleEntry[]>()
+          for (const entry of current) if (!taken.has(entry.id)) reusable.set(cueKey(entry), [...reusable.get(cueKey(entry)) ?? [], entry])
+          entries = entries.map((entry) => {
+            const match = fresh.has(entry.id) ? reusable.get(cueKey(entry))?.shift() : undefined
+            return match === undefined ? entry : { ...entry, id: match.id, ...(entry.highlight === undefined && match.highlight !== undefined ? { highlight: match.highlight } : {}) }
+          })
+          // Once more as C1 stores them: sorted, unique ids, at most 5000 (a split can pass the limit).
+          const final = sanitizeSubtitleEntries(entries)
+          const notCues = given.length - cues.length - pastEnd + report.dropped
+          const overLimit = report.overLimit + final.overLimit
+          if (notCues > 0) warnings.push(`${counted(notCues, 'cue')} had no usable times or text (endMs must be after startMs) and ${was(notCues)} left out.`)
+          if (report.truncated > 0) warnings.push(`${counted(report.truncated, 'text')} ran past ${MAX_SUBTITLE_TEXT} characters and ${was(report.truncated)} cut there.`)
+          if (overLimit > 0) warnings.push(`${counted(overLimit, 'cue')} past the limit of ${MAX_SUBTITLE_ENTRIES} ${was(overLimit)} left out.`)
+          const kept = final.entries
+          if (kept.length === 0) throw subtitleInvalid(`None of the cues can be stored, so nothing was changed. ${warnings.join(' ')}`)
+          const beyond = durationMs === undefined ? 0 : kept.filter(entry => entry.startMs >= durationMs).length
+          if (beyond > 0) warnings.push(`${counted(beyond, 'cue')} ${agree(beyond, 'starts', 'start')} at or after the end of the video (${durationMs} ms) and will never show.`)
+          const outside = clip === undefined ? 0 : kept.filter(entry => entry.endMs <= clip.inMs || entry.startMs >= clip.outMs).length
+          if (clip !== undefined && outside > 0) {
+            warnings.push(`${counted(outside, 'cue')} ${agree(outside, 'lies', 'lie')} outside the node's in/out mark (${clip.inMs}–${clip.outMs} ms of the file): `
+              + `${agree(outside, 'it is', 'they are')} kept with the file's subtitles, but this node plays only its mark, so ${agree(outside, 'it does', 'they do')} not show on it.`)
+          }
+          const overlaps = overlapCount(kept)
+          if (overlaps > 0) warnings.push(`${counted(overlaps, 'cue')} ${agree(overlaps, 'starts', 'start')} before an earlier cue ends; the page shows overlapping cues together.`)
+          const key = subtitleMediaKeyOf(metadata)
+          return {
+            patch: { subtitleEntries: kept, subtitleStyle: style, subtitleUpdatedAt: now, subtitleMediaKey: key },
+            unchanged: isDeepStrictEqual(metadata.subtitleEntries, kept) && sameStyle && metadata.subtitleMediaKey === key,
+            count: kept.length,
+            dropped: skipped + pastEnd + notCues + overLimit,
+            warnings,
+            ...(resegmented !== undefined ? { resegmented } : {}),
+            contentDigest: subtitleDigest(kept),
+          }
+        }
+        let planned = plan(node)
+        const facts = (): Record<string, unknown> => ({
+          nodeId: node.id, count: planned.count, dropped: planned.dropped, warnings: planned.warnings,
+          ...(planned.resegmented !== undefined ? { resegmented: planned.resegmented } : {}), contentDigest: planned.contentDigest,
+        })
+        if (planned.unchanged) return plain({ ...where(page), changed: false, ...facts() })
+        const receipt = await applyEdit(film, page, snapshot!, (current) => {
+          // On the saved board this runs under its lock: the node as it is now.
+          const source = mediaNode(current, node.id, ['video'], 'CANVAS_SUBTITLE_TARGET')
+          expectContent(source, args.expectedContent, 'CANVAS_SUBTITLE_TARGET_CHANGED')
+          planned = plan(source)
+          return [{ type: 'update_node', id: node.id, metadata: planned.patch }]
+        }, exec.signal)
+        return plain({ ...where(page), ...receipt, changed: true, ...facts() })
       }),
     }),
   ]

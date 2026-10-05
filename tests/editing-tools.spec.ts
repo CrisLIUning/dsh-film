@@ -1,21 +1,24 @@
 /**
  * The cutting tools (C12, group 'editing'), called the way the agent loop
  * calls them: marks and splits on the saved board or the open page, renders,
- * joins and sound copies as Host film tasks that land their results.
+ * joins and sound copies as Host film tasks that land their results, and the
+ * subtitle tools reading and writing a video node's cues as the page does.
  */
 
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { filmAgentTools } from '../src/agent/index.js'
 import type { FilmToolServices } from '../src/agent/index.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
+import { callStudio } from '../src/agent/studio-client.js'
 import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
 import type { BoardNode, BoardOp, BoardSnapshot } from '../src/canvas/board-ops.js'
+import { CanvasDocumentStore } from '../src/canvas/documents.js'
 import { FilmMediaTasks } from '../src/media/tasks.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
@@ -27,6 +30,7 @@ let cwd: string
 let events: ProjectEvents
 let boardAgent: CanvasBoardAgent
 let tasks: FilmMediaTasks
+let studio: ReturnType<typeof createStudioRouter>
 let tools: Map<string, ToolDefinition>
 let film: { id: string }
 let seen: ProjectEvent[]
@@ -39,7 +43,7 @@ beforeEach(async () => {
   boardAgent = new CanvasBoardAgent()
   tasks = new FilmMediaTasks(() => undefined)
   duringProbe = undefined
-  const studio = createStudioRouter({ events, boardAgent, tasks })
+  studio = createStudioRouter({ events, boardAgent, tasks })
   const dispatch = studio.dispatch.bind(studio)
   studio.dispatch = async (request) => {
     if ((new URL(request.url).searchParams.get('path') ?? '').includes('/probe')) await duringProbe?.()
@@ -459,5 +463,335 @@ describe('media_cancel_task on an edit', () => {
     const task = await finished(started.taskId)
     expect(await run('media_cancel_task', { taskId: started.taskId })).toMatchObject({ status: 'done', file: { landedNodeId: task.file.landedNodeId } })
     expect(await savedNode(task.file.landedNodeId)).toBeDefined()
+  })
+})
+
+/** A cue id as the page makes one (nanoid 10). */
+const CUE_ID = /^[A-Za-z0-9_-]{10}$/u
+
+const DEFAULT_STYLE = { v: 1, fontScale: 5, color: '#FFFFFF', position: 'bottom', backdrop: 'shadow', maxCharsPerEntry: 35, autoResegment: true }
+
+const SRT = '1\n00:00:01,000 --> 00:00:02,500\n有人吗\n\n2\n00:00:03,000 --> 00:00:04,000\n<i>谁</i>\n\n3\n00:00:05,000 --> 00:00:06,000\n门开了\n'
+
+describe('video_set_subtitles and video_get_subtitles', () => {
+  it('sets cues from SubRip on the saved board as the page saves them, and reads them back in JSON and SubRip pages', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { bytes: 4096, durationMs: 9000 }))
+    seen.length = 0
+    const set = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: SRT })
+    expect(set).toMatchObject({ source: 'persisted', changed: true, nodeId: 'shot', count: 3, dropped: 0, warnings: [], resultView: 'changes', contentDigest: expect.any(String) })
+    expect(set.resegmented).toBeUndefined()
+    // The four fields of the page's 保存 (W5): ids of the page's shape, the style with v: 1, the save time, the media key.
+    const metadata = (await savedNode('shot')).metadata
+    expect(metadata.subtitleEntries.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([[1000, 2500, '有人吗'], [3000, 4000, '谁'], [5000, 6000, '门开了']])
+    for (const cue of metadata.subtitleEntries) expect(cue.id).toMatch(CUE_ID)
+    expect(metadata.subtitleStyle).toEqual(DEFAULT_STYLE)
+    expect(new Date(metadata.subtitleUpdatedAt).toISOString()).toBe(metadata.subtitleUpdatedAt)
+    expect(metadata.subtitleMediaKey).toBe(`${url('src.mp4')}|4096|9000`)
+    expect(seen).toContainEqual({ type: 'story-canvas-changed', projectId: film.id, boardId: film.id })
+
+    // Pages: JSON first, then SubRip numbered on from the page's offset, under the same digest.
+    const first = await run('video_get_subtitles', { nodeId: 'shot', limit: 2 })
+    expect(first).toMatchObject({
+      source: 'persisted', nodeId: 'shot', timeBase: 'source', durationMs: 9000, total: 3, offset: 0, nextOffset: 2, style: DEFAULT_STYLE, mediaChanged: false,
+      subtitleMediaKey: metadata.subtitleMediaKey, subtitleUpdatedAt: metadata.subtitleUpdatedAt, contentDigest: set.contentDigest,
+    })
+    expect(first.entries).toEqual(metadata.subtitleEntries.slice(0, 2))
+    expect(first.note).toBeUndefined()
+    const second = await run('video_get_subtitles', { nodeId: 'shot', format: 'srt', offset: 2, limit: 2, contentDigest: first.contentDigest })
+    expect(second).toMatchObject({ total: 3, offset: 2, nextOffset: null, srt: '3\n00:00:05,000 --> 00:00:06,000\n门开了\n' })
+    expect(second.entries).toBeUndefined()
+    // The whole list as SubRip is the text it came from, its tags dropped.
+    expect((await run('video_get_subtitles', { nodeId: 'shot', format: 'srt' })).srt).toBe(SRT.replace('<i>谁</i>', '谁'))
+    expect((await refused('video_get_subtitles', { nodeId: 'shot', limit: 501 })).code).toBe('CANVAS_SUBTITLE_INVALID')
+    expect((await refused('video_get_subtitles', { nodeId: 'shot', offset: -1 })).code).toBe('CANVAS_SUBTITLE_INVALID')
+  })
+
+  it('keeps the ids of the cues a rewrite keeps, writes nothing for the same cues again, and refuses an edit of a list that changed', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 9000 }))
+    const set = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: SRT })
+    const before = await savedBoard()
+    // The same file again: the same ids, nothing saved.
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: SRT })).toMatchObject({ changed: false, count: 3, contentDigest: set.contentDigest })
+    expect((await savedBoard()).updatedAt).toBe(before.updatedAt)
+    // Editing a list read back: the ids passed stay, a new cue gets one.
+    const read = await run('video_get_subtitles', { nodeId: 'shot' })
+    const edited = [...read.entries.slice(0, 2), { ...read.entries[2], text: '门开了。' }, { startMs: 7000, endMs: 8000, text: '进来吧' }]
+    const written = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: edited, contentDigest: read.contentDigest })
+    expect(written).toMatchObject({ changed: true, count: 4 })
+    const cues = (await savedNode('shot')).metadata.subtitleEntries
+    expect(cues.slice(0, 3).map((cue: any) => cue.id)).toEqual(read.entries.map((cue: any) => cue.id))
+    expect(cues[2].text).toBe('门开了。')
+    expect(cues[3].id).toMatch(CUE_ID)
+    expect(new Set(cues.map((cue: any) => cue.id)).size).toBe(4)
+    // That digest is spent: the same edit, or the next page of the old read, is refused and nothing changes.
+    expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: edited, contentDigest: read.contentDigest })).message)
+      .toMatch(/^CANVAS_SUBTITLE_TARGET_CHANGED: .*video_get_subtitles/u)
+    expect((await refused('video_get_subtitles', { nodeId: 'shot', offset: 2, contentDigest: read.contentDigest })).code).toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+    expect((await savedNode('shot')).metadata.subtitleEntries).toEqual(cues)
+  })
+
+  it('reads WebVTT, splits long cues at punctuation by the node\'s style, and restyles alone without touching the cues', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 20000 }))
+    const vtt = 'WEBVTT\n\nNOTE 来自别处\n\n00:01.000 --> 00:07.000 align:start\n今天天气很好，我们去公园散步吧，然后一起去吃午饭，下午再回家休息一会儿\n'
+    const style = { fontScale: 6.5, color: '#ffcc00', position: 'top', backdrop: 'box', maxCharsPerEntry: 20 }
+    const set = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: vtt, style })
+    expect(set).toMatchObject({ count: 2, resegmented: { from: 1, to: 2, maxCharsPerEntry: 20 } })
+    let metadata = (await savedNode('shot')).metadata
+    expect(metadata.subtitleEntries.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([
+      [1000, 3743, '今天天气很好，我们去公园散步吧，'],
+      [3743, 7000, '然后一起去吃午饭，下午再回家休息一会儿'],
+    ])
+    expect(metadata.subtitleStyle).toEqual({ v: 1, fontScale: 6.5, color: '#FFCC00', position: 'top', backdrop: 'box', maxCharsPerEntry: 20, autoResegment: true })
+    // resegment:false keeps the cue whole; a cue list is never split unless asked.
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), srt: vtt, resegment: false })).toMatchObject({ count: 1 })
+    const long = { startMs: 0, endMs: 6000, text: '一'.repeat(50) }
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [long] })).toMatchObject({ count: 1 })
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [long], resegment: true })).toMatchObject({ count: 3, resegmented: { from: 1, to: 3 } })
+    // Style alone: the style and the save time change; the cues and their key stay.
+    metadata = (await savedNode('shot')).metadata
+    const restyled = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), style: { position: 'center', autoResegment: false } })
+    expect(restyled).toMatchObject({ changed: true, count: 3 })
+    const after = (await savedNode('shot')).metadata
+    expect(after.subtitleStyle).toEqual({ ...metadata.subtitleStyle, position: 'center', autoResegment: false })
+    expect(after.subtitleEntries).toEqual(metadata.subtitleEntries)
+    expect(after.subtitleMediaKey).toBe(metadata.subtitleMediaKey)
+    expect(after.subtitleUpdatedAt >= metadata.subtitleUpdatedAt).toBe(true)
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), style: { position: 'center' } })).toMatchObject({ changed: false })
+    // Values the page cannot draw are refused, not clamped.
+    for (const bad of [{ fontScale: 20 }, { fontScale: 1 }, { color: 'red' }, { maxCharsPerEntry: 10 }]) {
+      expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), style: bad })).code, JSON.stringify(bad)).toBe('CANVAS_SUBTITLE_INVALID')
+    }
+    expect((await savedNode('shot')).metadata.subtitleStyle).toEqual(after.subtitleStyle)
+  })
+
+  it('stores at most 5000 cues of at most 2000 characters, says what it left out, and refuses input with nothing usable', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6_000_000 }))
+    const many = Array.from({ length: 5003 }, (_, index) => ({ startMs: index * 1000, endMs: index * 1000 + 500, text: `第${index}句` }))
+    const set = await run('video_set_subtitles', {
+      nodeId: 'shot', expectedContent: url('src.mp4'),
+      entries: [...many, { startMs: 50, endMs: 50, text: '零长' }, { startMs: 60, endMs: 900, text: '  ' }, { startMs: 70, endMs: 900, text: '字'.repeat(2005) }],
+    })
+    expect(set).toMatchObject({ changed: true, count: 5000, dropped: 6 })
+    expect(set.warnings).toEqual([
+      expect.stringMatching(/^2 cues had no usable times or text/u),
+      expect.stringMatching(/^1 text ran past 2000 characters/u),
+      expect.stringMatching(/^4 cues past the limit of 5000 were left out/u),
+      expect.stringMatching(/^1 cue starts before an earlier cue ends/u),
+    ])
+    const cues = (await savedNode('shot')).metadata.subtitleEntries
+    expect(cues).toHaveLength(5000)
+    expect(cues[1].text).toHaveLength(2000)
+    expect(cues.at(-1).text).toBe('第4998句')
+    // Cues past the video's end are kept but named.
+    const late = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 6_000_000, endMs: 6_001_000, text: '片尾之后' }] })
+    expect(late.warnings).toEqual([expect.stringContaining('after the end of the video (6000000 ms)')])
+    // Nothing usable, nothing given, or more than one source: refused, and the cues stay.
+    const kept = (await savedNode('shot')).metadata.subtitleEntries
+    const shot = { nodeId: 'shot', expectedContent: url('src.mp4') }
+    for (const args of [
+      { entries: [{ startMs: 500, endMs: 400, text: '倒' }] },
+      { entries: [] },
+      { srt: '第一句\n第二句\n' },
+      { srt: '1\n00:00:02,000 --> 00:00:01,000\n倒着\n' },
+      { srt: SRT, entries: [{ startMs: 0, endMs: 100, text: 'a' }] },
+      { srt: SRT, clear: true },
+      {},
+      { timeBase: 'clip', style: { position: 'top' } },
+    ]) {
+      expect((await refused('video_set_subtitles', { ...shot, ...args })).code, JSON.stringify(args)).toBe('CANVAS_SUBTITLE_INVALID')
+    }
+    expect((await refused('video_set_subtitles', { ...shot, entries: [{ startMs: 500, endMs: 400, text: '倒' }] })).message).toMatch(/None of the cues can be stored, so nothing was changed\. 1 cue had no usable times/u)
+    expect((await savedNode('shot')).metadata.subtitleEntries).toEqual(kept)
+  })
+
+  it('times cues from the in point with timeBase clip and reads them back in either time', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000, clip: { inMs: 2000, outMs: 5000 } }), mediaNodeOp('whole', 'src.mp4', { durationMs: 6000 }, { position: { x: 100, y: 400 } }))
+    const set = await run('video_set_subtitles', {
+      nodeId: 'shot', expectedContent: url('src.mp4'), timeBase: 'clip',
+      entries: [{ startMs: 0, endMs: 500, text: '一' }, { startMs: 2800, endMs: 4500, text: '二' }, { startMs: 4500, endMs: 5000, text: '三' }],
+    })
+    expect(set).toMatchObject({ count: 2, dropped: 1, warnings: [expect.stringContaining('past the end of the file (6000 ms)')] })
+    expect((await savedNode('shot')).metadata.subtitleEntries.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([[2000, 2500, '一'], [4800, 6000, '二']])
+    expect((await run('video_get_subtitles', { nodeId: 'shot' })).entries.map((cue: any) => [cue.startMs, cue.endMs])).toEqual([[2000, 2500], [4800, 6000]])
+    const clipped = await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })
+    expect(clipped).toMatchObject({ timeBase: 'clip', clip: { inMs: 2000, outMs: 5000 }, total: 2 })
+    expect(clipped.entries.map((cue: any) => [cue.startMs, cue.endMs, cue.text])).toEqual([[0, 500, '一'], [2800, 3000, '二']])
+    // In the file's time, cues outside the mark are kept and named: this node does not show them.
+    const outside = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 100, endMs: 900, text: '片头' }, { startMs: 2500, endMs: 3000, text: '中间' }] })
+    expect(outside.warnings).toEqual([expect.stringContaining('outside the node\'s in/out mark (2000–5000 ms of the file)')])
+    expect((await run('video_get_subtitles', { nodeId: 'shot', timeBase: 'clip' })).entries.map((cue: any) => cue.text)).toEqual(['中间'])
+    // Without a mark, clip time is the file's time.
+    const whole = await run('video_set_subtitles', { nodeId: 'whole', expectedContent: url('src.mp4'), timeBase: 'clip', entries: [{ startMs: 100, endMs: 900, text: '全片' }] })
+    expect(whole.warnings).toEqual([expect.stringContaining('no in/out mark')])
+    expect(await run('video_get_subtitles', { nodeId: 'whole', timeBase: 'clip' })).toMatchObject({ clip: null, total: 1, note: expect.stringContaining('no in/out mark') })
+  })
+
+  it('clears the cues with null, keeping the style, and clearing again changes nothing', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000 }))
+    await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 1000, text: '一' }], style: { position: 'top' } })
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), clear: true })).toMatchObject({ changed: true, count: 0 })
+    const metadata = (await savedNode('shot')).metadata
+    expect(metadata).toMatchObject({ subtitleEntries: null, subtitleMediaKey: null, subtitleStyle: { ...DEFAULT_STYLE, position: 'top' } })
+    const read = await run('video_get_subtitles', { nodeId: 'shot' })
+    expect(read).toMatchObject({ total: 0, entries: [], mediaChanged: false, style: { position: 'top' } })
+    expect(read.subtitleMediaKey).toBeUndefined()
+    expect(await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), clear: true })).toMatchObject({ changed: false })
+  })
+
+  it('refuses a node that is not a video with a file, one that changed or is generating, and a missing one', async () => {
+    await onBoard(
+      mediaNodeOp('shot', 'src.mp4', { durationMs: 3000 }),
+      mediaNodeOp('busy', 'src.mp4', { durationMs: 3000, status: 'loading' }),
+      mediaNodeOp('music', 'theme.m4a', { mimeType: 'audio/mp4' }, { nodeType: 'audio' }),
+      mediaNodeOp('empty', 'src.mp4', { content: '' }),
+      { type: 'add_node', id: 'note', nodeType: 'text', metadata: { content: '镜 1' } },
+    )
+    const cues = { entries: [{ startMs: 0, endMs: 1000, text: '一' }] }
+    expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('other.mp4'), ...cues })).message).toMatch(/^CANVAS_SUBTITLE_TARGET_CHANGED: shot changed/u)
+    expect((await refused('video_set_subtitles', { nodeId: 'busy', expectedContent: url('src.mp4'), ...cues })).code).toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+    expect((await refused('video_set_subtitles', { nodeId: 'music', expectedContent: url('theme.m4a'), ...cues })).message).toMatch(/^CANVAS_SUBTITLE_TARGET: music is not a video node/u)
+    expect((await refused('video_set_subtitles', { nodeId: 'empty', expectedContent: '', ...cues })).code).toBe('CANVAS_SUBTITLE_TARGET')
+    expect((await refused('video_set_subtitles', { nodeId: 'note', expectedContent: '镜 1', ...cues })).code).toBe('CANVAS_SUBTITLE_TARGET')
+    expect((await refused('video_set_subtitles', { nodeId: 'gone', expectedContent: '', ...cues })).code).toBe('CANVAS_NODE_NOT_FOUND')
+    expect((await refused('video_get_subtitles', { nodeId: 'music' })).code).toBe('CANVAS_SUBTITLE_TARGET')
+    await expect(run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0.5, endMs: 900, text: 'x' }] })).rejects.toThrow(/integer/u)
+    for (const id of ['shot', 'busy']) expect((await savedNode(id)).metadata.subtitleEntries, id).toBeUndefined()
+  })
+
+  it('flags cues saved against another video by the page\'s tolerant rule, and reads cues landed without a key or style', async () => {
+    const cues = [{ id: 'line000001', startMs: 0, endMs: 800, text: '有人吗' }]
+    const key = `${url('src.mp4')}|4096|9000`
+    const saved = (id: string, file: string, metadata: Record<string, unknown>, y: number): BoardOp => mediaNodeOp(id, file, { subtitleEntries: cues, subtitleMediaKey: key, ...metadata }, { position: { x: 100, y } })
+    await onBoard(
+      saved('same', 'src.mp4', { bytes: 4096, durationMs: 9250 }, 0),
+      saved('longer', 'src.mp4', { bytes: 4096, durationMs: 9300 }, 300),
+      saved('resized', 'src.mp4', { bytes: 5000, durationMs: 9000 }, 600),
+      saved('sizeless', 'src.mp4', { durationMs: 9000 }, 900),
+      saved('replaced', 'other.mp4', { bytes: 4096, durationMs: 9000 }, 1200),
+      // A cut an older Host landed, or a split from before: cues only, not yet cleaned.
+      mediaNodeOp('landed', 'clip.mp4', { subtitleEntries: [{ startMs: 0, endMs: 800, text: '  无 id 的字幕 ' }, { startMs: 'x' }] }, { position: { x: 100, y: 1500 } }),
+    )
+    const changed: Record<string, boolean> = {}
+    for (const id of ['same', 'longer', 'resized', 'sizeless', 'replaced', 'landed']) changed[id] = (await run('video_get_subtitles', { nodeId: id })).mediaChanged
+    expect(changed).toEqual({ same: false, longer: true, resized: true, sizeless: false, replaced: true, landed: false })
+    expect((await run('video_get_subtitles', { nodeId: 'longer' })).note).toMatch(/^mediaChanged: /u)
+    const landed = await run('video_get_subtitles', { nodeId: 'landed' })
+    expect(landed).toMatchObject({ total: 1, style: DEFAULT_STYLE, mediaChanged: false })
+    expect(landed.entries).toEqual([{ id: expect.stringMatching(CUE_ID), startMs: 0, endMs: 800, text: '无 id 的字幕' }])
+    expect(landed.subtitleMediaKey).toBeUndefined()
+    expect((await run('video_get_subtitles', { nodeId: 'landed' })).entries[0].id).toBe(landed.entries[0].id)
+    // Saving the cues again keys them to the video the node shows now.
+    const longer = await run('video_get_subtitles', { nodeId: 'longer' })
+    await run('video_set_subtitles', { nodeId: 'longer', expectedContent: url('src.mp4'), entries: longer.entries, contentDigest: longer.contentDigest })
+    expect(await run('video_get_subtitles', { nodeId: 'longer' })).toMatchObject({ mediaChanged: false, subtitleMediaKey: `${url('src.mp4')}|4096|9300` })
+    expect((await savedNode('longer')).metadata.subtitleEntries).toEqual(cues)
+  })
+
+  it('decides the saved board\'s write from the node as it is under the board\'s lock', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000 }))
+    const first = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 1000, text: '一' }] })
+    /** Runs once, right after the tool has read the saved board and before it writes. */
+    let meanwhile: (() => Promise<void>) | undefined
+    const read = CanvasDocumentStore.prototype.read
+    const spy = vi.spyOn(CanvasDocumentStore.prototype, 'read').mockImplementation(async function (this: CanvasDocumentStore, id: string) {
+      const document = await read.call(this, id)
+      const change = meanwhile
+      meanwhile = undefined
+      await change?.()
+      return document
+    })
+    const edit = (metadata: Record<string, unknown>) => async (): Promise<void> => {
+      await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'shot', metadata }] })
+    }
+    try {
+      // The person edits the cues meanwhile: an edit made from the digest read before is refused, and theirs stays.
+      meanwhile = edit({ subtitleEntries: [{ id: 'person0001', startMs: 0, endMs: 1500, text: '人改的' }] })
+      expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 900, text: 'Agent 改的' }], contentDigest: first.contentDigest })).code)
+        .toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+      expect((await savedNode('shot')).metadata.subtitleEntries.map((cue: any) => cue.text)).toEqual(['人改的'])
+      // The video is replaced meanwhile: nothing is written against the new one.
+      meanwhile = edit({ content: url('other.mp4') })
+      expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 900, text: 'Agent 改的' }] })).code).toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+    } finally {
+      spy.mockRestore()
+    }
+    expect((await savedNode('shot')).metadata).toMatchObject({ content: url('other.mp4'), subtitleEntries: [{ text: '人改的' }] })
+  })
+
+  it('writes through the open page with one update_node of the four fields, and reads the page\'s board', async () => {
+    const page = openPage([nodeOf(mediaNodeOp('shot', 'src.mp4', { bytes: 2048, durationMs: 3000 }))])
+    const set = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 1000, text: '页面上' }] })
+    expect(set).toMatchObject({ source: 'live', target: page.target, changed: true, count: 1 })
+    expect(page.calls()).toEqual([expect.objectContaining({ name: 'canvas_apply_ops', input: expect.objectContaining({ boardId: film.id, project: film.id }) })])
+    expect(page.calls()[0].input.ops).toEqual([{
+      type: 'update_node', id: 'shot',
+      metadata: {
+        subtitleEntries: [{ id: expect.stringMatching(CUE_ID), startMs: 0, endMs: 1000, text: '页面上' }],
+        subtitleStyle: DEFAULT_STYLE, subtitleUpdatedAt: expect.any(String), subtitleMediaKey: `${url('src.mp4')}|2048|3000`,
+      },
+    }])
+    expect((await savedBoard()).nodes).toEqual([])
+    expect(await run('video_get_subtitles', { nodeId: 'shot' })).toMatchObject({ source: 'live', target: page.target, total: 1, contentDigest: set.contentDigest })
+    // Cleared on the page: nulls, which the page reads as none.
+    await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), clear: true })
+    expect(page.calls()[1].input.ops[0].metadata).toEqual({ subtitleEntries: null, subtitleStyle: DEFAULT_STYLE, subtitleUpdatedAt: expect.any(String), subtitleMediaKey: null })
+    expect(page.board().nodes![0]!.metadata!.subtitleEntries).toBeNull()
+  })
+
+  it('leaves a page\'s save of the board it loaded before the agent wrote to the merge, which refuses the overlap at the node\'s cues', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000 }), { type: 'add_node', id: 'note', nodeType: 'text', metadata: { content: '镜 1' } })
+    const loaded = await savedBoard()
+    await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 1000, text: 'Agent 写的' }] })
+    const merge = (document: unknown): Promise<unknown> => callStudio(studio, cwd, { method: 'POST', path: `/api/canvas/documents/${film.id}/merge?project=${film.id}`, body: { base: loaded, document } })
+    const edit = (id: string, metadata: Record<string, unknown>): unknown => ({ ...loaded, nodes: loaded.nodes.map((node: any) => node.id === id ? { ...node, metadata: { ...node.metadata, ...metadata } } : node) })
+    // The page edited the same node's cues meanwhile: both are kept apart, nothing is written.
+    const conflict: any = await merge(edit('shot', { subtitleEntries: [{ id: 'page000001', startMs: 0, endMs: 1200, text: '页面写的' }], subtitleUpdatedAt: '2026-10-05T00:00:00.000Z' }))
+      .then(() => { throw new Error('merged') }, (error: unknown) => error)
+    expect(conflict.code).toBe('CANVAS_MERGE_CONFLICT')
+    expect(conflict.body.paths).toContain('nodes.shot.metadata.subtitleEntries')
+    expect((await savedNode('shot')).metadata.subtitleEntries.map((cue: any) => cue.text)).toEqual(['Agent 写的'])
+    // An edit of another node merges, and the agent's cues stay.
+    await merge(edit('note', { content: '镜 1（改）' }))
+    expect((await savedNode('note')).metadata.content).toBe('镜 1（改）')
+    expect((await savedNode('shot')).metadata).toMatchObject({ subtitleEntries: [{ text: 'Agent 写的' }], subtitleStyle: DEFAULT_STYLE })
+  })
+
+  it('lands cuts and joins with the cues\' style and a key for the new file, and gives split siblings the source\'s', async () => {
+    await writeFixture(media('src.mp4'), { frames: 75 })
+    await writeFixture(media('b.mp4'), { frames: 50 })
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { clip: { inMs: 1000, outMs: 2000 } }), mediaNodeOp('second', 'b.mp4', {}, { position: { x: 100, y: 400 } }))
+    const style = { v: 1, fontScale: 7, color: '#FF0000', position: 'top', backdrop: 'box', maxCharsPerEntry: 30, autoResegment: false }
+    await run('video_set_subtitles', {
+      nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 900, endMs: 1500, text: '有人吗' }],
+      style: { fontScale: 7, color: '#ff0000', position: 'top', backdrop: 'box', maxCharsPerEntry: 30, autoResegment: false },
+    })
+    const source = (await savedNode('shot')).metadata
+    expect(source.subtitleMediaKey).toBe(`${url('src.mp4')}||`)
+    const keyOf = (metadata: any): string => `${metadata.content}|${metadata.bytes}|${metadata.durationMs}`
+
+    const rendered = await finished((await run('video_render_clip', { nodeId: 'shot', expectedContent: url('src.mp4'), requestId: 'render-subs-0001' })).taskId)
+    const cut = await savedNode(rendered.file.landedNodeId)
+    expect(cut.metadata).toMatchObject({ subtitleEntries: [{ id: source.subtitleEntries[0].id, startMs: 0, endMs: 500, text: '有人吗' }], subtitleStyle: style })
+    expect(typeof cut.metadata.bytes).toBe('number')
+    expect(cut.metadata.subtitleMediaKey).toBe(keyOf(cut.metadata))
+    expect(cut.metadata.subtitleUpdatedAt > source.subtitleUpdatedAt).toBe(true)
+    expect(await run('video_get_subtitles', { nodeId: cut.id })).toMatchObject({ total: 1, style, mediaChanged: false })
+
+    const joinedTask = await finished((await run('video_join', { nodeIds: ['second', 'shot'], requestId: 'join-subs-0001' })).taskId)
+    expect(joinedTask.status).toBe('done')
+    const joined = await savedNode(joinedTask.file.landedNodeId)
+    const at = joined.metadata.derivedFrom.sources[1].atMs as number
+    expect(joined.metadata).toMatchObject({ subtitleEntries: [{ startMs: at, endMs: at + 500, text: '有人吗' }], subtitleStyle: style })
+    expect(joined.metadata.subtitleMediaKey).toBe(keyOf(joined.metadata))
+    expect((await run('video_get_subtitles', { nodeId: joined.id })).mediaChanged).toBe(false)
+
+    // A split sibling shows the same file: the source's style, save time and key.
+    const split = await run('video_split', { nodeId: 'shot', expectedContent: url('src.mp4'), atMs: 1200 })
+    const sibling = await savedNode(split.newNodeId)
+    expect(sibling.metadata).toMatchObject({
+      subtitleEntries: source.subtitleEntries, subtitleStyle: style, subtitleUpdatedAt: source.subtitleUpdatedAt, subtitleMediaKey: source.subtitleMediaKey,
+    })
+    expect((await run('video_get_subtitles', { nodeId: split.newNodeId })).mediaChanged).toBe(false)
+    expect((await run('video_get_subtitles', { nodeId: 'shot' })).mediaChanged).toBe(false)
   })
 })

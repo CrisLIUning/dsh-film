@@ -88,7 +88,7 @@ describe('the tool set', () => {
       'media_get_task', 'media_cancel_task',
       'director_query', 'director_models', 'director_stage', 'director_render', 'director_render_status', 'director_render_cancel', 'director_inspect_model', 'director_review', 'director_compile_motion', 'director_modeling_brief',
       'space_plan_compile', 'model_brief', 'model_review', 'model_adopt', 'model_status', 'model_report', 'model_cancel',
-      'video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio',
+      'video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio', 'video_get_subtitles', 'video_set_subtitles',
     ])
     for (const tool of tools.values()) {
       expect(tool.parameters).toMatchObject({ type: 'object' })
@@ -153,10 +153,12 @@ describe('the tool set', () => {
     expect(FILM_GUIDANCE).toContain('director_models')
   })
 
-  it('keeps the video_* cutting tools in the editing group, and says the film task tools follow them', () => {
+  it('keeps the video_* cutting and subtitle tools in the editing group, and says the film task tools follow them', () => {
     const groups = filmToolGroups(services)
-    expect(groups.editing!.tools().map(tool => tool.name)).toEqual(['video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio'])
-    expect(groups.editing!.description).toMatch(/^Cut, split, render, join and extract the sound of video nodes \(video_\*\)\. Only cutting and joining: no transitions, music or effects\.$/u)
+    expect(groups.editing!.tools().map(tool => tool.name)).toEqual([
+      'video_clip', 'video_split', 'video_render_clip', 'video_join', 'video_extract_audio', 'video_get_subtitles', 'video_set_subtitles',
+    ])
+    expect(groups.editing!.description).toMatch(/^Cut, split, render, join and extract the sound of video nodes, and read or write their subtitles \(video_\*\)\. Only cutting and joining: no transitions, music or effects\.$/u)
     expect(filmCoreTools(services).map(tool => tool.name).filter(name => name.startsWith('video_'))).toEqual([])
     expect(FILM_GUIDANCE).toContain('### Cutting and joining')
     expect(FILM_GUIDANCE).toContain('VIDEO_JOIN_NEEDS_PAGE')
@@ -164,8 +166,28 @@ describe('the tool set', () => {
     expect(tools.get('media_get_task')!.description).toContain('video_*')
     expect(tools.get('media_get_task')!.description).toContain('landedNodeId')
     expect(tools.get('media_cancel_task')!.description).toContain('video_*')
-    // No subtitle tools yet: the group promises none.
-    expect(groups.editing!.description).not.toMatch(/subtitle/u)
+    // The subtitle tools are in the group, and the group and the guidance say so (in the word the removal guard allows).
+    expect(groups.editing!.description).toMatch(/subtitle/u)
+    expect(FILM_GUIDANCE).toContain('### Subtitles')
+    for (const name of ['video_get_subtitles', 'video_set_subtitles', 'mediaChanged', 'contentDigest']) expect(FILM_GUIDANCE).toContain(name)
+  })
+
+  it('declares the subtitle schemas of C12: paged reads, one of srt/entries/clear, style changes', () => {
+    const schema = (name: string): any => tools.get(name)!.parameters
+    const get = schema('video_get_subtitles')
+    expect(Object.keys(get.properties)).toEqual(['target', 'nodeId', 'format', 'timeBase', 'offset', 'limit', 'contentDigest'])
+    expect(get.required).toEqual(['nodeId'])
+    expect(get.properties.format.enum).toEqual(['json', 'srt'])
+    expect(get.properties.timeBase.enum).toEqual(['source', 'clip'])
+    expect(tools.get('video_get_subtitles')!.isConcurrencySafe?.({ nodeId: 'shot' } as never)).toBe(true)
+    expect(tools.get('video_set_subtitles')!.isConcurrencySafe).toBeUndefined()
+    const set = schema('video_set_subtitles')
+    expect(Object.keys(set.properties)).toEqual(['target', 'nodeId', 'expectedContent', 'srt', 'entries', 'timeBase', 'resegment', 'style', 'clear', 'contentDigest'])
+    expect(set.required).toEqual(['nodeId', 'expectedContent'])
+    expect(set.properties.entries.items.required).toEqual(['startMs', 'endMs', 'text'])
+    expect(Object.keys(set.properties.style.properties)).toEqual(['fontScale', 'color', 'position', 'backdrop', 'maxCharsPerEntry', 'autoResegment'])
+    expect(set.properties.style.properties.position.enum).toEqual(['top', 'center', 'bottom'])
+    expect(set.properties.style.properties.backdrop.enum).toEqual(['none', 'shadow', 'box'])
   })
 
   it('promises no skill, preview or desk this workbench does not have', () => {

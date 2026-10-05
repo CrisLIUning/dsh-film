@@ -89,10 +89,19 @@ export interface LandFileInput {
   connectFrom?: readonly string[]
   /**
    * More metadata worked out from the board's nodes as they are under its lock:
-   * what the new node carries over from its sources (their cues, director
-   * shots, prompt). `metadata` still wins over it.
+   * what the new node carries over from its sources (their cues with their
+   * style, director shots, prompt). `media` is the new node's file as it is
+   * written (content, bytes, durationMs), for the cues' media key. `metadata`
+   * still wins over it.
    */
-  carry?: (nodes: readonly unknown[]) => Record<string, unknown>
+  carry?: (nodes: readonly unknown[], media: LandedMedia) => Record<string, unknown>
+}
+
+/** The file a landed node shows, as its metadata records it. */
+export interface LandedMedia {
+  content: string
+  bytes?: number
+  durationMs?: number
 }
 
 /** The gap between a node and one landed beside it. */
@@ -140,6 +149,11 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
   if (await store.read(boardId) === null) return null
   const nodeId = `${input.kind}-${randomUUID()}`
   const url = `/api/projects/${encodeURIComponent(projectId)}/raw/${input.path.split('/').map(encodeURIComponent).join('/')}`
+  const media: LandedMedia = {
+    content: url,
+    ...(positive(input.size) ? { bytes: input.size } : {}),
+    ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
+  }
   let landed = false
   await store.update((current): CanvasDocument => {
     // Checked again under the lock: the board may have gone meanwhile.
@@ -159,10 +173,10 @@ export async function landFileOnBoard(store: CanvasDocumentStore, boardId: strin
         status: 'success',
         ...(positive(input.width) ? { naturalWidth: input.width } : {}),
         ...(positive(input.height) ? { naturalHeight: input.height } : {}),
-        ...(positive(input.size) ? { bytes: input.size } : {}),
+        ...(media.bytes !== undefined ? { bytes: media.bytes } : {}),
         mimeType: input.mimeType,
-        ...(positive(input.durationSeconds) ? { durationMs: Math.round(input.durationSeconds * 1000) } : {}),
-        ...input.carry?.(current.nodes),
+        ...(media.durationMs !== undefined ? { durationMs: media.durationMs } : {}),
+        ...input.carry?.(current.nodes, media),
         ...input.metadata,
       },
     }

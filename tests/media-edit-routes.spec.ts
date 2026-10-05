@@ -247,6 +247,8 @@ describe('what a landed result carries over from its sources', () => {
         node('src', 'src.mp4', 50, {
           prompt: '雨夜门口', videoTaskId: 'task-1',
           subtitleEntries: [{ id: 'a', startMs: 300, endMs: 800, text: '一' }, { id: 'b', startMs: 1200, endMs: 1800, text: '二' }],
+          subtitleStyle: { v: 1, fontScale: 6, color: '#ffd54a', position: 'top', backdrop: 'box', maxCharsPerEntry: 30, autoResegment: false },
+          subtitleUpdatedAt: '2026-10-01T00:00:00.000Z', subtitleMediaKey: '/api/projects/film/raw/canvas/media/src.mp4||',
           directorSequence: { directorNodeId: 'desk', renderId: 'r1', shots: [{ shotId: 's1', cameraId: 'c1', sourceIn: 0, sourceOut: 2, start: 0, end: 2 }] },
         }),
         node('second', 'b.mp4', 400, { subtitleEntries: null, directorSequence: { directorNodeId: 'desk', renderId: 'r2', shots: [{ shotId: 's9', cameraId: 'c9', sourceIn: 4, sourceOut: 6, start: 0, end: 2 }] } }),
@@ -270,6 +272,11 @@ describe('what a landed result carries over from its sources', () => {
       directorSequence: { directorNodeId: 'desk', renderId: 'r1', shots: [{ shotId: 's1', sourceIn: 1, start: 0, end: (placed.outMs - 1000) / 1000 }] },
     })
     expect(node.metadata.videoTaskId).toBeUndefined()
+    // The cues keep their style and are keyed to the new file as the node records it, with a new save time (the page's 出片).
+    expect(node.metadata.subtitleStyle).toEqual({ v: 1, fontScale: 6, color: '#FFD54A', position: 'top', backdrop: 'box', maxCharsPerEntry: 30, autoResegment: false })
+    expect(node.metadata).toMatchObject({ content: `/api/projects/film/raw/${done.file.name}`, bytes: done.file.size })
+    expect(node.metadata.subtitleMediaKey).toBe(`${node.metadata.content}|${node.metadata.bytes}|${node.metadata.durationMs}`)
+    expect(node.metadata.subtitleUpdatedAt > '2026-10-01T00:00:00.000Z').toBe(true)
     // Without land the Host lands nothing, so it carries nothing either.
     const page = await finished((await call('/api/canvas/video/film-1/cut', { requestId: 'f0000000-0002', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 0, outMs: 1000 })).body.taskId)
     expect(page.file.landedNodeId).toBeUndefined()
@@ -287,6 +294,8 @@ describe('what a landed result carries over from its sources', () => {
     const secondAt = joined.file.derivedFrom.sources[1].atMs as number
     expect(node.metadata.prompt).toBeUndefined()
     expect(node.metadata.subtitleEntries).toEqual([{ id: 'a', startMs: 300, endMs: 800, text: '一' }, { id: 'b', startMs: 1200, endMs: 1800, text: '二' }])
+    expect(node.metadata.subtitleStyle).toMatchObject({ v: 1, color: '#FFD54A', position: 'top' })
+    expect(node.metadata.subtitleMediaKey).toBe(`${node.metadata.content}|${node.metadata.bytes}|${node.metadata.durationMs}`)
     // Two renders: the shots stay, the render identity does not.
     expect(node.metadata.directorSequence).toEqual({ shots: [
       { shotId: 's1', cameraId: 'c1', sourceIn: 0, sourceOut: 2, start: 0, end: 2 },
@@ -294,7 +303,7 @@ describe('what a landed result carries over from its sources', () => {
     ] })
     const sound = await finished((await call('/api/canvas/video/film-1/extract-audio', { requestId: 'f0000000-0004', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, land: { nearNodeId: 'src', connectFrom: ['src'] } })).body.taskId)
     const audio = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === sound.file.landedNodeId) as any
-    for (const key of ['prompt', 'subtitleEntries', 'directorSequence']) expect(audio.metadata[key], key).toBeUndefined()
+    for (const key of ['prompt', 'subtitleEntries', 'subtitleStyle', 'subtitleUpdatedAt', 'subtitleMediaKey', 'directorSequence']) expect(audio.metadata[key], key).toBeUndefined()
   })
 })
 
