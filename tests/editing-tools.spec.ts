@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { filmAgentTools } from '../src/agent/index.js'
 import type { FilmToolServices } from '../src/agent/index.js'
 import { filmProjectTool } from '../src/agent/project-tool.js'
@@ -18,6 +18,7 @@ import { CanvasBoardAgent } from '../src/canvas/board-agent.js'
 import type { BoardLease, BoardTarget } from '../src/canvas/board-agent.js'
 import { applyBoardOps } from '../src/canvas/board-ops.js'
 import type { BoardNode, BoardOp, BoardSnapshot } from '../src/canvas/board-ops.js'
+import { CanvasDocumentStore } from '../src/canvas/documents.js'
 import { FilmMediaTasks } from '../src/media/tasks.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
@@ -684,6 +685,37 @@ describe('video_set_subtitles and video_get_subtitles', () => {
     await run('video_set_subtitles', { nodeId: 'longer', expectedContent: url('src.mp4'), entries: longer.entries, contentDigest: longer.contentDigest })
     expect(await run('video_get_subtitles', { nodeId: 'longer' })).toMatchObject({ mediaChanged: false, subtitleMediaKey: `${url('src.mp4')}|4096|9300` })
     expect((await savedNode('longer')).metadata.subtitleEntries).toEqual(cues)
+  })
+
+  it('decides the saved board\'s write from the node as it is under the board\'s lock', async () => {
+    await onBoard(mediaNodeOp('shot', 'src.mp4', { durationMs: 6000 }))
+    const first = await run('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 1000, text: '一' }] })
+    /** Runs once, right after the tool has read the saved board and before it writes. */
+    let meanwhile: (() => Promise<void>) | undefined
+    const read = CanvasDocumentStore.prototype.read
+    const spy = vi.spyOn(CanvasDocumentStore.prototype, 'read').mockImplementation(async function (this: CanvasDocumentStore, id: string) {
+      const document = await read.call(this, id)
+      const change = meanwhile
+      meanwhile = undefined
+      await change?.()
+      return document
+    })
+    const edit = (metadata: Record<string, unknown>) => async (): Promise<void> => {
+      await run('canvas_apply_ops', { ops: [{ type: 'update_node', id: 'shot', metadata }] })
+    }
+    try {
+      // The person edits the cues meanwhile: an edit made from the digest read before is refused, and theirs stays.
+      meanwhile = edit({ subtitleEntries: [{ id: 'person0001', startMs: 0, endMs: 1500, text: '人改的' }] })
+      expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 900, text: 'Agent 改的' }], contentDigest: first.contentDigest })).code)
+        .toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+      expect((await savedNode('shot')).metadata.subtitleEntries.map((cue: any) => cue.text)).toEqual(['人改的'])
+      // The video is replaced meanwhile: nothing is written against the new one.
+      meanwhile = edit({ content: url('other.mp4') })
+      expect((await refused('video_set_subtitles', { nodeId: 'shot', expectedContent: url('src.mp4'), entries: [{ startMs: 0, endMs: 900, text: 'Agent 改的' }] })).code).toBe('CANVAS_SUBTITLE_TARGET_CHANGED')
+    } finally {
+      spy.mockRestore()
+    }
+    expect((await savedNode('shot')).metadata).toMatchObject({ content: url('other.mp4'), subtitleEntries: [{ text: '人改的' }] })
   })
 
   it('writes through the open page with one update_node of the four fields, and reads the page\'s board', async () => {
