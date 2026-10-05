@@ -16,15 +16,42 @@ import type { FilmToolServices } from './context.js'
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
+/** What a task view keeps of each source of an edit's file. */
+const DERIVED_SOURCE_FIELDS = ['nodeId', 'path', 'inMs', 'outMs', 'atMs'] as const
+/** A join takes at most this many clips (C9). */
+const DERIVED_SOURCE_LIMIT = 20
+
+/**
+ * An edit's `derivedFrom` (C1) as a task view keeps it: the operation, and
+ * for each source its node, file and the range the result holds, with atMs
+ * where that range starts in the result. The request id, engine, schema
+ * version and time are left out (the landed node keeps them all).
+ * @param value - file.derivedFrom.
+ * @returns the compact record, or undefined when there is none.
+ */
+function compactDerivedFrom(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !Array.isArray(value.sources)) return undefined
+  const sources = value.sources.filter(isRecord)
+  return {
+    ...(typeof value.op === 'string' && value.op.length <= 40 ? { op: value.op } : {}),
+    sources: sources.slice(0, DERIVED_SOURCE_LIMIT).map(source => Object.fromEntries(DERIVED_SOURCE_FIELDS.flatMap((key) => {
+      const item = source[key]
+      return (typeof item === 'number' && Number.isFinite(item)) || (typeof item === 'string' && item.length <= 1000) ? [[key, item]] : []
+    }))),
+    ...(sources.length > DERIVED_SOURCE_LIMIT ? { sourceCount: sources.length } : {}),
+  }
+}
+
 /**
  * A task as the agent reads it: status, the last progress line, the error,
- * and the file without bulky members.
+ * and the file without bulky members — an edit's derivedFrom is kept, compactly.
  * @param snapshot - the wait route's answer.
  * @returns the compact view.
  */
 export function compactTask(snapshot: Record<string, unknown>): Record<string, unknown> {
   const progress = Array.isArray(snapshot.progress) ? snapshot.progress : []
   const file = isRecord(snapshot.file) ? snapshot.file : undefined
+  const derivedFrom = compactDerivedFrom(file?.derivedFrom)
   return {
     taskId: snapshot.taskId,
     status: snapshot.status,
@@ -33,7 +60,12 @@ export function compactTask(snapshot: Record<string, unknown>): Record<string, u
     endedAt: snapshot.endedAt,
     ...(isRecord(snapshot.error) ? { error: snapshot.error } : {}),
     ...(file !== undefined
-      ? { file: Object.fromEntries(Object.entries(file).filter(([, value]) => value === null || typeof value !== 'object')) }
+      ? {
+          file: {
+            ...Object.fromEntries(Object.entries(file).filter(([key, value]) => key !== 'derivedFrom' && (value === null || typeof value !== 'object'))),
+            ...(derivedFrom !== undefined ? { derivedFrom } : {}),
+          },
+        }
       : {}),
   }
 }
@@ -51,8 +83,9 @@ export function mediaTaskTools(services: FilmToolServices): ToolDefinition[] {
       name: 'media_get_task',
       description: 'Read one film task by its taskId — a storyboard generation of this workbench (the id canvas_get_generation_status reports as '
         + 'outputs[].task), or a cut, join or sound copy a video_* tool started: status, the last progress line, the error (with reasons when the Host could '
-        + 'not copy a file), and its file. A finished edit\'s file.landedNodeId is the node it put on the board (file.landError says why it could not). Film '
-        + 'tasks only — dsh-media\'s media_tasks lists a different kind of task.',
+        + 'not copy a file), and its file. A finished edit\'s file.landedNodeId is the node it put on the board (file.landError says why it could not), and '
+        + 'file.derivedFrom lists its sources with the range of each it holds (atMs: where that range starts in the result). Film tasks only — dsh-media\'s '
+        + 'media_tasks lists a different kind of task.',
       parameters: {
         taskId: { type: 'string', required: true },
       },

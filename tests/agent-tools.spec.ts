@@ -1096,6 +1096,28 @@ describe('film task tools', () => {
     expect(compactTask({ taskId: 't', status: 'done', progress: ['a', 'b'], startedAt: 1, endedAt: 2, error: null, file: { name: 'canvas/media/x.png', size: 3, kind: 'image', mime: 'image/png', documentResult: { kind: 'draft' } } }))
       .toEqual({ taskId: 't', status: 'done', progress: 'b', startedAt: 1, endedAt: 2, file: { name: 'canvas/media/x.png', size: 3, kind: 'image', mime: 'image/png' } })
   })
+
+  it('keeps an edit\'s derivedFrom in the task view, compactly: the operation and each source\'s range', () => {
+    const source = (index: number) => ({ nodeId: `clip-${index}`, path: `canvas/media/${index}.mp4`, inMs: 0, outMs: 1000, atMs: index * 1000 })
+    const file = {
+      name: 'canvas/media/join-0123456789.mp4', size: 9, kind: 'video', mime: 'video/mp4', durationMs: 2000, landedNodeId: 'video-1',
+      derivedFrom: {
+        v: 1, op: 'join', requestId: 'join-0000-0001', engine: 'host-copy', createdAt: '2026-10-05T00:00:00.000Z',
+        sources: [{ ...source(0), probe: { codec: 'avc1' } }, { ...source(1), path: 'x'.repeat(2000) }, 'not a source'],
+      },
+    }
+    expect(compactTask({ taskId: 't', status: 'done', progress: ['完成'], startedAt: 1, endedAt: 2, error: null, file }).file).toEqual({
+      name: 'canvas/media/join-0123456789.mp4', size: 9, kind: 'video', mime: 'video/mp4', durationMs: 2000, landedNodeId: 'video-1',
+      derivedFrom: { op: 'join', sources: [source(0), { nodeId: 'clip-1', inMs: 0, outMs: 1000, atMs: 1000 }] },
+    })
+    // At most a join's 20 sources, with the count when a record holds more.
+    const many: any = compactTask({ taskId: 't', status: 'done', file: { ...file, derivedFrom: { op: 'join', sources: Array.from({ length: 25 }, (_, index) => source(index)) } } })
+    expect(many.file.derivedFrom.sources).toEqual(Array.from({ length: 20 }, (_, index) => source(index)))
+    expect(many.file.derivedFrom.sourceCount).toBe(25)
+    // A file without one, or with something else under the name, has none.
+    expect(compactTask({ taskId: 't', status: 'done', file: { ...file, derivedFrom: 'cut' } }).file).not.toHaveProperty('derivedFrom')
+    expect(tools.get('media_get_task')!.description).toContain('file.derivedFrom')
+  })
 })
 
 describe('installing the tools into film conversations', () => {

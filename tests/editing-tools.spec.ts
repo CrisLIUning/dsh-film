@@ -329,6 +329,8 @@ describe('video_render_clip', () => {
       derivedFrom: { v: 1, op: 'cut', engine: 'host-copy', requestId, sources: [{ nodeId: 'shot', path: 'canvas/media/src.mp4', inMs: 1000, atMs: 0 }] },
     })
     expect(placed.outMs).toBeGreaterThanOrEqual(2000)
+    // The task view keeps the sources as the landed node records them, without the request id, engine and version.
+    expect(task.file.derivedFrom).toEqual({ op: 'cut', sources: landed.metadata.derivedFrom.sources })
     // Cues and shots of the part, in the clip's own time.
     expect(landed.metadata.subtitleEntries).toEqual([{ id: 'line', startMs: 0, endMs: 500, text: '有人吗' }])
     expect(landed.metadata.directorSequence).toEqual({ renderId: 'r1', shots: [{ shotId: 's1', cameraId: 'c1', sourceIn: 11, sourceOut: 11 + (placed.outMs - 1000) / 1000, start: 0, end: (placed.outMs - 1000) / 1000 }] })
@@ -389,6 +391,7 @@ describe('video_join', () => {
       derivedFrom: { op: 'join', engine: 'host-copy', sources: [{ nodeId: 'first', inMs: 0, atMs: 0 }, { nodeId: 'second', inMs: 1000 }] },
     })
     const secondAt = landed.metadata.derivedFrom.sources[1].atMs as number
+    expect(task.file.derivedFrom).toEqual({ op: 'join', sources: landed.metadata.derivedFrom.sources })
     expect(landed.metadata.subtitleEntries).toEqual([
       { id: 'x', startMs: 200, endMs: 900, text: '一' },
       { id: 'y', startMs: secondAt + 200, endMs: secondAt + 600, text: '二' },
@@ -435,6 +438,7 @@ describe('video_extract_audio', () => {
     expect(task.file.name).toMatch(/^canvas\/media\/extract-[0-9a-f]{10}\.m4a$/u)
     const landed = await savedNode(task.file.landedNodeId)
     expect(landed).toMatchObject({ type: 'audio', title: '镜头 · 音频', position: { x: 516, y: 50 }, metadata: { mimeType: 'audio/mp4', derivedFrom: { op: 'extract-audio', sources: [{ nodeId: 'shot', inMs: 500 }] } } })
+    expect(task.file.derivedFrom).toEqual({ op: 'extract-audio', sources: landed.metadata.derivedFrom.sources })
     expect(landed.metadata.prompt).toBeUndefined()
   })
 
