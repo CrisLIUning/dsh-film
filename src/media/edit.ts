@@ -54,6 +54,14 @@ export const MIN_EDIT_MS = 100
 export const PROBE_KEYFRAME_LIMIT = 400
 /** How far (ms) an in point may be from a key frame and still count as on it. */
 const KEYFRAME_TOLERANCE_MS = 1
+/**
+ * How far (ms) past a file's length, as measured here, an out point may lie and
+ * still mean the file's end: the page takes ends from the browser's duration
+ * (its trim bar, joins, audio trims), and players and probes measure a length
+ * differently — a VBR MP3 without a length header most of all. The same
+ * tolerance as a subtitle's media key.
+ */
+export const END_TOLERANCE_MS = 250
 
 /** Why an edit was refused or failed; the routes answer with `status` and `code`. */
 export class MediaEditError extends Error {
@@ -260,20 +268,25 @@ export async function probeDetailed(path: string): Promise<EditProbe> {
 }
 
 /**
- * Check a range against a file's length.
+ * Check a range against a file's length. An out point up to
+ * {@link END_TOLERANCE_MS} past the length is the file's end, and the range is
+ * measured after it is moved there.
  * @param range - the requested range.
  * @param durationMs - the file's length.
- * @returns the range with both ends set.
+ * @returns the range with both ends set, inside the file.
  */
 export function checkRange(range: EditRange, durationMs: number | undefined): { inMs: number; outMs: number } {
   const length = durationMs ?? 0
   const inMs = range.inMs ?? 0
-  const outMs = range.outMs ?? length
-  if (!Number.isInteger(inMs) || !Number.isInteger(outMs) || inMs < 0) throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', 'inMs and outMs must be whole milliseconds, inMs from 0.')
+  const asked = range.outMs ?? length
+  if (!Number.isInteger(inMs) || !Number.isInteger(asked) || inMs < 0) throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', 'inMs and outMs must be whole milliseconds, inMs from 0.')
   if (length <= 0) throw new MediaEditError(422, 'MEDIA_EDIT_UNSUPPORTED', 'The file has no length that can be read.')
-  if (outMs > length + KEYFRAME_TOLERANCE_MS) throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', `The range ends at ${outMs} ms, past the end of the file (${length} ms).`)
-  if (outMs - inMs < MIN_EDIT_MS) throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', `The range must be at least ${MIN_EDIT_MS} ms long.`)
-  return { inMs, outMs: Math.min(outMs, length) }
+  if (asked > length + END_TOLERANCE_MS) throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', `The range ends at ${asked} ms, past the end of the file (${length} ms).`)
+  const outMs = Math.min(asked, length)
+  if (outMs - inMs < MIN_EDIT_MS) {
+    throw new MediaEditError(400, 'MEDIA_EDIT_INVALID', `The range must be at least ${MIN_EDIT_MS} ms long${outMs < asked ? ` (it ends at the end of the file, ${length} ms)` : ''}.`)
+  }
+  return { inMs, outMs }
 }
 
 /** The output format a lossless copy of a file goes into, and the result's extension. */

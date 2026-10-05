@@ -164,6 +164,19 @@ describe('POST /api/canvas/video/:boardId/cut', () => {
     expect(seen.some(event => event.type === 'story-canvas-changed')).toBe(false)
   })
 
+  it('takes an out point a little past the measured end — the browser\'s duration — as the end of the file', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    const measured = (await call('/api/canvas/video/film-1/probe', { paths: ['canvas/media/src.mp4'] })).body.items[0].durationMs as number
+    const started = await call('/api/canvas/video/film-1/cut', { requestId: 'a6f1c8e2-0000-4000-8000-000000000011', source: { path: 'canvas/media/src.mp4' }, inMs: 1000, outMs: measured + 200 })
+    expect(started.status).toBe(202)
+    const done = await finished(started.body.taskId)
+    expect(done.status).toBe('done')
+    expect(done.file.durationMs).toBeLessThanOrEqual(measured - 1000 + 50)
+    // Further past it is no end of this file.
+    expect(await call('/api/canvas/video/film-1/cut', { requestId: 'a6f1c8e2-0000-4000-8000-000000000012', source: { path: 'canvas/media/src.mp4' }, inMs: 1000, outMs: measured + 300 }))
+      .toMatchObject({ status: 400, body: { code: 'MEDIA_EDIT_INVALID' } })
+  })
+
   it('refuses paths outside film/, missing sources, short and out-of-range cuts, and bad request ids', async () => {
     await writeFixture(media('src.mp4'), { frames: 50 })
     await writeFixture(join(outside, 'x.mp4'), { frames: 25 })

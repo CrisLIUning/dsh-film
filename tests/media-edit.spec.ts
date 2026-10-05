@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ALL_FORMATS, EncodedPacketSink, FilePathSource, Input } from 'mediabunny'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MediaEditError, audioConfigKey, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed } from '../src/media/edit.js'
+import { END_TOLERANCE_MS, MediaEditError, audioConfigKey, checkRange, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed } from '../src/media/edit.js'
 import type { EditProbe } from '../src/media/edit.js'
 import { FilmMediaTasks, LOCAL_TASK_LIMIT } from '../src/media/tasks.js'
 import type { FilmTaskFile, FilmTaskSnapshot } from '../src/media/tasks.js'
@@ -91,6 +91,21 @@ describe('probeDetailed', () => {
     const { writeFile } = await import('node:fs/promises')
     await writeFile(join(media, 'broken.mp4'), 'not a video')
     expect(await probeDetailed(join(media, 'broken.mp4'))).toEqual({ ok: false })
+  })
+})
+
+describe('checkRange', () => {
+  it('takes an out point up to 250 ms past the measured length as the file\'s end, and measures the range after moving it there', () => {
+    // The page sends ends from the browser's duration, which can run past what the Host measures (a VBR MP3 most of all).
+    expect(checkRange({ inMs: 1000, outMs: 5000 + END_TOLERANCE_MS }, 5000)).toEqual({ inMs: 1000, outMs: 5000 })
+    expect(checkRange({ inMs: 0, outMs: 5001 }, 5000)).toEqual({ inMs: 0, outMs: 5000 })
+    expect(checkRange({ inMs: 250 }, 5000)).toEqual({ inMs: 250, outMs: 5000 })
+    expect(checkRange({ inMs: 1000, outMs: 4000 }, 5000)).toEqual({ inMs: 1000, outMs: 4000 })
+    expect(() => checkRange({ inMs: 0, outMs: 5000 + END_TOLERANCE_MS + 1 }, 5000)).toThrow(/^The range ends at 5251 ms, past the end of the file \(5000 ms\)\.$/u)
+    // Moved to the end, a range must still be 100 ms long.
+    expect(() => checkRange({ inMs: 4950, outMs: 5100 }, 5000)).toThrow(/^The range must be at least 100 ms long \(it ends at the end of the file, 5000 ms\)\.$/u)
+    expect(() => checkRange({ inMs: 5100, outMs: 5200 }, 5000)).toThrow(MediaEditError)
+    expect(() => checkRange({ inMs: 1000, outMs: 1050 }, 5000)).toThrow(/^The range must be at least 100 ms long\.$/u)
   })
 })
 
