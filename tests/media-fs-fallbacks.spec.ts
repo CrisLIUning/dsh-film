@@ -64,6 +64,7 @@ const { importWorkspaceFile } = await import('../src/canvas/workspace-import.js'
 const { invalidateWorkspaceMedia, scanWorkspaceMedia } = await import('../src/media.js')
 const { CanvasAssetStore } = await import('../src/canvas/assets.js')
 const { cutFile } = await import('../src/media/edit.js')
+const { createStudioRouter } = await import('../src/routes.js')
 const { writeFixture } = await import('./media-edit-fixtures.js')
 
 let cwd: string
@@ -155,6 +156,29 @@ describe('a media edit that fails while it writes', () => {
     }
     expect(removals).toEqual([true])
     expect(await readdir(media)).toEqual(['src.mp4'])
+  })
+})
+
+describe('raw uploads on a drive without hard links', () => {
+  /** A raw upload with ?unique=1, as the page stores a re-encoded result or a file over 20 MB. */
+  async function upload(path: string, body: string): Promise<{ status: number; body: any }> {
+    const url = new URL('http://host/api/dsh-film/studio-write')
+    url.searchParams.set('cwd', cwd)
+    url.searchParams.set('path', `/api/projects/film/raw/${path}?unique=1`)
+    url.searchParams.set('method', 'PUT')
+    const response = await createStudioRouter().dispatch(new Request(url, { method: 'POST', body }))
+    return { status: response.status, body: await response.json() }
+  }
+
+  it('keep an existing name: the upload takes the first free name, its temporary file renamed onto it', async () => {
+    fs.linkFailure = 'EISDIR'
+    const media = join(cwd, 'film', 'canvas', 'media')
+    expect(await upload('canvas/media/take.mp4', 'first')).toEqual({ status: 200, body: { file: { name: 'canvas/media/take.mp4', size: 5, mime: 'video/mp4' } } })
+    expect(await upload('canvas/media/take.mp4', 'second')).toEqual({ status: 200, body: { file: { name: 'canvas/media/take-2.mp4', size: 6, mime: 'video/mp4' } } })
+    expect(fs.linkCalls).toBeGreaterThanOrEqual(2)
+    expect((await readdir(media)).sort()).toEqual(['take-2.mp4', 'take.mp4'])
+    expect(await readFile(join(media, 'take.mp4'), 'utf8')).toBe('first')
+    expect(await readFile(join(media, 'take-2.mp4'), 'utf8')).toBe('second')
   })
 })
 

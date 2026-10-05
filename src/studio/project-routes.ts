@@ -158,14 +158,21 @@ export function addProjectRoutes(router: StudioRouter, events: ProjectEvents): v
       const size = await writeBody(request.raw, temporary, RAW_UPLOAD_LIMIT)
       let kept = wanted
       if (request.query.get('unique') === '1') {
-        // link() refuses an existing name, so two uploads cannot take the same one.
+        // link() refuses an existing name, so two uploads cannot take the same one. A drive without hard links answers in
+        // its own way (FAT32/exFAT on Windows: EISDIR; others EPERM, ENOTSUP, ENOSYS, EINVAL): the upload is renamed onto a
+        // name nothing holds instead, as the media edits name their results (media/edit.ts settle). A real problem with the
+        // file fails the rename too.
         for (;;) {
           kept = await freeProjectPath(request.cwd, wanted)
+          const target = projectPath(request.cwd, kept)
           try {
-            await link(temporary, projectPath(request.cwd, kept))
+            await link(temporary, target)
             break
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+            if (await lstat(target).then(() => true, () => false)) continue
+            await rename(temporary, target)
+            break
           }
         }
       } else {
