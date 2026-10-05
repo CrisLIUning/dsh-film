@@ -67,7 +67,8 @@ export const EDITING_GROUP_DESCRIPTION = 'Cut, split, render, join and extract t
 const PAGE_CLOSED_NOTE = 'No storyboard page is open: the edit is saved to the board and appears when the 分镜 tab opens.'
 
 const TASK_NOTE = 'Started as a film task: read it with media_get_task until status is done (or failed/interrupted), then report file.landedNodeId — the new node right of '
-  + 'the source with an edge back — not the request. The same requestId again answers with this task and makes no second file.'
+  + 'the source with an edge back — not the request. The same requestId again, for the same edit, answers with this task and makes no second file; for another '
+  + 'file, range or boundary it is refused (MEDIA_EDIT_REQUEST_CONFLICT), so give a new edit a new id.'
 
 const target = {
   type: 'object',
@@ -89,7 +90,8 @@ const expectedContent = {
 const requestId = {
   type: 'string',
   required: true,
-  description: 'A new id of your own for this edit (8–80 letters, digits, - or _; a UUID works). Retrying with the same id answers with the same task.',
+  description: 'A new id of your own for this edit (8–80 letters, digits, - or _; a UUID works). Retrying the same edit with the same id answers with the same task; '
+    + 'another edit under an id already used (another node\'s file, mark or clips) is refused with MEDIA_EDIT_REQUEST_CONFLICT.',
 } as const
 
 /** Where a new node goes beside one it comes from (the derived-node gap). */

@@ -341,6 +341,11 @@ describe('video_render_clip', () => {
     for (const key of ['clip', 'videoTaskId', 'videoAttempt', 'videoGenerationInput', 'gatewayReceipt']) expect(landed.metadata[key], key).toBeUndefined()
     expect(board.connections).toEqual([{ id: `derived:${landed.id}:shot`, fromNodeId: 'shot', toNodeId: landed.id }])
     expect(seen).toContainEqual({ type: 'story-canvas-changed', projectId: film.id, boardId: film.id })
+    // The mark moved meanwhile: the same request id is another edit now, refused rather than answered with the old clip.
+    await run('video_clip', { nodeId: 'shot', expectedContent: url('src.mp4'), inMs: 500 })
+    const conflict = await refused('video_render_clip', { nodeId: 'shot', expectedContent: url('src.mp4'), requestId })
+    expect(conflict.message).toMatch(/^MEDIA_EDIT_REQUEST_CONFLICT: .*another file, range or boundary/u)
+    expect((tools.get('video_render_clip')!.parameters as any).properties.requestId.description).toContain('MEDIA_EDIT_REQUEST_CONFLICT')
   })
 
   it('refuses a node without a mark, one that changed, and a file the Host cannot reach', async () => {
