@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "catalogVersion": "2026-10-05.1",
+  "looks": [
+    { "id": "digital-cinema", "name": { "zh": "数字电影机", "en": "Digital cinema" }, "phrase": { "zh": "大画幅数字电影机质感，宽容度高、肤色自然、高光过渡柔和", "en": "large-format digital cinema look with wide latitude, natural skin tones and soft highlight roll-off" } },
+    { "id": "film-35mm", "name": { "zh": "35mm 胶片", "en": "35mm film" }, "phrase": { "zh": "35mm 电影胶片质感，颗粒细腻、色彩温润、对比柔和", "en": "35mm motion-picture film look with fine grain, warm colour and gentle contrast" } },
+    { "id": "film-16mm", "name": { "zh": "16mm 颗粒", "en": "16mm grain" }, "phrase": { "zh": "16mm 胶片质感，颗粒明显、轻微暗角、略带复古色偏", "en": "16mm film look with visible grain, slight vignetting and a vintage colour cast" } },
+    { "id": "phone-documentary", "name": { "zh": "手机纪实", "en": "Phone documentary" }, "phrase": { "zh": "手机纪实拍摄质感，画面清晰锐利、景深较深、色彩真实", "en": "smartphone documentary look: crisp, deep focus and true-to-life colour" } },
+    { "id": "vintage-ccd", "name": { "zh": "复古 CCD", "en": "Vintage CCD" }, "phrase": { "zh": "复古 CCD 数码相机质感，饱和度略高、轻微噪点、高光容易溢出", "en": "vintage CCD digicam look with slightly high saturation, light noise and blooming highlights" } }
+  ],
+  "lenses": [
+    { "id": "spherical-prime", "name": { "zh": "球面定焦", "en": "Spherical prime" }, "phrase": { "zh": "球面定焦镜头，成像锐利、畸变小", "en": "spherical prime lens, sharp with low distortion" } },
+    { "id": "anamorphic", "name": { "zh": "变形宽银幕", "en": "Anamorphic" }, "phrase": { "zh": "变形宽银幕镜头，椭圆形焦外、水平拉丝光晕", "en": "anamorphic lens with oval bokeh and horizontal streak flares" } },
+    { "id": "vintage-glass", "name": { "zh": "复古镜头", "en": "Vintage glass" }, "phrase": { "zh": "复古镜头，边缘略软、对比偏低、光晕柔和", "en": "vintage glass with soft edges, lower contrast and a gentle glow" } },
+    { "id": "macro", "name": { "zh": "微距", "en": "Macro" }, "phrase": { "zh": "微距镜头，极近对焦，纹理细节清晰", "en": "macro lens focusing very close with crisp texture detail" } },
+    { "id": "fisheye", "name": { "zh": "鱼眼", "en": "Fisheye" }, "phrase": { "zh": "鱼眼镜头，超广视角、明显的桶形畸变", "en": "fisheye lens with an ultra-wide view and strong barrel distortion" } }
+  ],
+  "focalLengths": [
+    { "mm": 14, "zh": "超广角，空间感夸张", "en": "ultra-wide with exaggerated space" },
+    { "mm": 18, "zh": "超广角", "en": "ultra-wide" },
+    { "mm": 24, "zh": "广角，充分交代环境", "en": "wide, showing plenty of the setting" },
+    { "mm": 35, "zh": "人文视角，接近人眼", "en": "natural documentary view" },
+    { "mm": 50, "zh": "标准焦距，透视自然", "en": "normal lens with natural perspective" },
+    { "mm": 85, "zh": "人像焦距，背景压缩", "en": "portrait lens with a compressed background" },
+    { "mm": 105, "zh": "中长焦", "en": "short telephoto" },
+    { "mm": 135, "zh": "中长焦，背景明显压缩", "en": "telephoto with a strongly compressed background" },
+    { "mm": 200, "zh": "长焦，空间压缩强烈", "en": "long telephoto with flattened space" }
+  ],
+  "apertures": [
+    { "f": 1.4, "zh": "极浅景深，背景强烈虚化", "en": "very shallow depth of field, strongly blurred background" },
+    { "f": 2, "zh": "浅景深，背景柔和虚化", "en": "shallow depth of field, soft background" },
+    { "f": 2.8, "zh": "浅景深，主体突出", "en": "shallow depth of field, subject isolated" },
+    { "f": 4, "zh": "中等景深", "en": "moderate depth of field" },
+    { "f": 5.6, "zh": "景深适中，背景保留环境", "en": "balanced depth of field, background keeps its context" },
+    { "f": 8, "zh": "景深较深，前后都清楚", "en": "deep focus, foreground and background sharp" },
+    { "f": 11, "zh": "大景深", "en": "very deep focus" },
+    { "f": 16, "zh": "全景深", "en": "everything in focus" }
+  ],
+  "shotSizes": [
+    { "id": "extreme-wide", "label": { "zh": "大远景", "en": "extreme wide shot" } },
+    { "id": "wide", "label": { "zh": "远景", "en": "wide shot" } },
+    { "id": "full", "label": { "zh": "全景", "en": "full shot" } },
+    { "id": "medium-full", "label": { "zh": "中全景", "en": "medium full shot" } },
+    { "id": "medium", "label": { "zh": "中景", "en": "medium shot" } },
+    { "id": "medium-close", "label": { "zh": "中近景", "en": "medium close-up" } },
+    { "id": "close", "label": { "zh": "近景", "en": "close-up" } },
+    { "id": "extreme-close", "label": { "zh": "特写", "en": "extreme close-up" } }
+  ],
+  "angles": [
+    { "id": "eye", "label": { "zh": "平视", "en": "eye level" } },
+    { "id": "high", "label": { "zh": "俯拍", "en": "high angle" } },
+    { "id": "low", "label": { "zh": "仰拍", "en": "low angle" } },
+    { "id": "top", "label": { "zh": "顶拍", "en": "top-down" } }
+  ],
+  "defaults": { "look": "digital-cinema", "lens": "spherical-prime", "focalLength": 50, "aperture": 2.8 }
+}

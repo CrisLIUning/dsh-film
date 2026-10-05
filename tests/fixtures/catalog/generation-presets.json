@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "catalogVersion": "2026-10-05.1",
+  "presets": [
+    { "id": "p.vertical-drama", "version": 1, "name": { "zh": "竖屏短剧", "en": "Vertical short drama" }, "mode": "video", "size": "9:16", "resolution": "720p", "seconds": 5, "generateAudio": true },
+    { "id": "p.landscape-trailer", "version": 1, "name": { "zh": "横屏预告", "en": "Landscape trailer" }, "mode": "video", "size": "16:9", "resolution": "1080p", "seconds": 10, "generateAudio": true },
+    { "id": "p.cheap-preview", "version": 1, "name": { "zh": "低价试镜", "en": "Low-cost preview" }, "mode": "video", "model": "seedance-2-0-official-mini", "resolution": "480p", "seconds": 4 },
+    { "id": "p.character-card", "version": 1, "name": { "zh": "角色设定卡", "en": "Character card" }, "mode": "image", "size": "1536x1024", "count": 1, "skills": [{ "id": "vd.character-sheet" }] },
+    { "id": "p.storyboard-still", "version": 1, "name": { "zh": "分镜静帧", "en": "Storyboard still" }, "mode": "image", "size": "1536x1024", "count": 1, "skills": [{ "id": "vd.storyboard-frame" }] },
+    { "id": "p.vertical-still", "version": 1, "name": { "zh": "竖版剧照", "en": "Vertical still" }, "mode": "image", "size": "1024x1536", "count": 1 }
+  ]
+}

@@ -16,6 +16,9 @@
  *   Apache License beside the director desk's glTF decoders when it has them;
  *   the canvas NOTICE lists files under every source it credits (no
  *   "(none yet)" placeholder).
+ * - The canvas catalogues the agent's generation-option tools read
+ *   (apps/canvas/catalog/*.json, spec C3), as JSON of schema 1: without them
+ *   the tools answer CANVAS_CATALOG_MISSING.
  * - None of the app files scripts/app-excludes.mjs removes is present.
  * - lib/ holds only output of a current src/ file (tsc never deletes stale
  *   output; a removed module once nearly shipped), and the entry files
@@ -51,6 +54,15 @@ const REQUIRED = [
   ['apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt', 'the director desk would ship without its third-party notices', REBUILD_APPS],
 ]
 
+/** The canvas catalogues the agent's tools read (canvas_generation_options, canvas_set_generation_options), with what each lists. */
+const CATALOGUES = [
+  ['camera-moves', 'camera moves (运镜)'],
+  ['camera-control', 'camera settings (相机)'],
+]
+for (const [name, what] of CATALOGUES) {
+  REQUIRED.push([`apps/canvas/catalog/${name}.json`, `the agent could not list or set ${what}`, REBUILD_APPS])
+}
+
 const fileAt = path => statSync(join(root, ...path.split('/')), { throwIfNoEntry: false })
 
 // The director desk's optional glTF decoders (Draco is Apache-2.0) need the licence text beside them.
@@ -62,6 +74,22 @@ for (const [path, consequence, fix] of REQUIRED) {
   const info = fileAt(path)
   if (info?.isFile() !== true) problems.push(`${path} is missing: ${consequence}; ${fix}.`)
   else if (info.size === 0) problems.push(`${path} is empty: ${consequence}; ${fix}.`)
+}
+
+// A catalogue the tools cannot read is as good as missing: it must be JSON of schema 1 with a catalogVersion.
+for (const [name, what] of CATALOGUES) {
+  const path = `apps/canvas/catalog/${name}.json`
+  if (fileAt(path)?.isFile() !== true || fileAt(path).size === 0) continue
+  let catalogue
+  try {
+    catalogue = JSON.parse(readFileSync(join(root, ...path.split('/')), 'utf8'))
+  } catch {
+    problems.push(`${path} is not valid JSON: the agent could not list or set ${what}; ${REBUILD_APPS}.`)
+    continue
+  }
+  if (catalogue?.schema !== 1 || typeof catalogue.catalogVersion !== 'string') {
+    problems.push(`${path} is not a schema-1 catalogue (schema ${JSON.stringify(catalogue?.schema)}): the agent could not list or set ${what}; ${REBUILD_APPS}.`)
+  }
 }
 
 // The canvas NOTICE credits a source as adapted only once files derived from it are listed: a "(none yet)"

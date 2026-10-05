@@ -1,6 +1,7 @@
 /**
  * The packaging scripts' handling of the canvas's NOTICE: build-apps copies it
- * beside the canvas LICENSE, and check-package refuses a package without it.
+ * beside the canvas LICENSE, and check-package refuses a package without it
+ * (or without the canvas catalogues the agent's tools read).
  * Each script runs as it does for a maintainer, from a copy placed in a
  * scratch package (they work relative to their own folder).
  */
@@ -60,6 +61,10 @@ describe('check-package', () => {
       'package/apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt',
     ]
     for (const file of files) if (!leaveOut.includes(file)) put(file)
+    for (const name of ['camera-moves', 'camera-control']) {
+      const file = `package/apps/canvas/catalog/${name}.json`
+      if (!leaveOut.includes(file)) put(file, JSON.stringify({ schema: 1, catalogVersion: '2026-10-05.1' }))
+    }
     put('package/package.json', JSON.stringify({ name: 'dsh-film', version: '0.0.0-test' }))
   }
 
@@ -99,6 +104,25 @@ describe('check-package', () => {
     packageWith()
     put('package/apps/canvas/NOTICE', 'Open AI Canvas\n\nPortions adapted from Open AI Canvas. Files:\n\n  web/src/a.ts (abc1234)\n')
     expect(runScript('check-package.mjs').status).toBe(0)
+  })
+
+  it('refuses a package without the canvas catalogues the agent\'s generation-option tools read', () => {
+    packageWith(['package/apps/canvas/catalog/camera-moves.json', 'package/apps/canvas/catalog/camera-control.json'])
+    const result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is missing: the agent could not list or set camera moves (运镜)')
+    expect(result.output).toContain('apps/canvas/catalog/camera-control.json is missing: the agent could not list or set camera settings (相机)')
+    expect(result.output).toContain('node scripts/build-apps.mjs canvas')
+  })
+
+  it('refuses a catalogue that is not JSON of schema 1', () => {
+    packageWith()
+    put('package/apps/canvas/catalog/camera-moves.json', '{"schema":1,')
+    put('package/apps/canvas/catalog/camera-control.json', JSON.stringify({ schema: 2, catalogVersion: '2027-01-01.1' }))
+    const result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is not valid JSON')
+    expect(result.output).toContain('apps/canvas/catalog/camera-control.json is not a schema-1 catalogue (schema 2)')
   })
 })
 
