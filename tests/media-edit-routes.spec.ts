@@ -139,6 +139,23 @@ describe('POST /api/canvas/video/:boardId/cut', () => {
     expect(below.position.y).toBeGreaterThanOrEqual(50 + node.height)
   })
 
+  it('ends done with the file when the board cannot take the result for any reason, and says why in landError', async () => {
+    await writeFixture(media('src.mp4'), { frames: 50 })
+    // A board file the Host cannot read or write — a folder where it belongs answers EISDIR, as a document held by another
+    // program answers EPERM/EBUSY or a full disk ENOSPC — is neither a damaged nor a deleted board, and must not fail the edit.
+    await mkdir(join(cwd, 'film', 'canvas', 'document.json'), { recursive: true })
+    const started = await call('/api/canvas/video/film-1/cut', {
+      requestId: 'a6f1c8e2-0000-4000-8000-000000000010', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 0, outMs: 1000, land: { nearNodeId: 'src', connectFrom: ['src'] },
+    })
+    const done = await finished(started.body.taskId)
+    expect(done).toMatchObject({ status: 'done', file: { landError: expect.stringMatching(/EISDIR/u) } })
+    expect(done.file.landedNodeId).toBeUndefined()
+    expect(done.file.name).toMatch(/^canvas\/media\/clip-[0-9a-f]{10}\.mp4$/)
+    expect((await readdir(join(cwd, 'film', 'canvas', 'media'))).sort()).toEqual([done.file.name.split('/').pop(), 'src.mp4'].sort())
+    expect(seen).toContainEqual({ type: 'file-changed', projectId: 'film', path: done.file.name })
+    expect(seen.some(event => event.type === 'story-canvas-changed')).toBe(false)
+  })
+
   it('refuses paths outside film/, missing sources, short and out-of-range cuts, and bad request ids', async () => {
     await writeFixture(media('src.mp4'), { frames: 50 })
     await writeFixture(join(outside, 'x.mp4'), { frames: 25 })

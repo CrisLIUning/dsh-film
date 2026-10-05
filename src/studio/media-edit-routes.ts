@@ -25,7 +25,9 @@
  * shots moved to the result's time (canvas/media-time.ts), the cues with their
  * style and a media key for the new file (canvas/subtitles.ts), so the page
  * does not flag them as mismatched; without `land` the page lands it itself
- * (the agent's video_* tools ask for `land`).
+ * (the agent's video_* tools ask for `land`). A board that cannot take the
+ * result, for whatever reason, does not fail the edit: the task ends done with
+ * the file and says why in `file.landError`.
  * `derivedFrom.sources` (also on the task's file) give the range of each
  * source the result really holds and `atMs`, where it starts in the result,
  * for remapping subtitles and director cues. A path is the file
@@ -40,7 +42,7 @@ import { lstat, mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { landFileOnBoard, mediaKindOfPath } from '../canvas/board-media.js'
 import type { BoardMediaKind, LandedMedia } from '../canvas/board-media.js'
-import { CanvasDocumentStore, CanvasDocumentUpdateError } from '../canvas/documents.js'
+import { CanvasDocumentStore } from '../canvas/documents.js'
 import { cutShots, joinShots } from '../canvas/media-time.js'
 import { derivedSubtitleFields, joinedSubtitleFields } from '../canvas/subtitles.js'
 import { mediaTypeOf } from '../media.js'
@@ -321,9 +323,10 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
             ...(edit.carry !== undefined ? { carry: (nodes: readonly unknown[], media: LandedMedia) => edit.carry!(nodes, derivedFrom.sources, media) } : {}),
           })
         } catch (error) {
-          // The file is made; a board that cannot be written leaves it for the page to land.
-          if (!(error instanceof CanvasDocumentUpdateError)) throw error
-          landError = error.message
+          // The file is made and announced: whatever keeps the board from taking it — a damaged or deleted board, a document
+          // the system holds for a moment (EPERM, EBUSY), a full disk — leaves it for the page to land. Failing the edit here
+          // would only invite a retry under a new request id, and a second file beside this one.
+          landError = error instanceof Error ? error.message : String(error)
         }
         if (landedNodeId !== null) events.emit(cwd, { type: 'story-canvas-changed', projectId, boardId })
       }
