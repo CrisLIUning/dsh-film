@@ -10,10 +10,21 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import ts from 'typescript'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-const scripts = resolve(import.meta.dirname, '..', 'scripts')
+const repo = resolve(import.meta.dirname, '..')
+const scripts = join(repo, 'scripts')
+const CATALOGUES = ['camera-moves', 'camera-control', 'vibedev-skills', 'generation-presets']
 let scratch: string
+
+/** A module of src/ as the build writes it into lib/: an ES module with its types stripped. */
+function builtModule(source: string): string {
+  return ts.transpileModule(readFileSync(join(repo, 'src', source), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+}
+
+/** One of the canvas's catalogues, as the canvas ships it (the test fixture is a byte copy). */
+const catalogue = (name: string): string => readFileSync(join(repo, 'tests', 'fixtures', 'catalog', `${name}.json`), 'utf8')
 
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), 'dsh-film-package-'))
@@ -61,11 +72,16 @@ describe('check-package', () => {
       'package/apps/canvas/director-desk/THIRD-PARTY-NOTICES.txt',
     ]
     for (const file of files) if (!leaveOut.includes(file)) put(file)
-    for (const name of ['camera-moves', 'camera-control', 'vibedev-skills', 'generation-presets']) {
-      const file = `package/apps/canvas/catalog/${name}.json`
-      if (!leaveOut.includes(file)) put(file, JSON.stringify({ schema: 1, catalogVersion: '2026-10-05.1' }))
+    // The catalogues are checked with the agent tools' own checkCanvasCatalog, from lib/ (its source beside it in src/).
+    for (const module of ['canvas/catalog', 'screenwriter/contracts/production']) {
+      if (!leaveOut.includes(`package/lib/${module}.js`)) put(`package/lib/${module}.js`, builtModule(`${module}.ts`))
+      put(`package/src/${module}.ts`)
     }
-    put('package/package.json', JSON.stringify({ name: 'dsh-film', version: '0.0.0-test' }))
+    for (const name of CATALOGUES) {
+      const file = `package/apps/canvas/catalog/${name}.json`
+      if (!leaveOut.includes(file)) put(file, catalogue(name))
+    }
+    put('package/package.json', JSON.stringify({ name: 'dsh-film', version: '0.0.0-test', type: 'module' }))
   }
 
   it('passes a package that carries the canvas NOTICE', () => {
@@ -109,8 +125,7 @@ describe('check-package', () => {
   })
 
   it('refuses a package without the canvas catalogues the agent\'s generation-option tools read', () => {
-    const catalogues = ['camera-moves', 'camera-control', 'vibedev-skills', 'generation-presets']
-    packageWith(catalogues.map(name => `package/apps/canvas/catalog/${name}.json`))
+    packageWith(CATALOGUES.map(name => `package/apps/canvas/catalog/${name}.json`))
     const result = runScript('check-package.mjs')
     expect(result.status).toBe(1)
     expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is missing: the agent could not list or set camera moves (运镜)')
@@ -130,6 +145,49 @@ describe('check-package', () => {
     expect(result.output).toContain('apps/canvas/catalog/camera-moves.json is not valid JSON')
     expect(result.output).toContain('apps/canvas/catalog/camera-control.json is not a schema-1 catalogue (schema 2)')
     expect(result.output).toContain('apps/canvas/catalog/vibedev-skills.json is not a schema-1 catalogue (schema undefined)')
+  })
+
+  it('refuses a schema-1 catalogue the agent\'s tools would still refuse whole, by their own check', () => {
+    packageWith()
+    const presets = JSON.parse(catalogue('generation-presets'))
+    presets.presets[0].mode = 'audio'
+    put('package/apps/canvas/catalog/generation-presets.json', JSON.stringify(presets))
+    put('package/apps/canvas/catalog/camera-moves.json', JSON.stringify({ ...JSON.parse(catalogue('camera-moves')), catalogVersion: 'v2' }))
+    const result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas/catalog/generation-presets.json fails the check the agent\'s tools apply (preset p.vertical-drama mode must be image or video), '
+      + 'so they would refuse the whole file and the agent could not list or set generation presets (生成预设)')
+    expect(result.output).toContain('apps/canvas/catalog/camera-moves.json fails the check the agent\'s tools apply (catalogVersion must look like YYYY-MM-DD.n)')
+    expect(result.output).not.toContain('camera-control.json')
+  })
+
+  it('reads a catalogue with a byte-order mark as the tools do, and refuses to check without the built lib/', () => {
+    packageWith()
+    put('package/apps/canvas/catalog/camera-control.json', `﻿${catalogue('camera-control')}`)
+    expect(runScript('check-package.mjs').status).toBe(0)
+    rmSync(join(scratch, 'package', 'lib', 'canvas'), { recursive: true, force: true })
+    const result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('lib/canvas/catalog.js cannot be loaded')
+    expect(result.output).toContain('run `npm run build`')
+  })
+
+  it('refuses a canvas build that still bundles the FFmpeg AAC encoder, or carries its LGPL text', () => {
+    packageWith()
+    put('package/apps/canvas/assets/mediabunny-aac-encoder-BmtnuXQb.js', 'export {}\n')
+    let result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas ships the FFmpeg AAC encoder (assets/mediabunny-aac-encoder-BmtnuXQb.js), which this release does not ship')
+    expect(result.output).toContain('without @mediabunny/aac-encoder')
+    rmSync(join(scratch, 'package', 'apps', 'canvas', 'assets'), { recursive: true, force: true })
+    put('package/apps/canvas/licenses/FFmpeg-LGPL-2.1.txt', 'GNU LESSER GENERAL PUBLIC LICENSE\n')
+    result = runScript('check-package.mjs')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('apps/canvas ships the FFmpeg AAC encoder (licenses/FFmpeg-LGPL-2.1.txt)')
+    // Other licences beside the app are fine.
+    rmSync(join(scratch, 'package', 'apps', 'canvas', 'licenses', 'FFmpeg-LGPL-2.1.txt'))
+    put('package/apps/canvas/licenses/MPL-2.0.txt', 'Mozilla Public License\n')
+    expect(runScript('check-package.mjs').status).toBe(0)
   })
 })
 

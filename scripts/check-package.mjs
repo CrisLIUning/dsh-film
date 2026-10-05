@@ -18,8 +18,14 @@
  *   "(none yet)" placeholder).
  * - The canvas catalogues the agent's generation-option tools read
  *   (apps/canvas/catalog/*.json, spec C3: camera moves, camera settings,
- *   prompt skills, generation presets), as JSON of schema 1: without them the
- *   tools answer CANVAS_CATALOG_MISSING.
+ *   prompt skills, generation presets), each passing the very check the tools
+ *   apply (checkCanvasCatalog, from the lib/ the build just wrote): without
+ *   them the tools answer CANVAS_CATALOG_MISSING, and a file failing the
+ *   check is refused whole (CANVAS_CATALOG_INVALID).
+ * - No FFmpeg AAC encoder: this release does not ship @mediabunny/aac-encoder
+ *   (LGPL-2.1; its FFmpeg build has no pinned source, so the licence's source
+ *   offer cannot be met), so a canvas build that still bundles it, or carries
+ *   its licence text, is refused.
  * - None of the app files scripts/app-excludes.mjs removes is present.
  * - lib/ holds only output of a current src/ file (tsc never deletes stale
  *   output; a removed module once nearly shipped), and the entry files
@@ -31,7 +37,8 @@
  *   node scripts/check-package.mjs
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { excludedFiles } from './app-excludes.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -79,19 +86,36 @@ for (const [path, consequence, fix] of REQUIRED) {
   else if (info.size === 0) problems.push(`${path} is empty: ${consequence}; ${fix}.`)
 }
 
-// A catalogue the tools cannot read is as good as missing: it must be JSON of schema 1 with a catalogVersion.
+// A catalogue the tools cannot read is as good as missing. They check each file with checkCanvasCatalog and refuse the
+// whole file on any problem, so each shipped file must pass that same check: it is loaded from the lib/ the build wrote.
+let checkCanvasCatalog
+try {
+  ({ checkCanvasCatalog } = await import(pathToFileURL(join(root, 'lib', 'canvas', 'catalog.js')).href))
+  if (typeof checkCanvasCatalog !== 'function') throw new Error('it exports no checkCanvasCatalog')
+} catch (error) {
+  checkCanvasCatalog = undefined
+  problems.push(`lib/canvas/catalog.js cannot be loaded (${error?.code ?? error?.message ?? String(error)}), so the canvas catalogues cannot be checked as the agent's `
+    + 'tools read them; run `npm run build`.')
+}
 for (const [name, what] of CATALOGUES) {
   const path = `apps/canvas/catalog/${name}.json`
   if (fileAt(path)?.isFile() !== true || fileAt(path).size === 0) continue
   let catalogue
   try {
-    catalogue = JSON.parse(readFileSync(join(root, ...path.split('/')), 'utf8'))
+    // As the tools read it: a byte-order mark is no problem.
+    catalogue = JSON.parse(readFileSync(join(root, ...path.split('/')), 'utf8').replace(/^﻿/u, ''))
   } catch {
     problems.push(`${path} is not valid JSON: the agent could not list or set ${what}; ${REBUILD_APPS}.`)
     continue
   }
   if (catalogue?.schema !== 1 || typeof catalogue.catalogVersion !== 'string') {
     problems.push(`${path} is not a schema-1 catalogue (schema ${JSON.stringify(catalogue?.schema)}): the agent could not list or set ${what}; ${REBUILD_APPS}.`)
+    continue
+  }
+  const found = checkCanvasCatalog?.(name, catalogue) ?? []
+  if (found.length > 0) {
+    problems.push(`${path} fails the check the agent's tools apply (${found.slice(0, 3).join('; ')}${found.length > 3 ? `; and ${found.length - 3} more` : ''}), so they would `
+      + `refuse the whole file and the agent could not list or set ${what}; ${REBUILD_APPS}.`)
   }
 }
 
@@ -193,6 +217,21 @@ if (existsSync(join(root, 'lib'))) {
     ? walk(directory).map(file => toPosix(relative(directory, file))).filter(path => !path.split('/').every(part => SEGMENT.test(part)))
     : []
   if (unroutable.length > 0) problems.push(`apps/${APP}: ${unroutable.length} file name(s) the Host cannot route, e.g. ${unroutable[0]}.`)
+}
+
+// No FFmpeg AAC encoder ships in this release (@mediabunny/aac-encoder, LGPL-2.1: its FFmpeg build has no pinned source, so the
+// LGPL's source offer cannot be met; the canvas re-encodes sound with the browser's own AAC encoder). A canvas build that still
+// bundles its chunk, or carries the licence text that came with it, would ship it anyway.
+{
+  const directory = join(root, 'apps', APP)
+  const shipped = existsSync(directory)
+    ? walk(directory).map(file => toPosix(relative(directory, file))).filter(path => /aac-encoder/iu.test(basename(path)) || path.toLowerCase() === 'licenses/ffmpeg-lgpl-2.1.txt')
+    : []
+  if (shipped.length > 0) {
+    problems.push(`apps/${APP} ships the FFmpeg AAC encoder (${shipped.slice(0, 3).join(', ')}${shipped.length > 3 ? ', …' : ''}), which this release does not ship (its `
+      + 'FFmpeg build has no pinned source, so the LGPL cannot be met): build the canvas from a checkout without @mediabunny/aac-encoder and rebuild apps/ with '
+      + '`node scripts/build-apps.mjs canvas`.')
+  }
 }
 
 if (problems.length > 0) {
