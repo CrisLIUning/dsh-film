@@ -455,7 +455,10 @@ async function convert(
     const startMs = Math.round((conversion.trim?.start ?? 0) * 1000)
     return { ...facts, ...(end !== undefined ? { range: { inMs: startMs, outMs: startMs + Math.round(end * 1000) } } : {}) }
   } catch (error) {
-    if (output.state === 'started' || output.state === 'pending') await output.cancel().catch(() => undefined)
+    // A conversion that fails cancels its output itself, without waiting (the output reads as canceled at once): output.cancel()
+    // hands back that close to wait for, as a cancel of ours is waited for below — else the temporary file may still be open
+    // when it is deleted, and Windows keeps it. Only a finished output has nothing to close.
+    if (cancelling === undefined && output.state !== 'finalizing' && output.state !== 'finalized') await output.cancel().catch(() => undefined)
     if (error instanceof ConversionCanceledError || isAborted(signal)) throw abortError(signal)
     throw error
   } finally {

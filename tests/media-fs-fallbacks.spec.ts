@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import type { Dirent } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Output } from 'mediabunny'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fs = vi.hoisted(() => ({
@@ -19,6 +20,8 @@ const fs = vi.hoisted(() => ({
   copyModes: [] as number[],
   copyFailure: undefined as string | undefined,
   placeholders: new Set<string>(),
+  /** Told of every rm, before it runs. */
+  onRm: undefined as ((path: string) => void) | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -50,6 +53,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (options?.withFileTypes !== true) return entries
       return (entries as Dirent[]).map(entry => fs.placeholders.has(entry.name) ? asReparsePoint(entry) : entry)
     }) as typeof actual.readdir,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      fs.onRm?.(String(args[0]))
+      return actual.rm(...args)
+    },
   }
 })
 
@@ -68,6 +75,7 @@ beforeEach(async () => {
   fs.copyModes = []
   fs.copyFailure = undefined
   fs.placeholders.clear()
+  fs.onRm = undefined
   invalidateWorkspaceMedia()
 })
 
@@ -118,6 +126,35 @@ describe('cloud placeholders', () => {
     expect((await scanWorkspaceMedia(cwd)).files.map(entry => entry.path).sort()).toEqual(['media/cloud.png', 'synced/inside.mp4'])
     const library = await new CanvasAssetStore(cwd).read('film', 'film')
     expect(library.assets.map(asset => asset.filePath)).toEqual(['canvas/media/cloud.mp4'])
+  })
+})
+
+describe('a media edit that fails while it writes', () => {
+  it('deletes its temporary file only once the output the failed conversion cancelled has closed it', async () => {
+    const media = join(cwd, 'film', 'canvas', 'media')
+    const source = await writeFixture(join(media, 'src.mp4'), { frames: 250, gop: 25 })
+    // The output's close takes a while, as a file handle's does on Windows: it settles some time after mediabunny's own.
+    let closed = false
+    const original = Output.prototype.cancel
+    const slowClose = vi.spyOn(Output.prototype, 'cancel').mockImplementation(function (this: Output) {
+      return original.call(this).then(() => new Promise<void>((resolve) => {
+        setTimeout(() => {
+          closed = true
+          resolve()
+        }, 50)
+      }))
+    })
+    const removals: boolean[] = []
+    fs.onRm = (path) => { if (/\.edit-[^\\/]*\.tmp$/u.test(path)) removals.push(closed) }
+    try {
+      // A failure that is no cancel (a full disk, a read error) in the middle of the copy: mediabunny cancels the output itself.
+      const cut = cutFile(source, join(media, 'clip-1.mp4'), { inMs: 0, outMs: 9000 }, 'expand', { onProgress: (fraction) => { if (fraction > 0) throw new Error('ENOSPC: no space left') } })
+      await expect(cut).rejects.toThrow('ENOSPC: no space left')
+    } finally {
+      slowClose.mockRestore()
+    }
+    expect(removals).toEqual([true])
+    expect(await readdir(media)).toEqual(['src.mp4'])
   })
 })
 
