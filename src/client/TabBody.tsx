@@ -8,6 +8,7 @@ import { Component, Suspense, lazy, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilmView, Translate, WorkbenchProps } from './types.ts'
+import type { SuiteView } from './suite.ts'
 import { kindOf } from './views.ts'
 import css from './TabBody.module.css'
 
@@ -39,6 +40,8 @@ export interface TabBodyProps {
   /** From this plugin's registration. */
   translate: Translate
   view: FilmView
+  /** From this plugin's registration: what the Host has of the components the workbench leans on. */
+  suite: SuiteView
 }
 
 interface BoundaryProps {
@@ -72,7 +75,7 @@ class LoadBoundary extends Component<BoundaryProps, { error: Error | undefined }
  * @param props - the tab, the session and this part.
  * @returns the body.
  */
-export function TabBody({ useTabInfo, sessionId, useSessions, translate: t, view }: TabBodyProps): ReactNode {
+export function TabBody({ useTabInfo, sessionId, useSessions, translate: t, view, suite }: TabBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
   const [attempt, setAttempt] = useState(0)
@@ -91,6 +94,7 @@ export function TabBody({ useTabInfo, sessionId, useSessions, translate: t, view
             visible={tab.visible}
             t={t}
             openView={(next) => { tab.actions.openTab(kindOf(next)) }}
+            suite={suite}
           />
         </Suspense>
       </LoadBoundary>

@@ -21,6 +21,7 @@ import { titleKeyAction, titleToSave } from './project-title.ts'
 import { restartText, runtimeText, useRestartNotice } from './runtime-notice.ts'
 import type { RestartNotice } from './runtime-notice.ts'
 import { ScreenwriterView } from './story/ScreenwriterView.tsx'
+import { SuiteCard } from './SuiteCard.tsx'
 import css from './workbench.module.css'
 
 const PROJECT_FILE = 'film/film.json'
@@ -67,7 +68,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 }
 
 /** A part this build draws, under the restart banner. */
-function ProjectPart({ view, cwd, visible, t, openView, banner, notice }: WorkbenchProps & { banner: ReactNode; notice: RestartNotice | null }): ReactNode {
+function ProjectPart({ view, cwd, visible, t, openView, suite, banner, notice }: WorkbenchProps & { banner: ReactNode; notice: RestartNotice | null }): ReactNode {
   const { state, reload } = useProject(cwd, visible)
   if (state.status === 'loading') {
     return (
@@ -103,7 +104,7 @@ function ProjectPart({ view, cwd, visible, t, openView, banner, notice }: Workbe
     )
   }
   const hosted = hostedApp(view, state.project, cwd, openView)
-  const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} project={state.project} />
+  const native = <NativePart view={view} cwd={cwd} visible={visible} t={t} openView={openView} suite={suite} project={state.project} />
   return (
     <div className={css.root}>
       {banner}
@@ -125,6 +126,7 @@ function ProjectPart({ view, cwd, visible, t, openView, banner, notice }: Workbe
               />
             </div>
           )}
+      <SuiteCard suite={suite} t={t} />
     </div>
   )
 }
