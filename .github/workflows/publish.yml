@@ -57,7 +57,7 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
           echo "TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "TARBALL=release-input/${ASSET_PREFIX}${RELEASE_TAG#v}.tgz" >> "$GITHUB_ENV"
+          echo "TARBALL=./release-input/${ASSET_PREFIX}${RELEASE_TAG#v}.tgz" >> "$GITHUB_ENV"
           echo "TAG_COMMIT=$(git rev-parse "${RELEASE_TAG}^{commit}")" >> "$GITHUB_ENV"
       - name: Download the tested release archive
         env:
