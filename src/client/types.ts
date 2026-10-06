@@ -4,8 +4,6 @@
  * loader cannot resolve one bundle file requiring another).
  */
 
-import type { SuiteView } from './suite.ts'
-
 /** The workbench parts, one right-sidebar tab type each. */
 export type FilmView = 'story' | 'board' | 'director'
 
@@ -22,6 +20,4 @@ export interface WorkbenchProps {
   t: Translate
   /** Open another part in the sidebar. */
   openView: (view: FilmView) => void
-  /** What this Host has of the VibeDev components the workbench leans on, and the way to the rest. */
-  suite: SuiteView
 }
