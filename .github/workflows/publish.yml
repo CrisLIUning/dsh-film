@@ -1,0 +1,91 @@
+name: Publish verified release to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (run an unpublished version on this tag ref)
+        required: true
+        type: string
+      operation:
+        description: Publish the tested archive, or manage an already published channel
+        required: true
+        default: publish
+        type: choice
+        options: [publish, dist-tag]
+      npm_tag:
+        description: Channel for a dist-tag operation
+        required: true
+        default: latest
+        type: choice
+        options: [latest, next]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: dsh-film
+  PACKAGE_REPOSITORY: VibeDev-Si/dsh-film
+  ASSET_PREFIX: dsh-film-
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
+      - name: Test the publication guards
+        run: node --test scripts/publish-release.test.mjs
+      - name: Select the exact release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
+          echo "TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "TARBALL=release-input/${ASSET_PREFIX}${RELEASE_TAG#v}.tgz" >> "$GITHUB_ENV"
+          echo "TAG_COMMIT=$(git rev-parse "${RELEASE_TAG}^{commit}")" >> "$GITHUB_ENV"
+      - name: Download the tested release archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir release-input
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "${ASSET_PREFIX}${TAG#v}.tgz" --dir release-input
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > release-input/assets.json
+          tar -xOf "$TARBALL" package/package.json > release-input/archive-package.json
+          git show "$TAG:package.json" > release-input/source-package.json
+      - name: Verify the archive and existing npm version
+        id: verify
+        run: node scripts/publish-release.mjs "$PACKAGE_NAME" "$PACKAGE_REPOSITORY" "$TAG" "$TARBALL" release-input/archive-package.json release-input/source-package.json release-input/assets.json
+      - name: Publish with OIDC and an attestation
+        if: steps.verify.outputs.publish == 'true' && (github.event_name == 'release' || inputs.operation == 'publish')
+        run: npm publish "$TARBALL" --access public --tag "${{ steps.verify.outputs.npm_tag }}" --provenance
+      - name: Confirm the registry artifact
+        if: steps.verify.outputs.publish == 'true' && (github.event_name == 'release' || inputs.operation == 'publish')
+        run: node scripts/publish-release.mjs --confirm "$PACKAGE_NAME" "$TAG" "$TARBALL"
+      - name: Set the channel of an already verified npm version
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'dist-tag'
+        env:
+          NPM_TAG: ${{ inputs.npm_tag }}
+          ALREADY_PUBLISHED: ${{ steps.verify.outputs.publish }}
+        shell: bash
+        run: |
+          [[ "$ALREADY_PUBLISHED" == false ]] || { echo 'Publish this version before changing its channel'; exit 1; }
+          [[ "$NPM_TAG" == latest || "$NPM_TAG" == next ]] || exit 1
+          npm dist-tag add "$PACKAGE_NAME@${TAG#v}" "$NPM_TAG" --registry https://registry.npmjs.org/
+          npm dist-tag ls "$PACKAGE_NAME" --registry https://registry.npmjs.org/

@@ -53,13 +53,13 @@
     "storyboard",
     "ai-agent"
   ],
-  "homepage": "https://github.com/CrisLIUning/dsh-film#readme",
+  "homepage": "https://github.com/VibeDev-Si/dsh-film#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CrisLIUning/dsh-film.git"
+    "url": "git+https://github.com/VibeDev-Si/dsh-film.git"
   },
   "bugs": {
-    "url": "https://github.com/CrisLIUning/dsh-film/issues"
+    "url": "https://github.com/VibeDev-Si/dsh-film/issues"
   },
   "license": "MIT",
   "engines": {
