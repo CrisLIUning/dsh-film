@@ -3,7 +3,7 @@
  * `model_brief`, apps/daemon/src/mcp.ts), calling the director routes
  * in-process. Querying, staging, reviews, motion compiling and modeling
  * briefs are computed here from the saved board — or from the open desk, which
- * is read first when the 导演 tab shows it. Rendering, output status and model
+ * is read first when the storyboard canvas shows it. Rendering, output status and model
  * inspection need the desk open: those calls go to the canvas page that has
  * it (see src/director/live.ts for how that page is found).
  *
@@ -115,7 +115,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         + 'is, facing, action, moving; where each camera is, what it tracks and who is in its frame (screen x -1 left..1 right); aspect overrides. '
         + 'kind=diagnostics (step 0.02–2, cameraIds): subjects leaving frame or head cut, the 180° line crossed, routes through walls, late arrivals, '
         + 'screen order. kind=actions with objectId: the character\'s actions, how each renders, compatibility and library needs, plus its action clips. '
-        + 'Reads the open desk when the 导演 tab shows it, else the saved node.',
+        + 'Reads the open desk when the storyboard canvas shows it, else the saved node.',
       parameters: {
         kind: { type: 'string', required: true, enum: ['structure', 'sample', 'diagnostics', 'events', 'actions'] },
         nodeId,
@@ -142,7 +142,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         + 'includeWorkspace (default true), GLB/FBX/OBJ files elsewhere in the workspace not imported yet. Each gives path, inFilm, format, role '
         + '(space|model), placeable, suggestedKind (scene|prop|auto: auto means it may carry a rig — a skinned glTF (hasSkin:true), or any FBX, whose '
         + 'rig the Host cannot inspect; place_model places it as a prop unless you pass kind, and a rigged character is imported by the person in the '
-        + '导演 tab\'s 空间库), the '
+        + 'desk\'s 空间库, opened from the director node in the storyboard canvas), the '
         + 'measured bounds in file units, metresPerUnit when the file declares its units (GLB 1, FBX by its unit) or suggestedMetresPerUnit (OBJ guess), '
         + 'sizeMetres when the units are known, hasSkin, compression and any problem; pending means not measured yet (place_model measures it). Place '
         + 'one with director_stage place_model. At most 100 entries.',
@@ -173,7 +173,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'director_stage',
-      description: 'Stage a director-desk scene from a plan in a director\'s words, compiled, checked and written into the desk (open in the 导演 tab) or '
+      description: 'Stage a director-desk scene from a plan in a director\'s words, compiled, checked and written into the desk (open in the storyboard canvas, as a director node) or '
         + 'the board\'s node; a node never opened starts empty. plan = {ops:[...]} (1–200, metres and scene seconds, additive: only what an op names changes). '
         + 'Core ops: place_character {id?,name?,at:[x,z]|[x,y,z],facing?:degrees|{toward:id},bodyType?,action?}; place_prop {id?,name?,geometry?:box|sphere|'
         + 'cylinder|torus|cone|pyramid,at,size:[w,h,d]}; move {objectId,start,end,path:[[x,z],…] (one point walks there),holds?:[{point,seconds,action?}],'
@@ -191,7 +191,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
         + 'at?:[x,z]|[x,y,z],facing?:degrees,metresPerUnit?|size?:{height|width|depth|longest:metres},name?,id?,assetId?}: it hashes, measures and '
         + 'calibrates for you and expands into import_asset, calibrate_asset, place_asset and transform_objects; a workspace file is copied into '
         + 'film/canvas/models/ only on apply (a dryRun reports wouldImport). Units come from metresPerUnit, else size over the measured box, else the file '
-        + '(GLB metres, an FBX\'s declared unit); an OBJ needs one of them. Characters (rigged) are imported by the person in the 导演 tab\'s 空间库, '
+        + '(GLB metres, an FBX\'s declared unit); an OBJ needs one of them. Characters (rigged) are imported by the person in the desk\'s 空间库 (open that director node in the storyboard canvas), '
         + 'not here. Up to 40 per plan; the answer\'s placed[] gives each assetId, objectId and size. '
         + 'dryRun:true compiles and checks without writing. Every answer carries the result\'s diagnostics: read them before calling it done. Pass the '
         + 'fingerprint from your last read (director_query events/actions) or last applied stage as expectedFingerprint, for dryRun and apply alike, so a '
@@ -215,7 +215,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'director_render',
-      description: 'Render what a director-desk scene looks like into the film, through the desk open in the 导演 tab (ask the person to open it if the '
+      description: 'Render what a director-desk scene looks like into the film, through the desk open in the storyboard canvas (open the director node there; ask the person to if the '
         + 'call says it is not). frames: [{shotId?,cameraId?,at?:scene seconds,position?:first|current|last,fileName?}] — clean frames. sheet: true or '
         + '{moment?:start|middle|end,cameraIds?,sequence?} — a contact sheet of every shot\'s opening, the way to check a staging at a glance. video: true or '
         + '{sequence?,shotId?,cameraId?,fps?:24|30|60} — an MP4 reference that carries the camera move into a generation. Each file lands on the board as a '
@@ -250,7 +250,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'director_render_status',
       description: 'Read the desk\'s current output job (person- or agent-started): phase, progress, saved result count, terminal error. task:null means '
-        + 'none. Needs the desk open in the 导演 tab.',
+        + 'none. Needs the desk open in the storyboard canvas: the director node there must be open.',
       parameters: { nodeId },
       output: jsonOutput,
       isConcurrencySafe: () => true,
@@ -270,7 +270,7 @@ export function directorTools(services: FilmToolServices): ToolDefinition[] {
     defineTool({
       name: 'director_inspect_model',
       description: 'Extract wall/floor/ceiling candidates from a static scene or prop model placed in the scene, from the geometry the open desk has loaded '
-        + '(the 导演 tab must show the desk with the model). Metadata, name guesses and bare bounds are labelled; unknown parts and single treads need '
+        + '(the desk must show the model: open the director node in the storyboard canvas). Metadata, name guesses and bare bounds are labelled; unknown parts and single treads need '
         + 'review. Changes nothing: review the candidates and the proposed plan, then director_stage it with dryRun and the ORIGINAL returned fingerprint. '
         + 'Saved spatial profiles are readable with director_query structure even with the desk closed.',
       parameters: {

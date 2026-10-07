@@ -1,7 +1,8 @@
 /**
- * dsh-film browser half: the three parts of the film workbench — script,
- * storyboard, director desk — as right-sidebar tab types, each
- * with an entry box on the sidebar's guide page.
+ * dsh-film browser half: the two parts of the film workbench — script,
+ * storyboard — as right-sidebar tab types, each with an entry box on the
+ * sidebar's guide page. The 3D director desk has no tab of its own: it opens
+ * inside the storyboard canvas, as a director node on the board.
  *
  * Built by tsdown into the `__ModuleLoader__` factory bundle at
  * client/client.js, with the workbench itself in client/client.workbench.js,

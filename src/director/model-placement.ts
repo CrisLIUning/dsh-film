@@ -133,7 +133,7 @@ export function parsePlaceModel(raw: unknown, index: number): PlaceModelOp {
   const path = typeof raw.path === 'string' ? raw.path.trim() : ''
   if (path === '') throw new DirectorStageError('place_model 需要 path：film/…、相对 film/ 的路径，或工作区里的模型文件', index)
   if (raw.kind === 'character') {
-    throw new DirectorStageError('place_model 不放人物：带骨架的人物要在导演 tab 的空间库里导入（导演台要检查骨架）；静态模型用 kind prop 或 scene', index)
+    throw new DirectorStageError('place_model 不放人物：带骨架的人物要在分镜画布里的导演台节点打开空间库导入（导演台要检查骨架）；静态模型用 kind prop 或 scene', index)
   }
   if (raw.kind !== undefined && raw.kind !== 'prop' && raw.kind !== 'scene') throw new DirectorStageError('place_model 的 kind 只能是 prop 或 scene', index)
   const at = raw.at ?? [0, 0]

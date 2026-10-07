@@ -1,10 +1,13 @@
 /**
- * The three parts as right-sidebar tab types: each one's registry identity, the
+ * The two parts as right-sidebar tab types: each one's registry identity, the
  * kind tabs are opened by, and its place on the sidebar's guide page.
+ *
+ * The 3D director desk is not a tab of its own: it opens inside the storyboard
+ * canvas, as a director node on the board.
  */
 
 import type { ComponentType } from 'react'
-import { ArtworkBoard, ArtworkDirector, ArtworkStory } from './artwork.tsx'
+import { ArtworkBoard, ArtworkStory } from './artwork.tsx'
 import type { ArtworkProps } from './artwork.tsx'
 import type { FilmView } from './types.ts'
 
@@ -28,7 +31,6 @@ export interface FilmPart {
 export const PARTS: readonly FilmPart[] = [
   { view: 'story', id: 'dsh-film/story', kind: 'film-story', order: 100, artwork: ArtworkStory, keepMounted: true },
   { view: 'board', id: 'dsh-film/board', kind: 'film-board', order: 101, artwork: ArtworkBoard },
-  { view: 'director', id: 'dsh-film/director', kind: 'film-director', order: 103, artwork: ArtworkDirector },
 ]
 
 /**

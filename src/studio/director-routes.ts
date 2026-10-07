@@ -13,7 +13,7 @@
  * Not offered: headless background rendering (`/api/projects/:id/director/renders`),
  * which in Studio runs the desk in an embedded Chromium no DSH plugin has.
  * Without it every render, model inspection and review version needs the
- * desk open in the 导演 tab, exactly as Studio's foreground path does.
+ * desk open in the storyboard canvas, exactly as Studio's foreground path does.
  * @module dsh-film/studio/director-routes
  */
 

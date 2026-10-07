@@ -1,10 +1,10 @@
 # dsh-film · VibeDev 影视工作台
 
-在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和 VibeDev 里做片：聊天右侧的侧栏多出三个标签——**剧本、分镜画布、导演台**。左边和 Agent 聊，右边看和改成果。项目是工作区里 `film/` 下的普通文件；Agent 用专门的影视工具改剧本和分镜、调度导演台（见下），和右边看到的是同一份。
+在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 和 VibeDev 里做片：聊天右侧的侧栏多出两个标签——**剧本、分镜画布**；**导演台**不再是独立标签，改在分镜画布里以 3D 导演台节点打开。左边和 Agent 聊，右边看和改成果。项目是工作区里 `film/` 下的普通文件；Agent 用专门的影视工具改剧本和分镜、调度导演台（见下），和右边看到的是同一份。
 
 > 0.2 仍属预览。分镜画布（含导演台）用的是 VibeDev 的原版前端，跑在插件自己的接口上；剧本标签是按 DSH 界面重写的，文件格式与 VibeDev Studio 的编剧台相同。图片、视频的生成由可选的「VibeDev 账号与模型」插件 [@vibedev-si/dsh-vibedev](https://github.com/VibeDev-Si/dsh-vibedev)（原 dsh-media）负责。
 
-A film workbench for DeepSeek Harness and VibeDev: three right-sidebar tabs — script, storyboard and director desk — working on one film per workspace, kept as plain files under `film/`. In this 0.2 preview, the storyboard (with the director desk) is VibeDev's original front end running on the plugin's own API, and the script tab is a DSH-native rewrite. The agent works on the same film through its own film tools.
+A film workbench for DeepSeek Harness and VibeDev: two right-sidebar tabs — script and storyboard; the director desk is no longer a tab of its own, it opens inside the storyboard canvas as a 3D director node — working on one film per workspace, kept as plain files under `film/`. In this 0.2 preview, the storyboard (with the director desk) is VibeDev's original front end running on the plugin's own API, and the script tab is a DSH-native rewrite. The agent works on the same film through its own film tools.
 
 ## 安装 · Install
 
@@ -37,7 +37,7 @@ A film workbench for DeepSeek Harness and VibeDev: three right-sidebar tabs — 
 **从 GitHub Release 安装**：插件页的“包名或地址”和上面的命令也接受 Release 里的 `.tgz` 直链，例如
 
 ```
-https://github.com/VibeDev-Si/dsh-film/releases/download/v0.3.5/dsh-film-0.3.5.tgz
+https://github.com/VibeDev-Si/dsh-film/releases/download/v0.3.6/dsh-film-0.3.6.tgz
 ```
 
 直链不经过安装源，需要本机能直接访问 GitHub（或配好代理）。包约 3 MB。网速很慢时仍可能超过 pnpm 默认的 60 秒下载时限而失败：这时改为按包名从中国大陆镜像源安装；也可以把时限调长：pnpm 11（DeepSeek Harness 和 VibeDev 桌面版自带的就是它）不再从 `~/.npmrc` 读取这个设置，要在 pnpm 的全局配置 `config.yaml` 里加一行 `fetchTimeout: 600000`（Windows：`%LOCALAPPDATA%\pnpm\config\config.yaml`；macOS：`~/Library/Preferences/pnpm/config.yaml`；Linux：`~/.config/pnpm/config.yaml`），或设环境变量 `pnpm_config_fetch_timeout=600000`；pnpm 10 及更早的版本则在 `~/.npmrc` 里加 `fetch-timeout=600000`。
@@ -48,7 +48,7 @@ https://github.com/VibeDev-Si/dsh-film/releases/download/v0.3.5/dsh-film-0.3.5.t
 
 **「VibeDev 账号与模型」插件是可选的**：只有在分镜画布里生成图片和视频才需要另装 [@vibedev-si/dsh-vibedev](https://github.com/VibeDev-Si/dsh-vibedev)（原 dsh-media，包名 `@vibedev-si/dsh-vibedev`，装法相同；在侧边栏底部或「设置 → VibeDev 账号」登录 VibeDev，走 VibeDev 网关，按用量从 VibeDev 余额扣费）。不装也能写剧本、排分镜和调度导演台；从 VibeDev 插件中心安装影视工作台时会把它一并装上。分镜画布给每个视频模型列出的模式与该插件实际接受的一致：声明不收首帧的线路（Seedance 2.5（VibeDev）、2.5 30s（VibeDev）、2.5 480p 30s（山海）和三条 lec 线路；Seedance 2.5 特价按次收首帧，仍有图生视频）不显示“图生视频”，接一张图时改走“全能参考”，图作为参考图发送；以前保存成“图生视频”的节点在这些线路上也按全能参考生成。
 
-装好后打开任意会话的右侧侧栏，在“开始”页点“剧本”等入口。会话需要有工作区。第一次打开任一影视标签时，插件自动在工作区里建好影片（片名取工作区文件夹名，画幅 16:9，连同一张空白分镜画布），不用填表。片名和画幅在三个标签共用的标题栏里改：点片名直接改（最多 80 字，回车或点别处保存，Esc 取消）；画幅是这部片子的画面比例，分镜画布和导演台都按它来，菜单里有 16:9、9:16、1:1、4:5、21:9、2.39:1。0.1.0 建的 4:3 影片照旧保留并显示为 4:3。
+装好后打开任意会话的右侧侧栏，在“开始”页点“剧本”等入口。会话需要有工作区。第一次打开任一影视标签时，插件自动在工作区里建好影片（片名取工作区文件夹名，画幅 16:9，连同一张空白分镜画布），不用填表。片名和画幅在两个标签共用的标题栏里改：点片名直接改（最多 80 字，回车或点别处保存，Esc 取消）；画幅是这部片子的画面比例，分镜画布和导演台都按它来，菜单里有 16:9、9:16、1:1、4:5、21:9、2.39:1。0.1.0 建的 4:3 影片照旧保留并显示为 4:3。
 
 **升级**：按上面的方法直接安装新版本即可，会覆盖旧版本，不用先卸载。装好后要重启 DeepSeek Harness / VibeDev，新版本才会生效；重启之前，影视工作台顶部会显示提示横幅，分镜画布和导演台也先不打开。影片是工作区里 `film/` 下的文件，升级和卸载插件都不会动它们。
 
@@ -61,7 +61,17 @@ Requires DeepSeek Harness 0.2.x or VibeDev (VibeDev Next), which is built on it.
 - **Not from the git repository**: `lib/`, `client/` and `apps/` (the storyboard and director desk front ends) are build outputs that are not in git, so installing from the repository URL fails (it does not leave a plugin that cannot work).
 - **The VibeDev account & models plugin is optional**: only image and video generation on the storyboard needs [@vibedev-si/dsh-vibedev](https://github.com/VibeDev-Si/dsh-vibedev) (formerly dsh-media; sign in to VibeDev at the bottom of the sidebar or in Settings → VibeDev account). Everything else works without it; installing the workbench from the VibeDev Plugin Center installs it too. The storyboard lists for each video model the modes that plugin accepts: lanes that declare no first frame (Seedance 2.5 (VibeDev), 2.5 30s (VibeDev), 2.5 480p 30s (山海) and the three lec lanes; Seedance 2.5 特价按次 takes a first frame and keeps image-to-video) offer no image-to-video, and a single image goes as a 全能参考 (multi-reference) reference image instead, also for nodes saved as image-to-video earlier.
 
-Then open the right sidebar of a session that has a workspace and pick a part on its start page. The first time a film tab opens, the plugin creates the film — named after the workspace folder, 16:9, with an empty storyboard — with no form to fill in. Rename it and pick its frame in the header the three tabs share: click the title to edit it (up to 80 characters; Enter or clicking away saves, Esc cancels); the frame is the film's aspect ratio, which the storyboard canvas and the director desk use (16:9, 9:16, 1:1, 4:5, 21:9, 2.39:1). A 4:3 film made by 0.1.0 keeps and shows its frame. To upgrade, install the new version over the old one (no need to uninstall first), then restart DeepSeek Harness / VibeDev: until you do, the workbench shows a banner asking for the restart and does not open the storyboard or the director desk. Your film stays in the workspace's `film/` folder either way.
+Then open the right sidebar of a session that has a workspace and pick a part on its start page. The first time a film tab opens, the plugin creates the film — named after the workspace folder, 16:9, with an empty storyboard — with no form to fill in. Rename it and pick its frame in the header the two tabs share: click the title to edit it (up to 80 characters; Enter or clicking away saves, Esc cancels); the frame is the film's aspect ratio, which the storyboard canvas and the director desk use (16:9, 9:16, 1:1, 4:5, 21:9, 2.39:1). A 4:3 film made by 0.1.0 keeps and shows its frame. To upgrade, install the new version over the old one (no need to uninstall first), then restart DeepSeek Harness / VibeDev: until you do, the workbench shows a banner asking for the restart and does not open the storyboard or the director desk. Your film stays in the workspace's `film/` folder either way.
+
+### 0.3.6 版本说明 · 0.3.6 release note
+
+- **右侧栏从三个标签减为两个：剧本、分镜画布**。**导演台不再是独立标签**，改在分镜画布里以 3D 导演台节点打开：画布入口不变，台内的场景、机位、审阅和全部 `director_*` 工具都不变。Agent 的导航说明也同步改成「在分镜画布里打开对应导演台节点」。
+- **旧标签不会自动消失**：升级前导演台标签还开着的话，重启后会显示宿主自带的「不可用」提示，**请用户自己关一次**。插件**不会**自动移除该标签，也**不会**删除任何数据或未保存的 3D 场景。
+- 其余内容与 0.3.5 相同（含 0.3.4 的范围响应修复与 0.3.5 的「兼容播放」入口）。
+
+- **The right sidebar now has two tabs — script and storyboard**. The **director desk is no longer a tab of its own**: it opens inside the storyboard canvas as a 3D director node (the canvas entry is unchanged, and the desk's scenes, cameras, reviews and every `director_*` tool are unchanged). The Agent's own guidance now says "open the director node in the storyboard canvas".
+- **An old tab is not removed by itself**: if the director desk tab was still open before the upgrade, after the restart it shows the host's own "unavailable" notice — **ask the user to close it once**. The plugin does **not** remove that tab, and does **not** delete any data or unsaved 3D scene.
+- Everything else matches 0.3.5 (including 0.3.4's range-response fix and 0.3.5's "Prepare playback" entry).
 
 ### 0.3.5 版本说明 · 0.3.5 release note
 

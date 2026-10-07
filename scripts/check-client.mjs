@@ -53,10 +53,12 @@ for (const file of files) {
   console.log(`${path}: ok (${code.length} bytes)`)
 }
 
-// The entry registers exactly the three parts' tab types; 0.1's film-timeline tab must not come back.
+// The entry registers exactly the two parts' tab types: 0.1's film-timeline tab and the 3D director
+// desk tab must not come back — the desk opens inside the storyboard canvas instead.
 {
   const entry = readFileSync('client/client.js', 'utf8')
-  const missing = ['dsh-film/story', 'dsh-film/board', 'dsh-film/director'].filter(id => !entry.includes(JSON.stringify(id)) && !entry.includes(`'${id}'`))
+  const missing = ['dsh-film/story', 'dsh-film/board'].filter(id => !entry.includes(JSON.stringify(id)) && !entry.includes(`'${id}'`))
   if (missing.length > 0) throw new Error(`client/client.js: the tab type(s) ${missing.join(', ')} are not registered`)
   if (/dsh-film\/timeline|film-timeline/.test(entry)) throw new Error('client/client.js: it still registers the film-timeline tab 0.2 removed')
+  if (/dsh-film\/director|film-director/.test(entry)) throw new Error('client/client.js: it still registers the film-director tab that was removed')
 }

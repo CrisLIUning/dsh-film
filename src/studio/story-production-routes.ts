@@ -48,7 +48,7 @@ const DOCUMENT = '/api/projects/:projectId/story/documents/:documentId'
 /**
  * Ask the pages showing the film's board whether a director node's desk holds
  * a scene, as Studio's screenwriter routes do. Every page is asked (the 分镜
- * and 导演 tabs are two pages on one board) and the open desk is used wherever
+ * and the desk page are two pages on one board) and the open desk is used wherever
  * it is; no page means the desk is closed.
  * @param agent - the open canvas pages.
  * @returns the reader.

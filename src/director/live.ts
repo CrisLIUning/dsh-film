@@ -8,7 +8,7 @@
  *
  * One change in how the page is chosen. Studio's film workspace has one
  * canvas page per board with the desk as an overlay; in the film workbench
- * the 分镜 and 导演 tabs are two canvas pages on the same board, and the
+ * the storyboard tab and the desk page are two canvas pages on the same board, and the
  * newest page is often the one without the desk. So:
  *
  * - a scene read asks every page showing the board (`director_read_scene`)

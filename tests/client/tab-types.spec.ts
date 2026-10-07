@@ -1,4 +1,4 @@
-/** The browser half registers exactly the three parts as right-sidebar tab types: the 0.1 editing desk tab is gone. */
+/** The browser half registers exactly the two parts as right-sidebar tab types: the 0.1 editing desk tab and the 3D director desk tab are gone. */
 
 import { describe, expect, it, vi } from 'vitest'
 import { apply } from '../../src/client/index.ts'
@@ -9,7 +9,7 @@ import { en, zh } from '../../src/client/locales.ts'
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Button: () => null }))
 
 describe('the tab types', () => {
-  it('registers the story, board and director tab types and nothing else', () => {
+  it('registers the story and board tab types and nothing else', () => {
     const types: Array<{ id: string; kind: string; guide: readonly { id: string }[] }> = []
     const bodies: string[] = []
     const ctx = {
@@ -25,14 +25,15 @@ describe('the tab types', () => {
     expect(types.map(type => [type.id, type.kind, type.guide.map(entry => entry.id)])).toEqual([
       ['dsh-film/story', 'film-story', ['story']],
       ['dsh-film/board', 'film-board', ['board']],
-      ['dsh-film/director', 'film-director', ['director']],
     ])
-    expect(bodies).toEqual(['dsh-film/story', 'dsh-film/board', 'dsh-film/director'])
+    expect(bodies).toEqual(['dsh-film/story', 'dsh-film/board'])
   })
 
-  it('has no timeline part, kind or strings', () => {
-    expect(PARTS.map(part => part.view)).toEqual(['story', 'board', 'director'])
+  it('has no timeline part, kind or strings, and no director tab', () => {
+    expect(PARTS.map(part => part.view)).toEqual(['story', 'board'])
     expect(() => kindOf('timeline' as never)).toThrow(/unknown part/u)
+    // The desk is a director node on the board now; nothing opens it as a tab.
+    expect(() => kindOf('director')).toThrow(/unknown part/u)
     for (const dictionary of [zh, en]) {
       expect(Object.keys(dictionary).filter(key => /^(timeline|assets|kind|preview)\./u.test(key) || /timeline|Timeline|\.clip$/u.test(key))).toEqual([])
       expect(Object.values(dictionary).join('\n')).not.toMatch(/剪辑台|editing desk/u)
