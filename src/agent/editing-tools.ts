@@ -598,7 +598,7 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
     }),
     defineTool({
       name: 'video_extract_audio',
-      description: 'Copy a video node\'s sound — of its marked part, when it has a mark — into an audio file (film/canvas/media/extract-….m4a) without re-encoding, '
+      description: 'Copy a video node\'s sound — of its marked part, when it has a mark — into an audio file (film/canvas/media/extract-….wav, PCM, ready to use as reference audio for models that take only MP3/WAV; a sound WAV cannot hold is re-encoded in the 分镜 tab) without re-encoding, '
         + 'and put it on the board as an audio node right of the video, with an edge back. Works with the 分镜 tab open or closed. Answers at once with a film task '
         + 'for media_get_task (file.landedNodeId is the audio node). VIDEO_NO_AUDIO_TRACK: the video has no sound.',
       parameters: {
@@ -613,12 +613,20 @@ export function editingTools(services: FilmToolServices): ToolDefinition[] {
         const node = mediaNode(snapshot, args.nodeId, ['video'])
         expectContent(node, args.expectedContent)
         const clip = readClip(node.metadata)
-        const started = await startEdit(film, 'extract-audio', {
-          requestId: args.requestId,
+        const body = {
           source: { nodeId: node.id, path: hostPathOf(node) },
           ...clip,
           land: { nearNodeId: node.id, connectFrom: [node.id], title: `${nameOf(node)} · 音频` },
-        }, exec.signal)
+        }
+        // PCM WAV first: a model that takes only MP3/WAV can use that file as reference audio as it is. The Host
+        // cannot decode AAC, so a codec WAV refuses goes back to the lossless MP4 audio copy — one file either way.
+        let started: { taskId: unknown; status: unknown }
+        try {
+          started = await startEdit(film, 'extract-audio', { requestId: args.requestId, ...body, wav: true }, exec.signal)
+        } catch (error) {
+          if (!(error instanceof Error) || !/VIDEO_EDIT_NEEDS_TRANSCODE|NEEDS_TRANSCODE/u.test(error.message)) throw error
+          started = await startEdit(film, 'extract-audio', { requestId: `${args.requestId}-lossless`, ...body, wav: false }, exec.signal)
+        }
         return plain({ ...started, nodeId: node.id, ...(clip !== undefined ? { clip } : {}), note: TASK_NOTE })
       }),
     }),

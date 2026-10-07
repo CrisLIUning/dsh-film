@@ -32,8 +32,10 @@
  *   fill it with silence. The result reports where each clip sits
  *   (`placements`).
  * - Extract audio: a `Conversion` with the video discarded and the audio
- *   copied into an MP4 audio file (`.m4a`), or the source's own container
- *   when it is already an audio file.
+ *   copied into a PCM WAV by default (a file models that take only MP3/WAV can
+ *   use as reference audio as is; a codec WAV cannot hold is refused, and the
+ *   page re-encodes it there), an MP4 audio file when PCM is not wanted, or the
+ *   source's own container when it is already an audio file.
  *
  * Every edit writes a hidden temporary file next to its result and renames it
  * when it is complete; a cancelled or failed edit deletes it, and
@@ -292,15 +294,17 @@ export function checkRange(range: EditRange, durationMs: number | undefined): { 
 }
 
 /** The output format a lossless copy of a file goes into, and the result's extension. */
-export function copyTarget(source: string, probe: EditProbe, audioOnly: boolean): { extension: string; format: () => OutputFormat } {
+export function copyTarget(source: string, probe: EditProbe, audioOnly: boolean, pcmAudio = false): { extension: string; format: () => OutputFormat } {
   const extension = extname(source).toLowerCase()
   if (probe.video === undefined || audioOnly) {
-    // An audio file keeps its container; a video's sound goes into an MP4 audio file.
+    // An audio file keeps its container.
     if (probe.video === undefined && AUDIO_CONTAINERS.has(extension)) {
       if (extension === '.mp3') return { extension, format: () => new Mp3OutputFormat() }
       if (extension === '.wav') return { extension, format: () => new WavOutputFormat() }
     }
-    return { extension: '.m4a', format: () => new Mp4OutputFormat() }
+    // A video's sound: PCM WAV, so the file can be handed straight to models that take only MP3/WAV
+    // (a codec WAV cannot hold is refused here and re-encoded in the page instead), else an MP4 audio file.
+    return pcmAudio ? { extension: '.wav', format: () => new WavOutputFormat() } : { extension: '.m4a', format: () => new Mp4OutputFormat() }
   }
   return { extension: '.mp4', format: () => new Mp4OutputFormat() }
 }
@@ -541,16 +545,18 @@ async function keyFrameFrom(path: string, inMs: number): Promise<number | undefi
 /**
  * Copy the sound of a video (or a range of it) into its own file, without re-encoding.
  * @param source - the absolute source path.
- * @param target - the absolute result path wanted (`.m4a`, or the source's container for an audio file).
+ * @param target - the absolute result path wanted (`.m4a`, `.wav`, or the source's container for an audio file).
  * @param range - the range, when only part is wanted.
  * @param options - cancel and progress.
+ * @param pcmAudio - a video's sound goes into PCM WAV (a reference file models taking only MP3/WAV can use as
+ *   is); a codec WAV cannot hold is refused with `MEDIA_EDIT_NEEDS_TRANSCODE`, and the page re-encodes it there.
  * @returns the result.
  */
-export async function extractAudio(source: string, target: string, range: { inMs: number; outMs: number } | undefined, options: EditOptions = {}): Promise<EditResult> {
+export async function extractAudio(source: string, target: string, range: { inMs: number; outMs: number } | undefined, options: EditOptions = {}, pcmAudio = false): Promise<EditResult> {
   const probe = await probeDetailed(source)
   if (!probe.ok) throw new MediaEditError(422, 'MEDIA_EDIT_UNSUPPORTED', 'The file cannot be read as video or audio.')
   if (probe.audio === undefined) throw new MediaEditError(422, 'VIDEO_NO_AUDIO_TRACK', '这个视频没有音轨。')
-  const { format } = copyTarget(source, probe, true)
+  const { format } = copyTarget(source, probe, true, pcmAudio)
   return convert(source, target, format(), {
     ...(range !== undefined ? { trim: { start: range.inMs / 1000, end: range.outMs / 1000 } } : {}),
     audioOnly: true,

@@ -12,8 +12,11 @@
  *   `canvas/media/join-<id>.mp4`, or 422 `VIDEO_JOIN_NEEDS_TRANSCODE` with the
  *   reasons when the clips cannot be copied into one track.
  * - `POST /api/canvas/video/:boardId/extract-audio` — `{ requestId, source,
- *   inMs?, outMs?, land? }`: the sound as `canvas/media/extract-<id>.m4a`, or
- *   422 `VIDEO_NO_AUDIO_TRACK`.
+ *   inMs?, outMs?, land?, wav? }`: the sound as `canvas/media/extract-<id>.wav`
+ *   (PCM WAV by default, ready to use as reference audio; `wav: false` asks for
+ *   the lossless MP4 audio copy instead), or 422 `VIDEO_NO_AUDIO_TRACK`, or 422
+ *   `MEDIA_EDIT_NEEDS_TRANSCODE` when WAV cannot hold the sound and the page
+ *   must re-encode it.
  *
  * Edits answer 202 `{ taskId, status }`; the page waits and cancels through
  * the media task routes. A repeated `requestId` answers with the task it
@@ -490,7 +493,8 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
     const inMs = wholeMs(body.inMs, 'inMs')
     const outMs = wholeMs(body.outMs, 'outMs')
     const range = inMs === undefined && outMs === undefined ? undefined : checkRange({ inMs, outMs }, source.probe.durationMs)
-    const { extension, format } = copyTarget(source.path, source.probe, true)
+    // PCM WAV by default: a video's sound becomes a file a model that takes only MP3/WAV can use as is.
+    const { extension, format } = copyTarget(source.path, source.probe, true, body.wav !== false)
     const problem = copyProblem(source.probe, format(), true)
     if (problem !== undefined) return reply(422, 'MEDIA_EDIT_NEEDS_TRANSCODE', problem.detail, { reasons: [problem] })
     const land = landingOf(body.land)
@@ -506,7 +510,7 @@ export function addMediaEditRoutes(router: StudioRouter, tasks: FilmMediaTasks, 
       target: resultPath('extract', extension),
       sources: result => [{ nodeId, path: source.path, ...(result.range ?? span), atMs: 0 }],
       land,
-      run: (target, options) => extractAudio(source.absolute, target, range, options),
+      run: (target, options) => extractAudio(source.absolute, target, range, options, body.wav !== false),
     })
   }))
 }

@@ -8,7 +8,7 @@
  * the edits copy packets, and mediabunny checks only that key packets are IDR.
  */
 
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { EncodedAudioPacketSource, EncodedPacket, EncodedVideoPacketSource, FilePathTarget, Mp4OutputFormat, Output } from 'mediabunny'
 
@@ -117,5 +117,28 @@ export async function writeFixture(path: string, options: FixtureOptions = {}): 
     }
   }
   await output.finalize()
+  return path
+}
+
+/**
+ * A plain 16-bit PCM WAV of silence (a RIFF header and zeroed frames): what a
+ * sound copy looks like when WAV can hold the sound as it is, so an extraction
+ * can be copied losslessly instead of re-encoded.
+ * @param path - the absolute path.
+ * @param options - length, rate and channel count.
+ * @returns the path.
+ */
+export async function writeWavFixture(path: string, options: { seconds?: number; sampleRate?: number; channels?: number } = {}): Promise<string> {
+  const sampleRate = options.sampleRate ?? 48000
+  const channels = options.channels ?? 2
+  const frames = Math.round((options.seconds ?? 2) * sampleRate)
+  const data = Buffer.alloc(frames * channels * 2)
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0); header.writeUInt32LE(36 + data.length, 4); header.write('WAVE', 8)
+  header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22)
+  header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(sampleRate * channels * 2, 28); header.writeUInt16LE(channels * 2, 32); header.writeUInt16LE(16, 34)
+  header.write('data', 36); header.writeUInt32LE(data.length, 40)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, Buffer.concat([header, data]))
   return path
 }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ALL_FORMATS, EncodedPacketSink, FilePathSource, Input } from 'mediabunny'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { END_TOLERANCE_MS, MediaEditError, audioConfigKey, checkRange, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed } from '../src/media/edit.js'
+import { END_TOLERANCE_MS, MediaEditError, audioConfigKey, checkRange, copyTarget, cutFile, extractAudio, joinFiles, joinProblems, probeDetailed } from '../src/media/edit.js'
 import type { EditProbe } from '../src/media/edit.js'
 import { FilmMediaTasks, LOCAL_TASK_LIMIT } from '../src/media/tasks.js'
 import type { FilmTaskFile, FilmTaskSnapshot } from '../src/media/tasks.js'
@@ -226,6 +226,17 @@ describe('extractAudio', () => {
     expect(refused).toBeInstanceOf(MediaEditError)
     expect(refused).toMatchObject({ status: 422, code: 'VIDEO_NO_AUDIO_TRACK' })
     expect(await readdir(media)).toEqual(['silent.mp4'])
+  })
+
+  it('wants PCM WAV for a video\'s sound, and asks the page to re-encode when WAV cannot hold the codec', async () => {
+    // The target a video's sound goes into by default: PCM WAV, so models that take only MP3/WAV can use it as is.
+    expect(copyTarget('/film/clip.mp4', { ok: true, durationMs: 2000, hasAudio: true, audio: { codec: 'aac', sampleRate: 48000, channels: 2, configHash: 'a' } }, true, true).extension).toBe('.wav')
+    expect(copyTarget('/film/clip.mp4', { ok: true, durationMs: 2000, hasAudio: true, audio: { codec: 'aac', sampleRate: 48000, channels: 2, configHash: 'a' } }, true, false).extension).toBe('.m4a')
+    const source = await writeFixture(join(media, 'src.wavish.mp4'), { frames: 20 })
+    const refused = await extractAudio(source, join(media, 'extract-pcm.wav'), undefined, {}, true).catch((error: unknown) => error)
+    // AAC cannot be copied into WAV: the refusal is what sends the extraction to the page's own encoder.
+    expect(refused).toMatchObject({ status: 422, code: 'MEDIA_EDIT_NEEDS_TRANSCODE' })
+    expect(await readdir(media)).toEqual(['src.wavish.mp4'])
   })
 })
 

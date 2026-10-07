@@ -16,10 +16,20 @@ export interface SequenceClip {
   sourceBytes?: number
   sourceSha256?: string
 }
+export interface SequenceSound extends SequenceClip { atMs: number; volume: number; fadeInMs: number; fadeOutMs: number }
+export interface SequenceCue { id: string; startMs: number; endMs: number; text: string; highlight?: { start: number; end: number } }
+export interface SequenceMix {
+  sourceVolume: number
+  sounds: SequenceSound[]
+  cues: SequenceCue[]
+  subtitleStyle: { v: 1; fontScale: number; color: string; position: 'top' | 'center' | 'bottom'; backdrop: 'none' | 'shadow' | 'box'; maxCharsPerEntry: number; autoResegment: boolean }
+  burnSubtitles: boolean
+}
 export interface SequenceContent {
   id: string
   title: string
   clips: SequenceClip[]
+  mix?: SequenceMix
 }
 export interface SequenceDraft extends SequenceContent {
   revision: string
@@ -47,7 +57,7 @@ export function sequenceContent(value: unknown): SequenceContent {
     throw new SequenceError(400, 'SEQUENCE_INVALID', 'A named edit plan with at most 20 clips is required.')
   }
   const seen = new Set<string>()
-  const clips = value.clips.map((entry): SequenceClip => {
+  const parseClip = (entry: unknown): SequenceClip => {
     if (!object(entry) || !id(entry.id) || seen.has(entry.id) || !id(entry.nodeId) || !path(entry.path) || typeof entry.title !== 'string'
       || !time(entry.inMs) || !time(entry.outMs) || entry.outMs - entry.inMs < 100
       || (entry.durationMs !== undefined && (!time(entry.durationMs) || entry.outMs > entry.durationMs))
@@ -59,8 +69,29 @@ export function sequenceContent(value: unknown): SequenceContent {
     return { id: entry.id, nodeId: entry.nodeId, path: entry.path, title: entry.title, inMs: entry.inMs, outMs: entry.outMs,
       ...(entry.durationMs === undefined ? {} : { durationMs: entry.durationMs as number }), ...(entry.sourceBytes === undefined ? {} : { sourceBytes: entry.sourceBytes as number }),
       ...(entry.sourceSha256 === undefined ? {} : { sourceSha256: entry.sourceSha256 as string }) }
-  })
-  return { id: value.id, title: value.title.trim(), clips }
+  }
+  const clips = value.clips.map(parseClip)
+  let mix: SequenceMix | undefined
+  if (value.mix !== undefined) {
+    const raw = value.mix
+    if (!object(raw) || typeof raw.sourceVolume !== 'number' || !Number.isFinite(raw.sourceVolume) || raw.sourceVolume < 0 || !Array.isArray(raw.sounds) || !Array.isArray(raw.cues) || raw.cues.length > 5000 || typeof raw.burnSubtitles !== 'boolean') throw new SequenceError(400, 'SEQUENCE_INVALID', 'The audio and subtitle edit is invalid.')
+    const sounds = raw.sounds.map(entry => {
+      const clip = parseClip(entry)
+      if (!object(entry) || !time(entry.atMs) || typeof entry.volume !== 'number' || !Number.isFinite(entry.volume) || entry.volume < 0 || !time(entry.fadeInMs) || !time(entry.fadeOutMs) || entry.fadeInMs + entry.fadeOutMs > clip.outMs - clip.inMs) throw new SequenceError(400, 'SEQUENCE_INVALID', 'Soundtrack positions and fades must fit their source range.')
+      return { ...clip, atMs: entry.atMs, volume: entry.volume, fadeInMs: entry.fadeInMs, fadeOutMs: entry.fadeOutMs }
+    })
+    const cueIds = new Set<string>()
+    const cues = raw.cues.map((entry): SequenceCue => {
+      if (!object(entry) || !id(entry.id) || cueIds.has(entry.id) || !time(entry.startMs) || !time(entry.endMs) || entry.endMs <= entry.startMs || typeof entry.text !== 'string' || entry.text.length > 2000) throw new SequenceError(400, 'SEQUENCE_INVALID', 'Subtitle ids and intervals must be valid.')
+      cueIds.add(entry.id)
+      if (entry.highlight !== undefined && (!object(entry.highlight) || !time(entry.highlight.start) || !time(entry.highlight.end) || entry.highlight.end <= entry.highlight.start || entry.highlight.end > entry.text.length)) throw new SequenceError(400, 'SEQUENCE_INVALID', 'Subtitle highlight is outside its text.')
+      return { id: entry.id, startMs: entry.startMs, endMs: entry.endMs, text: entry.text, ...(entry.highlight === undefined ? {} : { highlight: entry.highlight as { start: number; end: number } }) }
+    })
+    const style = raw.subtitleStyle
+    if (!object(style) || style.v !== 1 || typeof style.fontScale !== 'number' || !Number.isFinite(style.fontScale) || style.fontScale < 2 || style.fontScale > 12 || typeof style.color !== 'string' || !/^#[A-Fa-f0-9]{6}$/.test(style.color) || !['top', 'center', 'bottom'].includes(String(style.position)) || !['none', 'shadow', 'box'].includes(String(style.backdrop)) || !time(style.maxCharsPerEntry) || style.maxCharsPerEntry < 20 || style.maxCharsPerEntry > 60 || typeof style.autoResegment !== 'boolean') throw new SequenceError(400, 'SEQUENCE_INVALID', 'Subtitle style must follow the film subtitle settings.')
+    mix = { sourceVolume: raw.sourceVolume, sounds, cues, subtitleStyle: style as unknown as SequenceMix['subtitleStyle'], burnSubtitles: raw.burnSubtitles }
+  }
+  return { id: value.id, title: value.title.trim(), clips, ...(mix ? { mix } : {}) }
 }
 
 /** Atomic writes, and a revision per plan: two windows cannot overwrite each other's edit. */
@@ -109,7 +140,7 @@ export class SequenceStore {
   async verify(content: SequenceContent): Promise<Array<{ clipId: string; status: 'available' | 'missing' | 'changed' }>> {
     const versions = new Map<string, Awaited<ReturnType<SequenceStore['sourceVersion']>>>()
     const sources: Array<{ clipId: string; status: 'available' | 'missing' | 'changed' }> = []
-    for (const clip of content.clips) {
+    for (const clip of [...content.clips, ...(content.mix?.sounds ?? [])]) {
       if (!versions.has(clip.path)) versions.set(clip.path, await this.sourceVersion(clip.path))
       const version = versions.get(clip.path)
       sources.push({ clipId: clip.id, status: !version ? 'missing' : clip.sourceSha256 && clip.sourceSha256 !== version.sha256 || clip.sourceBytes !== undefined && clip.sourceBytes !== version.bytes ? 'changed' : 'available' })
@@ -136,13 +167,16 @@ export class SequenceStore {
       if ((saved?.revision ?? null) !== expectedRevision) throw new SequenceError(409, 'SEQUENCE_CONFLICT', 'Another window changed this edit plan. Keep this draft or save it as a new plan.')
       const versions = new Map<string, Awaited<ReturnType<SequenceStore['sourceVersion']>>>()
       const clips: SequenceClip[] = []
-      for (const clip of content.clips) {
+      const originals = [...content.clips, ...(content.mix?.sounds ?? [])];
+      for (const clip of originals) {
         if (!versions.has(clip.path)) versions.set(clip.path, await this.sourceVersion(clip.path))
         const version = versions.get(clip.path)
         if (version && (clip.sourceSha256 && clip.sourceSha256 !== version.sha256 || clip.sourceBytes !== undefined && clip.sourceBytes !== version.bytes)) throw new SequenceError(409, 'SEQUENCE_SOURCE_CHANGED', 'A source file no longer matches the draft. Remove that clip or explicitly add its current version.')
         clips.push(version ? { ...clip, sourceBytes: version.bytes, sourceSha256: version.sha256 } : clip)
       }
-      const draft: SequenceDraft = { ...content, clips, revision: randomUUID(), operationId, requestHash, updatedAt: new Date().toISOString() }
+      const sources = new Map(clips.map(clip => [clip.id, clip]));
+      const stamped = { ...content, clips: content.clips.map(clip => sources.get(clip.id)!), ...(content.mix ? { mix: { ...content.mix, sounds: content.mix.sounds.map(sound => ({ ...sound, ...sources.get(sound.id)! })) } } : {}) };
+      const draft: SequenceDraft = { ...stamped, revision: randomUUID(), operationId, requestHash, updatedAt: new Date().toISOString() }
       if (index < 0) file.drafts.push(draft); else file.drafts[index] = draft
       await this.write(file)
       return draft

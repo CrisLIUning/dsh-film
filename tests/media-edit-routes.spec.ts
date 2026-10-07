@@ -8,7 +8,7 @@ import { CanvasDocumentStore, emptyFilmBoard } from '../src/canvas/documents.js'
 import { FilmMediaTasks } from '../src/media/tasks.js'
 import { createStudioRouter } from '../src/routes.js'
 import { ProjectEvents } from '../src/studio/events.js'
-import { writeFixture } from './media-edit-fixtures.js'
+import { writeFixture, writeWavFixture } from './media-edit-fixtures.js'
 
 let cwd: string
 let outside: string
@@ -347,25 +347,40 @@ describe('what a landed result carries over from its sources', () => {
       { shotId: 's1', cameraId: 'c1', sourceIn: 0, sourceOut: 2, start: 0, end: 2 },
       { shotId: 's9', cameraId: 'c9', sourceIn: 4, sourceOut: 6, start: secondAt / 1000, end: secondAt / 1000 + 2 },
     ] })
-    const sound = await finished((await call('/api/canvas/video/film-1/extract-audio', { requestId: 'f0000000-0004', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, land: { nearNodeId: 'src', connectFrom: ['src'] } })).body.taskId)
+    const sound = await finished((await call('/api/canvas/video/film-1/extract-audio', { requestId: 'f0000000-0004', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, wav: false, land: { nearNodeId: 'src', connectFrom: ['src'] } })).body.taskId)
     const audio = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === sound.file.landedNodeId) as any
     for (const key of ['prompt', 'subtitleEntries', 'subtitleStyle', 'subtitleUpdatedAt', 'subtitleMediaKey', 'directorSequence']) expect(audio.metadata[key], key).toBeUndefined()
   })
 })
 
 describe('POST /api/canvas/video/:boardId/extract-audio', () => {
-  it('copies the sound into an .m4a and lands an audio node beside the video', async () => {
+  it('asks for PCM WAV: the page re-encodes a sound WAV cannot hold, and wav:false still copies it losslessly', async () => {
     await writeFixture(media('src.mp4'), { frames: 50 })
+    // AAC cannot be copied into WAV, so the Host refuses and the page makes the WAV it asked for.
+    expect(await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0001', source: { nodeId: 'src', path: 'canvas/media/src.mp4' } }))
+      .toMatchObject({ status: 422, body: { code: 'MEDIA_EDIT_NEEDS_TRANSCODE' } })
+    // The lossless MP4 audio copy is still one call away.
     const store = await board()
-    const started = await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0001', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, land: { nearNodeId: 'src', connectFrom: ['src'] } })
+    const started = await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0003', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, wav: false, land: { nearNodeId: 'src', connectFrom: ['src'] } })
     const done = await finished(started.body.taskId)
     expect(done).toMatchObject({ status: 'done', file: { kind: 'audio', mime: 'audio/mp4', derivedFrom: { op: 'extract-audio', sources: [{ nodeId: 'src', inMs: 0 }] } } })
     expect(done.file.name).toMatch(/^canvas\/media\/extract-[0-9a-f]{10}\.m4a$/)
     const node = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === done.file.landedNodeId) as any
     expect(node).toMatchObject({ type: 'audio', position: { x: 516, y: 50 }, metadata: { mimeType: 'audio/mp4' } })
     // The same id for the sound of a part of the video is another edit.
-    expect(await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0001', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 500, outMs: 1500 }))
+    expect(await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0003', source: { nodeId: 'src', path: 'canvas/media/src.mp4' }, inMs: 500, outMs: 1500, wav: false }))
       .toMatchObject({ status: 409, body: { code: 'MEDIA_EDIT_REQUEST_CONFLICT' } })
+  })
+
+  it('copies a sound that WAV can already hold into a .wav and lands it as audio/wav', async () => {
+    await writeWavFixture(media('voice.wav'), { seconds: 2 })
+    const store = await board()
+    const started = await call('/api/canvas/video/film-1/extract-audio', { requestId: 'e0000000-0004', source: { nodeId: 'voice', path: 'canvas/media/voice.wav' }, land: { nearNodeId: 'voice', connectFrom: ['voice'] } })
+    const done = await finished(started.body.taskId)
+    expect(done).toMatchObject({ status: 'done', file: { kind: 'audio', mime: 'audio/wav' } })
+    expect(done.file.name).toMatch(/^canvas\/media\/extract-[0-9a-f]{10}\.wav$/)
+    const node = (await store.read('film-1'))!.nodes.find((entry: any) => entry.id === done.file.landedNodeId) as any
+    expect(node).toMatchObject({ type: 'audio', metadata: { mimeType: 'audio/wav' } })
   })
 
   it('answers 422 VIDEO_NO_AUDIO_TRACK for a video without sound', async () => {
