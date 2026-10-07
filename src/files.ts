@@ -1,16 +1,18 @@
 /**
- * Serving one file from disk: a single byte range (so media can be scrubbed
- * and large files are sent in pieces), a validator for cheap revalidation,
- * and a streamed body that stops when the client goes away.
+ * Serving one file from disk: the byte range the client asked for (so media can
+ * be scrubbed, and so a player can reach a trailing `moov`), a validator for
+ * cheap revalidation, and a streamed body that stops when the client goes away.
+ *
+ * A range response carries exactly the bytes the request named — no server-side
+ * chunking. Memory stays bounded and a lost client stops the read because the
+ * body is a file stream, not a buffer; capping the bytes instead would hand a
+ * player a truncated file it cannot demux.
  * @module dsh-film/files
  */
 
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-
-/** The most bytes one range response carries; the client asks again for the rest. */
-export const RANGE_CHUNK = 8 * 1024 * 1024
 
 /**
  * Read a `Range` header against a file size.
@@ -39,7 +41,7 @@ export function parseRange(header: string | null, size: number): { start: number
     if (start >= size) return 'unsatisfiable'
     end = last === '' ? size - 1 : Math.min(Number(last), size - 1)
   }
-  return { start, end: Math.min(end, start + RANGE_CHUNK - 1) }
+  return { start, end }
 }
 
 /** What {@link serveFile} needs to know about the file. */

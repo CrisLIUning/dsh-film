@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilmError } from '../src/errors.js'
-import { RANGE_CHUNK, parseRange } from '../src/files.js'
+import { parseRange } from '../src/files.js'
 import {
   WORKSPACE_CACHE_MS, WORKSPACE_MEDIA_DEPTH, WORKSPACE_MODEL_LIMIT, WorkspaceMediaError, checkWorkspaceFilePath, checkWorkspaceMediaPath, entryKind, invalidateWorkspaceMedia,
   isSkippedDirName, listWorkspaceMedia, mediaTypeOf, resolveWorkspaceFile, resolveWorkspaceMedia, scanWorkspaceMedia, serveMedia,
@@ -73,9 +73,13 @@ describe('parseRange', () => {
     expect(parseRange('bytes=0-', 0)).toBe('unsatisfiable')
   })
 
-  it('caps one response at RANGE_CHUNK bytes', () => {
-    expect(parseRange('bytes=0-', 100 * RANGE_CHUNK)).toEqual({ start: 0, end: RANGE_CHUNK - 1 })
-    expect(parseRange('bytes=5-', 100 * RANGE_CHUNK)).toEqual({ start: 5, end: RANGE_CHUNK + 4 })
+  it('satisfies every single-range form in full, however large the file is', () => {
+    // A server that capped a response broke a player demuxing the file: what a range names is what the client gets.
+    const big = 12 * 1024 * 1024
+    expect(parseRange('bytes=0-', big)).toEqual({ start: 0, end: big - 1 })
+    expect(parseRange('bytes=5-', big)).toEqual({ start: 5, end: big - 1 })
+    expect(parseRange('bytes=-1024', big)).toEqual({ start: big - 1024, end: big - 1 })
+    expect(parseRange(`bytes=0-${big + 1024}`, big)).toEqual({ start: 0, end: big - 1 })
   })
 })
 
@@ -213,6 +217,123 @@ describe('serveMedia', () => {
     const response = await serveMedia(request(await file('media/empty.mp3', new Uint8Array())))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-length')).toBe('0')
+  })
+
+// A player asks for a range and demuxes what comes back, so a range over the old 8 MiB chunking
+  // boundary has to arrive whole — including the open-ended first request and a trailing moov.
+  describe('large media (over 8 MiB)', () => {
+    const BIG = 9 * 1024 * 1024 // 9 MiB: over the 8 MiB an earlier server capped a response at
+    /** The first and last `count` bytes of a body, and its length, without keeping the whole thing in memory. */
+    async function edges(response: Response, count: number): Promise<{ length: number; first: Uint8Array; last: Uint8Array }> {
+      const reader = response.body!.getReader()
+      let first = new Uint8Array(0)
+      let last = new Uint8Array(0)
+      let length = 0
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = value as Uint8Array
+        if (first.length < count) {
+          const merged = new Uint8Array(Math.min(count, first.length + chunk.length))
+          merged.set(first)
+          merged.set(chunk.subarray(0, merged.length - first.length), first.length)
+          first = merged
+        }
+        // Keep only a bounded tail, never the whole body.
+        if (chunk.length >= count) last = chunk.slice(chunk.length - count)
+        else if (last.length + chunk.length <= count) {
+          const merged = new Uint8Array(last.length + chunk.length)
+          merged.set(last)
+          merged.set(chunk, last.length)
+          last = merged
+        } else {
+          const keep = count - chunk.length
+          const merged = new Uint8Array(count)
+          merged.set(last.subarray(last.length - keep), 0)
+          merged.set(chunk, keep)
+          last = merged
+        }
+        length += chunk.length
+      }
+      return { length, first, last }
+    }
+    const tail = (content: Uint8Array, count: number): Uint8Array => content.slice(content.length - count)
+
+    it('serves an open-ended range past 8 MiB in full, as a stream', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/big.mp4', content)
+      const response = await serveMedia(request(path, { headers: { range: 'bytes=0-' } }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${BIG - 1}/${BIG}`)
+      expect(response.headers.get('content-length')).toBe(String(BIG))
+      expect(response.body).toBeInstanceOf(ReadableStream) // streamed, not a buffered blob
+      const edge = await edges(response, 8)
+      expect(edge.length).toBe(BIG)
+      expect(edge.first).toEqual(content.slice(0, 8))
+      expect(edge.last).toEqual(tail(content, 8))
+    })
+
+    it('serves a finite range that crosses the old 8 MiB boundary in full', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/cross.mp4', content)
+      const start = 8 * 1024 * 1024 - 200
+      const end = 8 * 1024 * 1024 + 200
+      const response = await serveMedia(request(path, { headers: { range: `bytes=${start}-${end}` } }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-range')).toBe(`bytes ${start}-${end}/${BIG}`)
+      expect(response.headers.get('content-length')).toBe(String(end - start + 1))
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(content.slice(start, end + 1))
+    })
+
+    it('serves a range that starts exactly at 8 MiB', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/at.mp4', content)
+      const start = 8 * 1024 * 1024
+      const response = await serveMedia(request(path, { headers: { range: `bytes=${start}-${start + 92}` } }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-range')).toBe(`bytes ${start}-${start + 92}/${BIG}`)
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(content.slice(start, start + 93))
+    })
+
+    it('reaches the trailing bytes of a large file, where a moov can sit', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/moov-last.mp4', content)
+      const response = await serveMedia(request(path, { headers: { range: 'bytes=-1024' } }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-range')).toBe(`bytes ${BIG - 1024}-${BIG - 1}/${BIG}`)
+      expect(response.headers.get('content-length')).toBe('1024')
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(tail(content, 1024))
+    })
+
+    it('answers HEAD for a large file with the range headers and no body', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/head.mp4', content)
+      const response = await serveMedia(request(path, { method: 'HEAD', headers: { range: 'bytes=0-' } }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-range')).toBe(`bytes 0-${BIG - 1}/${BIG}`)
+      expect(response.headers.get('content-length')).toBe(String(BIG))
+      expect(response.body).toBeNull()
+      expect(await response.text()).toBe('')
+    })
+
+    it('stops the read when the client goes away: streaming is the bandwidth control, not a byte cap', async () => {
+      const content = bytes(BIG)
+      const path = await file('media/abort.mp4', content)
+      const abort = new AbortController()
+      const response = await serveMedia(request(path, { headers: { range: 'bytes=0-' }, signal: abort.signal }))
+      expect(response.status).toBe(206)
+      const reader = response.body!.getReader()
+      let seen = 0
+      const first = await reader.read()
+      expect(first.done).toBe(false)
+      seen += (first.value as Uint8Array).length
+      abort.abort()
+      // The read must stop here rather than draining the rest of the file into the void.
+      const after = await reader.read().then((result) => (result.done ? 'closed' : 'data'), () => 'error')
+      expect(['closed', 'error']).toContain(after)
+      if (after === 'data') seen += (await reader.read().then((result) => (result.done ? 0 : (result.value as Uint8Array).length), () => 0))
+      expect(seen).toBeLessThan(BIG)
+    })
   })
 
   it('serves only media inside the workspace, by a path relative to it', async () => {
