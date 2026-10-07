@@ -37,7 +37,7 @@ A film workbench for DeepSeek Harness and VibeDev: two right-sidebar tabs — sc
 **从 GitHub Release 安装**：插件页的“包名或地址”和上面的命令也接受 Release 里的 `.tgz` 直链，例如
 
 ```
-https://github.com/VibeDev-Si/dsh-film/releases/download/v0.3.6/dsh-film-0.3.6.tgz
+https://github.com/VibeDev-Si/dsh-film/releases/download/v0.3.7/dsh-film-0.3.7.tgz
 ```
 
 直链不经过安装源，需要本机能直接访问 GitHub（或配好代理）。包约 3 MB。网速很慢时仍可能超过 pnpm 默认的 60 秒下载时限而失败：这时改为按包名从中国大陆镜像源安装；也可以把时限调长：pnpm 11（DeepSeek Harness 和 VibeDev 桌面版自带的就是它）不再从 `~/.npmrc` 读取这个设置，要在 pnpm 的全局配置 `config.yaml` 里加一行 `fetchTimeout: 600000`（Windows：`%LOCALAPPDATA%\pnpm\config\config.yaml`；macOS：`~/Library/Preferences/pnpm/config.yaml`；Linux：`~/.config/pnpm/config.yaml`），或设环境变量 `pnpm_config_fetch_timeout=600000`；pnpm 10 及更早的版本则在 `~/.npmrc` 里加 `fetch-timeout=600000`。
@@ -62,6 +62,13 @@ Requires DeepSeek Harness 0.2.x or VibeDev (VibeDev Next), which is built on it.
 - **The VibeDev account & models plugin is optional**: only image and video generation on the storyboard needs [@vibedev-si/dsh-vibedev](https://github.com/VibeDev-Si/dsh-vibedev) (formerly dsh-media; sign in to VibeDev at the bottom of the sidebar or in Settings → VibeDev account). Everything else works without it; installing the workbench from the VibeDev Plugin Center installs it too. The storyboard lists for each video model the modes that plugin accepts: lanes that declare no first frame (Seedance 2.5 (VibeDev), 2.5 30s (VibeDev), 2.5 480p 30s (山海) and the three lec lanes; Seedance 2.5 特价按次 takes a first frame and keeps image-to-video) offer no image-to-video, and a single image goes as a 全能参考 (multi-reference) reference image instead, also for nodes saved as image-to-video earlier.
 
 Then open the right sidebar of a session that has a workspace and pick a part on its start page. The first time a film tab opens, the plugin creates the film — named after the workspace folder, 16:9, with an empty storyboard — with no form to fill in. Rename it and pick its frame in the header the two tabs share: click the title to edit it (up to 80 characters; Enter or clicking away saves, Esc cancels); the frame is the film's aspect ratio, which the storyboard canvas and the director desk use (16:9, 9:16, 1:1, 4:5, 21:9, 2.39:1). A 4:3 film made by 0.1.0 keeps and shows its frame. To upgrade, install the new version over the old one (no need to uninstall first), then restart DeepSeek Harness / VibeDev: until you do, the workbench shows a banner asking for the restart and does not open the storyboard or the director desk. Your film stays in the workspace's `film/` folder either way.
+
+### 0.3.7 版本说明 · 0.3.7 release note
+
+- **拼接变成一条可编辑的时间线**：选中两个以上视频节点点「拼接」，弹窗里不再是只能拖动排序的列表，而是一条单轨时间线——每段按真实时长成比例排开，可以拖动换位置、拖两端把手改入点出点、在播放头处「切开」、删除某一段，点标尺把播放头放到任意位置；预览按这条轨道播放并跟着播放头走，选中一段还能用秒数输入框精确调起止点。所有编辑都只是草稿，点「拼接」才按你排好的顺序和区间出片，取消不改动原来的节点（同一个源节点可能因切开而出现两次，这是正常的）。仍然只做剪切与拼接：没有转场、配乐、特效和变速，一次最多 20 段、最短 0.1 秒，规格不一致时照旧在页面里重新编码。
+- **The join is now an editable single track**: the 拼接 dialog is a timeline rather than a reorderable list — blocks run in proportion to each clip's real length, and you can drag them into a new order, trim either end by its handle, split at the playhead, delete a segment, or click the ruler to move the playhead; the preview plays that track with the playhead following it, and a selected block takes typed start and end values. Every edit is a draft: only 拼接 hands the ranges to the host, and cancelling changes no node (one source may appear twice after a split). Still cutting and joining only — no transitions, music, effects or re-timing — at most 20 parts, at least 0.1 s each, with the page re-encoding when the clips differ.
+- **节点生成面板的滚动条可以拖了**：以前在面板里按下会被当成选中节点并开始拖动节点，右侧滚动条拖不动；现在落在滚动条上的按下不再触发选中和节点拖动，滚轮、文本选择、拖节点边框和画布平移都不受影响。
+- **The node panel's scrollbar drags again**: a press inside the panel used to select the node and start dragging it, so the panel's own scrollbar would not move; a press on the scrollbar no longer selects or drags the node, while the wheel, text selection, dragging the node by its border and Space-to-pan are unchanged.
 
 ### 0.3.6 版本说明 · 0.3.6 release note
 
