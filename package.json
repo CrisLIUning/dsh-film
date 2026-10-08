@@ -1,6 +1,6 @@
 {
   "name": "dsh-film",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "VibeDev 影视工作台：在 DeepSeek Harness 和 VibeDev 的右侧侧栏里写剧本、排分镜和调度导演台，Agent 用影视工具协同改片 · Film workbench for DeepSeek Harness and VibeDev: screenplay, storyboard canvas and director desk in the right sidebar, with film tools for the agent",
   "type": "module",
   "main": "lib/index.js",
