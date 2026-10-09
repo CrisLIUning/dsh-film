@@ -123,6 +123,17 @@ describe('a text node’s answer', () => {
 })
 
 describe('the prompt writer', () => {
+  it('passes the panorama projection all the way to the writer and rejects it on video before any model call', async () => {
+    const fake = fakeServices()
+    const router = createStudioRouter({ text: () => fake.services })
+    const response = await call(router, '/api/canvas/assist/prompt', { surface: 'image', imageProjection: 'equirectangular', draft: '雨夜街道' })
+    expect(response.status).toBe(200)
+    expect(String(fake.calls[0]!.system)).toContain('360-degree full spherical equirectangular texture')
+    const refused = await call(router, '/api/canvas/assist/prompt', { surface: 'video', imageProjection: 'equirectangular' })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ code: 'CANVAS_ASSIST_PROJECTION_INVALID' })
+    expect(fake.calls).toHaveLength(1)
+  })
   it('writes a prompt quickly from the wired references', async () => {
     const fake = fakeServices([{ type: 'text-delta', text: '  雨夜客栈门口，' }, { type: 'text-delta', text: '陌生人推门而入。 ' }, { type: 'finish', reason: { kind: 'stop' } }], { images: true, reasoningOff: true })
     const response = await call(createStudioRouter({ text: () => fake.services }), '/api/canvas/assist/prompt', {

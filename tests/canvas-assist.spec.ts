@@ -11,6 +11,13 @@ const CAMERA = '拍摄方式（只描述成像，不要在画面里出现相机�
 const FRAME = '分镜画面：{{prompt}}\n景别：中景；主体位于画面三分线处；前景、中景、背景层次清楚，视线方向明确。\n场景：{{setting}}；时间与天气：{{time}}。'
 
 describe('prompt writer requests', () => {
+  it('accepts only the spherical panorama projection on image requests', () => {
+    expect(parseAssistRequest({ surface: 'image', imageProjection: 'equirectangular', draft: '雨夜街道' })).toEqual({ surface: 'image', imageProjection: 'equirectangular', draft: '雨夜街道' })
+    for (const imageProjection of ['normal', 1, null, {}]) {
+      expect(() => parseAssistRequest({ surface: 'image', imageProjection })).toThrow('imageProjection must be equirectangular')
+    }
+    expect(() => parseAssistRequest({ surface: 'video', imageProjection: 'equirectangular' })).toThrow('on an image prompt')
+  })
   it('accepts an image or video request and drops what it cannot read', () => {
     expect(parseAssistRequest({ surface: 'image', draft: '雨夜', references: [{ kind: 'image', title: '客栈', dataUrl: PNG }, { kind: 'bogus' }, 'x'] })).toEqual({
       surface: 'image', draft: '雨夜', references: [{ kind: 'image', title: '客栈', dataUrl: PNG }],
@@ -75,6 +82,17 @@ describe('prompt writer requests', () => {
 })
 
 describe('what the model is asked', () => {
+  it('writes a seamless full spherical scene rather than a framed ordinary image', () => {
+    const request = parseAssistRequest({ surface: 'image', imageProjection: 'equirectangular', draft: '雨夜街道' })
+    const system = assistSystemPrompt(request)
+    expect(system).toContain('3D panorama viewer, not an ordinary framed image')
+    expect(system).toContain('2:1 aspect ratio, continuous left and right edges')
+    expect(system).toContain('surroundings in every direction')
+    expect(system).toContain('without duplicating that fixed prefix')
+    expect(system).not.toContain('light and camera in concrete terms')
+    expect(assistSystemPrompt({ surface: 'image' })).not.toContain('equirectangular')
+    expect(assistUserParts(request).parts[0]).toEqual({ type: 'text', text: 'Draft so far:\n雨夜街道' })
+  })
   it('directs a video prompt’s motion and sound, and keeps the answer bare', () => {
     const system = assistSystemPrompt({ surface: 'video', video: { durationSeconds: 5, generateAudio: false }, draft: '推门而入', language: '中文' })
     expect(system).toContain('a video generation model')
