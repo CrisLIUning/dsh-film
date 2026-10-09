@@ -544,7 +544,7 @@ describe('screenplay-to-production tools', () => {
     events.subscribe(cwd, (event) => { seen.push(event) })
     const handed = await run('story_handoff', { documentId, expectedRevision: revision, objectId: 'person_lin', production: { purpose: 'character-sheet', requestId: 'sheet-lin' } })
     expect(handed).toMatchObject({
-      created: true, boardId: project.id, node: { type: 'story-source' },
+      created: true, boardId: project.id, node: { type: 'text' },
       productionNode: { type: 'image', metadata: { status: 'idle', promptPurpose: 'character-sheet', count: 1 } },
       preview: { objectId: 'person_lin', revision }, note: expect.stringContaining('Nothing was generated'),
     })

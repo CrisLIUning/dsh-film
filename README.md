@@ -159,6 +159,20 @@ Then open the right sidebar of a session that has a workspace and pick a part on
 
 Media anywhere in the workspace outside `film/` is material: the storyboard's library shows it (hidden entries, `node_modules`, build and cache folders, credential folders and links are skipped; a very large workspace is listed in part, and the list says so). A file is copied into `film/canvas/media/` when used (as a copy-on-write clone where the file system supports it; never a hard link, so editing the original elsewhere later leaves the film's copy as it was), the same bytes only once; an imported file that has not changed since is no longer offered for import by the storyboard. A workspace inside a hidden folder (a name starting with `.`) or a credential folder such as `.ssh` gets no film, and its media is neither played nor imported.
 
+## 共享资产 · Shared assets
+
+画布左侧的共享素材库按当前电脑用户保存，默认目录是 `~/.vibedev/film/assets/`，与项目工作区分开。首次打开会建立角色、场景、物品、风格、音效和未分类；支持子文件夹、搜索、预览、改名、移动、标签、下载及回收站恢复。配置 `sharedAssetsDir` 可指定另一个绝对目录。已有项目素材不会自动迁移，可从“本项目素材”显式存入共享库。
+
+保存素材会复制原文件；从共享库加入画布会再复制进当前项目的 `film/canvas/media/`。因此原项目移动后共享素材仍可用，当前项目的画布也不依赖共享库的地址。将文件夹添加到画布会完整导入其素材与子文件夹素材，再一次创建一个组；删除共享素材只移入回收站，不删除已加入项目的副本。不扫描其他项目或整个磁盘。
+
+The per-user library defaults to `~/.vibedev/film/assets/`, independently of the workspace; `sharedAssetsDir` can override it with an absolute directory. Save explicitly copies selected originals, and insertion copies media into the current film before creating nodes. Folder insertion creates one group only after the full import succeeds. Existing project materials remain available; removal moves a shared asset to trash without changing project copies.
+
+## 视频提示词节奏 · Video prompt pacing
+
+“VibeDev 写”和内置编剧技能要求每个视频片段从局部 **0 秒** 开始，连续覆盖当前节点的实际时长。全片起止仅用于剪辑定位：第二段位于全片 31–60 秒时，30 秒片段仍写 0–30 秒的动作时间线，不能把 31–35 秒等全片标签传给模型。叙事一般按约 2–3 秒安排一个主要动作或有目的的切镜，保持人物微动作、自然表情、空间和视线连续；明确长镜头、必要对白、非叙事或原剪辑要求优先。建议不更改模型能力、时长、费用或正式生成流程。
+
+Every clip uses a local clock from 0 to its selected node duration; global screenplay times remain editing metadata. Narrative beats around 2–3 seconds guide motivated cuts and natural performances while preserving explicit long takes, necessary dialogue and existing edits. These are writing instructions, not changes to model limits or generation charges.
+
 ## 运镜与相机 · Camera moves and camera settings
 
 本地画布更新中，3D 全景节点的“VibeDev 写”会明确告诉编写端，这是 360°、2:1、左右无缝的等距柱状全景场景，沿用参考与草稿。普通图片和视频不带全景用途；仍需用户确认提示词并发起生成，模型实际效果取决于其能力。

@@ -61,3 +61,16 @@ A diagnosis changes nothing unless the person asks. Follow [references/diagnosis
 ## Hand off
 
 When images or video are planned, give the people, places and props their visual identity and states in the same document and write text shots; [references/handoff.md](references/handoff.md) has the fields, reference images, and how a script reaches the 分镜 canvas. Handoff never starts a generation or replaces a production node.
+
+Every video clip MUST use a LOCAL CLOCK starting at 0 seconds, including later clips, explicit single shots and long takes. Global start/end times are editing or segment metadata only; never send them in the model's action/audio timeline. Convert source beats to elapsed time from this clip's start before writing the final prompt; never copy global timestamps or label both clocks. Conversion example: global segment 31-60 for a 30-second clip uses local 0-30; global beat 31-35 becomes local 0-4. Use the actual node duration as the local endpoint, never the global end or the example duration.
+
+When duration is known, cover the main action continuously from 0 to the current node duration, without gaps or overruns; no negative times, delayed start or end past that duration. Do not invent or extend the duration.
+
+The person's explicit filming or editing instructions take priority over these pacing suggestions:
+
+- Use a shot or action beat roughly every 2-3 seconds for narrative video, not compulsory cuts. Preserve a requested single shot, long take or framing; action beats may progress within one continuous shot. Respect chosen camera direction.
+- Use adjacent local time ranges for a multi-shot narrative.
+- Establish people, setting, relationships and positions from script/references. Preserve reference tokens actually supplied exactly; never invent tokens, identities or missing facts.
+- Each cut serves a reveal, cause/effect or response. Motivate over-the-shoulder views, close-ups, tracking, reaction shots or shot/reverse-shot; preserve spatial/gaze continuity.
+- Keep one main action per shot, with natural micro-actions and facial expressions. Prefer brief dialogue when speech is permitted; preserve lines, speaker order and audio constraints. Allow longer beats for complex narrative, necessary dialogue or an explicit long take.
+- For video edits, preserve the existing cut structure and shot order unless asked. Do not force multiple shots or story beats in non-narrative footage.

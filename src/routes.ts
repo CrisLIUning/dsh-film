@@ -43,6 +43,8 @@ import type { TextServices } from './canvas/text-models.js'
 import { addDirectorRoutes } from './studio/director-routes.js'
 import { addModelingRoutes } from './studio/modeling-routes.js'
 import type { ModelEnvironment } from './modeling/contracts/model-project.js'
+import { SharedAssetLibrary } from './canvas/shared-library.js'
+import { addSharedLibraryRoutes } from './studio/shared-library-routes.js'
 
 export const ROUTE_PREFIX = '/api/dsh-film'
 
@@ -165,6 +167,7 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
     onChange: (cwd, documentId, revision) => { events.emit(cwd, { type: 'story-changed', documentId, revision }) },
   })
   const boardAgent = options.boardAgent ?? new CanvasBoardAgent()
+  addSharedLibraryRoutes(router, new SharedAssetLibrary(options.sharedAssetsDir))
   addScreenwriterRoutes(router, story)
   addStoryExchangeRoutes(router, { story, events })
   addStoryProductionRoutes(router, { story, events, boardAgent })
@@ -185,6 +188,8 @@ export function createStudioRouter(options: StudioRouterOptions = {}): StudioRou
 }
 
 export interface StudioRouterOptions {
+  /** Computer-wide asset storage; empty/undefined uses ~/.vibedev/film/assets. */
+  sharedAssetsDir?: string
   /** The project event bus, shared with the agent's film tools so their edits reach open pages. */
   events?: ProjectEvents
   /** The open canvas pages, shared with the agent's canvas tools. */

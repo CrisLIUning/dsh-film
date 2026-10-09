@@ -210,11 +210,14 @@ export function assistSystemPrompt(request: AssistRequest, nativeAudioOutput?: b
   const camera = request.direction?.camera
   // The camera is the prompt's to describe unless the node chose it; then the lines below say so, and nothing here contradicts them (C13, C.9).
   const describe = panorama ? 'the full surrounding environment, spatial continuity, horizon and light' : camera !== undefined ? 'subject, setting and light' : cameraMove !== undefined ? 'subject, setting, light and framing' : 'subject, setting, light and camera'
+  const referenceNames = request.surface === 'video'
+    ? 'Name the people and setting, and preserve any reference tokens actually supplied; never invent tokens or identities.'
+    : 'Name what is in the references rather than referring to them by number.'
   const lines = [
     `You write prompts for ${surface}.`,
     'The user has wired reference material into one node on an infinite canvas and wants a prompt for that node.',
     'Look at every reference you are given and write a single prompt that uses them.',
-    `Describe ${describe} in concrete terms. Name what is in the references rather than referring to them by number.`,
+    `Describe ${describe} in concrete terms. ${referenceNames}`,
   ]
   if (panorama) lines.push('This node is a 3D panorama viewer, not an ordinary framed image. Write for a seamless 360-degree full spherical equirectangular texture, 2:1 aspect ratio, continuous left and right edges and an even horizon. Describe the surroundings in every direction; avoid flat poster composition, cropped views, collages, text and watermarks. Keep the user\'s scene and reference facts. These projection requirements are also prepended when the image is generated; write the scene description without duplicating that fixed prefix.')
   if (request.purpose !== undefined) lines.push(storyProductionInstruction(request.purpose, request.surface, { cameraMoveChosen: cameraMove !== undefined }))
@@ -224,6 +227,18 @@ export function assistSystemPrompt(request: AssistRequest, nativeAudioOutput?: b
       ? 'Include the motion: what moves. A video prompt without motion is an image prompt.'
       : 'Include the motion: what moves, and how the camera moves. A video prompt without motion is an image prompt.')
     lines.push(videoDirectionInstruction(request.video, nativeAudioOutput))
+    lines.push(
+      'Every independently generated video clip MUST use a LOCAL CLOCK starting at 0 seconds, including every later clip in a continuous screenplay. This clock rule is mandatory even for an explicit single shot or long take.',
+      'Global screenplay start/end times are editing or segment metadata only. Never put them in the action or audio timeline sent to the video model. Convert source beats to elapsed time from this clip\'s start before writing the final prompt; do not copy global timestamps or label both clocks.',
+      'Conversion example only: a global 31-60-second segment requested as a 30-second clip uses local 0-30 seconds; its global 31-35-second beat becomes local 0-4 seconds. The requested clip duration is the local endpoint; global segment labels do not change it. Apply the actual node duration, not the example duration.',
+      'Explicit user filming or editing instructions take priority over these pacing suggestions: preserve a requested single shot, long take or framing, and respect separately chosen camera direction.',
+      ...(request.video?.durationSeconds !== undefined ? [`For this video clip, cover the main action continuously from 0 to ${request.video.durationSeconds} seconds, without gaps or overruns. All action and audio time labels must stay within 0-${request.video.durationSeconds} seconds: no negative times, delayed start or end past ${request.video.durationSeconds} seconds. Mark adjacent time ranges for a multi-shot narrative; never extend the requested duration.`] : []),
+      'For narrative video, use a shot or action beat roughly every 2-3 seconds as a pacing suggestion, not a requirement to cut: action beats can stay within one continuous shot. Allow longer beats for complex narrative, necessary dialogue or an explicit long take, within the requested duration.',
+      'Make clear who is present, where they are, their established relationships and spatial positions, using the supplied references and draft; do not invent missing relationship or scene facts.',
+      `Each cut needs a narrative purpose, such as revealing information, following cause and effect or showing a response. Choose motivated over-the-shoulder views, close-ups, ${cameraMove === undefined ? 'following an action, ' : ''}reaction shots or shot/reverse-shot; keep spatial and gaze continuity.`,
+      'Keep one main action per shot, with natural micro-actions and facial expressions rather than static poses. Prefer brief dialogue that fits the performance when speech is permitted; preserve established lines and the current audio constraints.',
+      'For video edits, preserve the existing cut structure and shot order unless the user asks to change them. For non-narrative footage, do not impose multiple shots or extra story beats.',
+    )
   }
   if (cameraMove !== undefined) {
     lines.push('The camera movement is chosen separately and is appended when the prompt is sent:', cameraMove, 'Do not describe camera movement or camera position changes.')

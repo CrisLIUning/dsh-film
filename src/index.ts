@@ -50,6 +50,8 @@ export const name = 'dsh-film'
 export interface Config {
   /** Where the built apps are; empty for the package's own `apps/`. For developing an app against a live Host. */
   appsDir: string
+  /** Computer-wide shared assets. Empty/undefined uses ~/.vibedev/film/assets. */
+  sharedAssetsDir?: string
 }
 
 /**
@@ -59,6 +61,7 @@ export interface Config {
  */
 export const Config: Schema<Config> = Schema.object({
   appsDir: Schema.string().default(''),
+  sharedAssetsDir: Schema.string(),
 })
 
 /** The package's built apps. */
@@ -85,7 +88,7 @@ export function apply(ctx: Context, config: Config): void {
   const events = new ProjectEvents()
   const boardAgent = new CanvasBoardAgent()
   const appsRoot = config.appsDir.trim() === '' ? PACKAGED_APPS : config.appsDir.trim()
-  const studio = createStudioRouter({ media, tasks, text, events, boardAgent })
+  const studio = createStudioRouter({ media, tasks, text, events, boardAgent, sharedAssetsDir: config.sharedAssetsDir })
   let projectCreated: (cwd: string) => void = () => {}
 
   // Nested, so a profile without clients (a terminal-only run) still loads the plugin.

@@ -76,6 +76,39 @@ function apply(source: string, operations: StoryOperation[]): { markdown: string
 }
 
 describe('the shipped skills', () => {
+  it('requires a fresh local clock for every video clip and keeps global times out of model timelines', () => {
+    const content = parseSkillFile(read(join(dir('film-screenwriting'), 'SKILL.md')), 'film-screenwriting').content
+    const guidance = content.split('## Hand off')[1]!
+    expect(guidance).toContain('Every video clip MUST use a LOCAL CLOCK starting at 0 seconds, including later clips, explicit single shots and long takes')
+    expect(guidance).toContain('Global start/end times are editing or segment metadata only')
+    expect(guidance).toContain("never send them in the model's action/audio timeline")
+    expect(guidance).toContain("Convert source beats to elapsed time from this clip's start before writing the final prompt")
+    expect(guidance).toContain('global segment 31-60 for a 30-second clip uses local 0-30; global beat 31-35 becomes local 0-4')
+    expect(guidance).toContain('Use the actual node duration as the local endpoint, never the global end or the example duration')
+    expect(guidance).toContain('no negative times, delayed start or end past that duration')
+    expect(guidance).toContain('never copy global timestamps or label both clocks')
+    expect(guidance).toContain('action beats may progress within one continuous shot')
+  })
+
+  it('gives the screenwriting agent video shot guidance with user intent and current duration first', () => {
+    const content = parseSkillFile(read(join(dir('film-screenwriting'), 'SKILL.md')), 'film-screenwriting').content
+    const guidance = content.split('## Hand off')[1]!
+    expect(guidance).toContain('explicit filming or editing instructions take priority')
+    expect(guidance).toContain('a shot or action beat roughly every 2-3 seconds')
+    expect(guidance).toContain('from 0 to the current node duration')
+    expect(guidance).toContain('without gaps or overruns')
+    expect(guidance).toContain('reference tokens actually supplied')
+    expect(guidance).toContain('over-the-shoulder')
+    expect(guidance).toContain('shot/reverse-shot')
+    expect(guidance).toContain('one main action per shot')
+    expect(guidance).toContain('natural micro-actions and facial expressions')
+    expect(guidance).toContain('complex narrative, necessary dialogue or an explicit long take')
+    expect(guidance).toContain('single shot')
+    expect(guidance).toContain('preserve the existing cut structure and shot order')
+    expect(guidance).toContain('non-narrative footage')
+    expect(guidance).toContain('Handoff never starts a generation')
+  })
+
   it('ship every skill folder the provider lists, and nothing else', () => {
     expect(readdirSync(SKILLS_ROOT).sort()).toEqual([...FILM_SKILL_NAMES].sort())
     const manifest = JSON.parse(read(join(SKILLS_ROOT, '..', 'package.json'))) as { files: string[] }
