@@ -52,6 +52,40 @@ async function createBound(): Promise<StoryDocument> {
 }
 
 describe('saved screenplay references and explicit production adoption (Studio cases)', () => {
+  it('hands off an ordinary text body with complete screenplay provenance', async () => {
+    const document = await createBound()
+    const sent = await handoff.send(cwd, document.documentId, { expectedRevision: document.revision, objectId: 'person', boardId: board })
+    expect(sent.node.type).toBe('text')
+    expect(sent.node.metadata).toMatchObject({ content: sent.preview.productionText, storyNote: '', storySource: { projectId: board, documentId: document.documentId, objectId: 'person', scope: { kind: 'document' }, snapshot: sent.preview } })
+    expect(nodesOf(await boards.read(board))).toEqual([original, sent.node])
+  })
+
+  it.each(['text', 'story-source'])('reuses %s sources without losing manual content, metadata, geometry or wires', async type => {
+    const document = await createBound()
+    const preview = await handoff.preview(cwd, document.documentId, 'person')
+    const legacy = { id: 'legacy-source', type, title: '手写标题', position: { x: 610, y: 220 }, width: 390, height: 250, metadata: { content: '人工保留的说明', storyNote: '独立备注', custom: { keep: true }, storyDirectorLinks: { camera: [{ revision: 'old' }] }, storySource: { projectId: board, documentId: document.documentId, objectId: 'person', objectKind: 'entity', snapshot: preview } } }
+    const connection = { id: 'old-wire', fromNodeId: legacy.id, toNodeId: original.id }
+    await boards.update(current => ({ ...current!, nodes: [original, legacy], connections: [connection] }))
+    const sent = await handoff.send(cwd, document.documentId, { expectedRevision: document.revision, objectId: 'person', boardId: board })
+    expect(sent.created).toBe(false)
+    expect(sent.node).toEqual({ ...legacy, type: 'text' })
+    expect((await boards.read(board))!.connections).toEqual([connection])
+    expect(nodesOf(await boards.read(board))).toEqual([original, { ...legacy, type: 'text' }])
+  })
+
+  it('converts a contentless legacy source from its saved snapshot and refreshes production text only while unedited', async () => {
+    const document = await createBound()
+    const preview = await handoff.preview(cwd, document.documentId, 'person')
+    const legacy = { id: 'old-source', type: 'story-source', title: preview.title, position: { x: 450, y: 80 }, width: 340, height: 410, metadata: { storyNote: '独立备注', storySource: { projectId: board, documentId: document.documentId, objectId: 'person', objectKind: 'entity', snapshot: preview } } }
+    await boards.update(current => ({ ...current!, nodes: [original, legacy] }))
+    const changed = await story.apply(cwd, document.documentId, { expectedRevision: document.revision, operations: [{ kind: 'replaceBlock', blockId: 'profile', markdown: '### 她\n\n带走钥匙。' }] })
+    const sent = await handoff.send(cwd, document.documentId, { expectedRevision: changed.document.revision, objectId: 'person', boardId: board, production: { purpose: 'image', requestId: 'refresh-source' } })
+    expect(sent.node).toMatchObject({ id: legacy.id, type: 'text', position: legacy.position, metadata: { content: sent.preview.productionText, storyNote: '独立备注', storySource: { snapshot: sent.preview } } })
+    await boards.update(current => ({ ...current!, nodes: nodesOf(current).map(node => node.id === legacy.id ? { ...node, metadata: { ...node.metadata, content: '本地新编辑' } } : node) }))
+    const again = await handoff.send(cwd, document.documentId, { expectedRevision: changed.document.revision, objectId: 'person', boardId: board, production: { purpose: 'image', requestId: 'refresh-source' } })
+    expect(again.node.metadata.content).toBe('本地新编辑')
+    expect(again.node.id).toBe(legacy.id)
+  })
   it('distinguishes an existing text block from a missing production entity', async () => {
     const document = await createBound()
     const block = document.parsed.blocks.find(item => item.id === 'profile')!
@@ -239,7 +273,7 @@ describe('the film\'s one board', () => {
     const sent = await handoff.send(cwd, document.documentId, { expectedRevision: document.revision, objectId: 'person', boardId: board })
     const saved = await boards.read(board)
     expect(saved).toMatchObject({ id: board, title: '制作', backgroundMode: 'lines', connections: [] })
-    expect(nodesOf(saved)).toEqual([expect.objectContaining({ id: sent.node.id, type: 'story-source', position: { x: 64, y: 80 }, metadata: expect.objectContaining({ storyNote: '' }) })])
+    expect(nodesOf(saved)).toEqual([expect.objectContaining({ id: sent.node.id, type: 'text', position: { x: 64, y: 80 }, metadata: expect.objectContaining({ storyNote: '', content: sent.preview.productionText }) })])
     expect(sent.preview.references[0]).toMatchObject({ status: 'available', url: `/api/projects/${board}/story/documents/${document.documentId}/references/${document.parsed.metadata!.assets[0]!.id}/${document.parsed.metadata!.assets[0]!.versionId}` })
   })
 

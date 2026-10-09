@@ -83,7 +83,7 @@ describe('handoff and adoption over the Studio paths', () => {
     expect(again.body.productionNode.id).toBe(first.body.productionNode.id)
     expect((await call(`${documents()}/${document.documentId}`)).body.revision).toBe(document.revision)
     const board = (await call(`/api/canvas/documents/${film}`)).body
-    expect(board.nodes.map((node: { type: string }) => node.type)).toEqual(['story-source', 'image'])
+    expect(board.nodes.map((node: { type: string }) => node.type)).toEqual(['text', 'image'])
     expect(board.connections).toHaveLength(1)
   })
 

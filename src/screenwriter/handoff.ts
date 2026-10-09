@@ -194,20 +194,34 @@ export class StoryHandoff {
       sourceNode = !request.duplicate
         ? nodes.find((node) => {
           const source = node.metadata?.storySource as Record<string, unknown> | undefined
-          return node.type === 'story-source' && source?.documentId === documentId && source?.objectId === request.objectId
+          return (node.type === 'text' || node.type === 'story-source') && source?.documentId === documentId && source?.objectId === request.objectId
+            && (source.projectId === undefined || source.projectId === projectId)
             && isDeepStrictEqual(source.scope ?? { kind: 'document' }, request.scope ?? { kind: 'document' })
         })
         : undefined
       if (!sourceNode) {
         created = true
         sourceNode = {
-          id: `story-source-${randomUUID()}`, type: 'story-source', title: preview.title,
+          id: `story-source-${randomUUID()}`, type: 'text', title: preview.title,
           position: { x: nodes.reduce((right, node) => Math.max(right, (node.position?.x ?? 0) + (node.width ?? 0)), 0) + 64, y: 80 }, width: 340, height: 410,
-          metadata: { storySource: { projectId, documentId, objectId: request.objectId, objectKind: preview.objectKind, scope: request.scope ?? { kind: 'document' }, snapshot: preview }, storyNote: '' },
+          metadata: { content: preview.productionText ?? preview.markdown, storySource: { projectId, documentId, objectId: request.objectId, objectKind: preview.objectKind, scope: request.scope ?? { kind: 'document' }, snapshot: preview }, storyNote: '' },
         }
       }
-      // A production request refreshes the card it wires from; a plain resend leaves the card to the page, which follows revisions itself.
-      if (request.production && !created) sourceNode = { ...sourceNode, metadata: { ...sourceNode.metadata, storySource: { ...(sourceNode.metadata.storySource as Record<string, unknown>), snapshot: preview } } }
+      if (!created) {
+        const source = sourceNode.metadata.storySource as Record<string, unknown>
+        const snapshot = source.snapshot as StorySourcePreview | undefined
+        const savedText = snapshot?.productionText ?? snapshot?.markdown
+        const content = sourceNode.metadata.content
+        // Reuse the same id and all metadata/wires. An edited body (even '')
+        // survives refresh; only text still following its snapshot advances.
+        sourceNode = { ...sourceNode, type: 'text', metadata: { ...sourceNode.metadata,
+          ...(content === undefined ? { content: savedText ?? preview.productionText ?? preview.markdown } : {}),
+          ...(request.production ? {
+            storySource: { ...source, snapshot: preview },
+            ...(content === undefined || content === savedText ? { content: preview.productionText ?? preview.markdown } : {}),
+          } : {}),
+        } }
+      }
       const nextNodes = created ? [...nodes, sourceNode] : nodes.map(node => node.id === sourceNode!.id ? sourceNode! : node)
       if (request.production) {
         const id = `story-production-${request.production.requestId}`

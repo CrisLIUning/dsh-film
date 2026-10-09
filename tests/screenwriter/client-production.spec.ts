@@ -94,7 +94,7 @@ describe('source, handoff and impact through the client', () => {
     const again = await api.handoff(document.documentId, { expectedRevision: document.revision, objectId: 'person_1', boardId: filmId })
     expect(again.created).toBe(false)
     const board = JSON.parse(await readFile(join(cwd, 'film', 'canvas', 'document.json'), 'utf8')) as { nodes: Array<{ type: string }> }
-    expect(board.nodes.map(node => node.type).sort()).toEqual(['image', 'story-source'])
+    expect(board.nodes.map(node => node.type).sort()).toEqual(['image', 'text'])
 
     const edited = await api.apply(document.documentId, {
       expectedRevision: document.revision, operationId: 'op-edit',

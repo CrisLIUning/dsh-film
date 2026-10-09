@@ -44,6 +44,15 @@ const DEFAULT_CAMERA_ZH = '拍摄方式（只描述成像，不要在画面里�
 const PUSH_IN_ZH = '运镜：镜头平稳地向前推进，逐渐靠近主体。'
 
 describe('the canvas readers, ported', () => {
+  it.each(['本地改写', ''])('uses the normal text source body %j instead of its saved snapshot in generation estimates', content => {
+    const snapshot = board([
+      node('note', 'text', { content, storySource: { objectKind: 'entity', snapshot: { productionText: '旧来源说明', revision: 'r1', references: [] } } }),
+      node('gen', 'config', { composerContent: '@[node:note]绘制角色' }),
+    ], [['note', 'gen']])
+    const prompt = promptPartsForRun(snapshot, { nodeId: 'gen' }, 'zh')?.userText
+    expect(prompt).not.toContain('旧来源说明')
+    if (content) expect(prompt).toContain(content)
+  })
   it('reads a camera move as the page does: unknown and repeated ids dropped, a locked-off move alone, three at most', () => {
     expect(sanitizeCameraMove({ v: 1, moves: [{ id: 'push-in', speed: 'slow' }, { id: 'nope' }, { id: 'push-in' }, { id: 'snap-push', speed: 'fast' }] }, moves))
       .toEqual({ v: 1, moves: [{ id: 'push-in', speed: 'slow' }, { id: 'snap-push' }], combine: 'sequence' })

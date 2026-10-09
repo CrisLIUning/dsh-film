@@ -1252,7 +1252,7 @@ function resourceKind(node: BoardNode): Resource['kind'] | null {
   if (node.type === 'video' && Boolean(metadata.content)) return 'video'
   if (node.type === 'audio' && Boolean(metadata.content)) return 'audio'
   if (node.type === 'text' && Boolean(metadata.content || metadata.prompt)) return 'text'
-  if (node.type === 'story-source' && storySnapshot(node) !== undefined) return 'text'
+  if ((node.type === 'story-source' || node.type === 'text') && storySnapshot(node) !== undefined) return 'text'
   return null
 }
 
@@ -1261,7 +1261,7 @@ function readResource(node: BoardNode): Resource[] {
   if (snapshot !== undefined) {
     const references = Array.isArray(snapshot.references) ? snapshot.references.filter(isRecord) : []
     return [
-      { nodeId: node.id, kind: 'text', text: String(snapshot.productionText ?? snapshot.markdown ?? ''), scene: record(node.metadata?.storySource).objectKind === 'scene' },
+      { nodeId: node.id, kind: 'text', text: String((node.type === 'text' || node.type === 'story-source' ? node.metadata?.content : undefined) ?? snapshot.productionText ?? snapshot.markdown ?? ''), scene: record(node.metadata?.storySource).objectKind === 'scene' },
       ...references.filter(reference => Boolean(reference.url) && ['available', 'relocated'].includes(String(reference.status)))
         .map((reference): Resource => ({ nodeId: `${node.id}:asset:${String(reference.assetId)}:${String(reference.assetVersionId)}`, kind: 'image' })),
     ]
